@@ -1,0 +1,291 @@
+{% extends 'base.html' %}
+{% block title %}{{ exam.title }}{% endblock %}
+{% block head %}
+<style>
+  /* Full-screen exam: hide sidebar and center content */
+  .sidebar { display: none !important; }
+  .main-content { margin-left: 0 !important; width: 100% !important; }
+  .page-body { max-width: 800px; margin: 0 auto; }
+
+  /* Hide hamburger menu button — no sidebar during exam */
+  .topbar-menu-btn { display: none !important; }
+
+  /* Mobile exam layout */
+  @media (max-width: 768px) {
+    .topbar { padding: 0.65rem 1rem; }
+    .page-body { padding: 0.75rem; max-width: 100%; }
+
+    /* Exam header stacks vertically on mobile */
+    .exam-header {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+    }
+    .exam-header .fw-700 { font-size: 0.9rem; }
+    .exam-timer { font-size: 1.1rem; }
+
+    /* Question blocks more compact */
+    .question-block { padding: 0.9rem; margin-bottom: 0.75rem; }
+    .question-num { font-size: 0.75rem; }
+    .question-text { font-size: 0.95rem; line-height: 1.5; }
+
+    /* Choices full width and easier to tap */
+    .choice-item {
+      padding: 0.75rem 0.9rem;
+      gap: 0.6rem;
+      min-height: 48px;
+    }
+    .choice-label-badge { flex-shrink: 0; }
+
+    /* Section nav buttons full width */
+    .flex.justify-between.items-center.mt-3 {
+      flex-direction: row;
+      gap: 0.5rem;
+    }
+    .flex.justify-between.items-center.mt-3 .btn {
+      flex: 1;
+      justify-content: center;
+    }
+
+    /* Textarea answers */
+    textarea.form-control { font-size: 0.95rem; }
+
+    /* Tab warning banner */
+    #tab-warning-banner { font-size: 0.8rem; padding: 0.6rem 0.8rem; }
+  }
+
+  @media (max-width: 480px) {
+    .exam-header .fw-700 { font-size: 0.85rem; }
+    .exam-timer { font-size: 1rem; padding: 0.35rem 0.7rem; }
+    .question-text { font-size: 0.9rem; }
+    .choice-item { font-size: 0.9rem; }
+    #submit-exam-btn-bottom { font-size: 0.9rem; padding: 0.65rem 1rem; }
+  }
+</style>
+{% endblock %}
+{% block topbar_title %}Taking Exam{% endblock %}
+{% block content %}
+
+<!-- Blur Overlay (shown when student leaves/minimizes window) -->
+<div id="blur-overlay" style="
+  display:none;
+  position:fixed;inset:0;z-index:9999;
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+  background:rgba(0,0,0,0.65);
+  align-items:center;justify-content:center;
+  flex-direction:column;gap:1rem;
+  text-align:center;
+">
+  <div style="font-size:3rem">⚠️</div>
+  <div style="color:#f7c94f;font-size:1.3rem;font-weight:700">Return to your exam!</div>
+  <div id="blur-reason" style="color:rgba(255,255,255,0.75);font-size:0.9rem;max-width:320px;margin-top:0.25rem">
+    Window minimized or focus lost.
+  </div>
+
+  <div style="color:rgba(255,255,255,0.4);font-size:0.75rem;margin-top:0.25rem">
+    Click anywhere to return to your exam.
+  </div>
+</div>
+
+<!-- Hidden inputs for JS -->
+<input type="hidden" id="exam-session-id" value="{{ exam_session.id }}" />
+<input type="hidden" id="exam-id" value="{{ exam.id }}" />
+<input type="hidden" id="exam-class-id" value="{{ exam.class_id }}" />
+<input type="hidden" id="exam-duration" value="{{ exam.duration_minutes }}" />
+<input type="hidden" id="time-remaining" value="{{ time_remaining_seconds }}" />
+<input type="hidden" id="tab-limit" value="{{ exam.tab_switch_limit }}" />
+<input type="hidden" id="tab-switch-enabled" value="{{ '1' if exam.tab_switch_enabled else '0' }}" />
+
+<!-- Tab Warning Banner -->
+<div id="tab-warning-banner" style="display:none; padding:0.75rem 1rem; margin-bottom:1rem;
+  background:rgba(247,201,79,0.12); border:1px solid rgba(247,201,79,0.3); border-radius:8px;
+  color:#f7c94f; font-size:0.875rem; font-weight:600;"></div>
+
+<!-- Exam Header -->
+<div class="exam-header">
+  <div>
+    <div class="fw-700" style="font-size:1rem">{{ exam.title }}</div>
+    <div class="text-sm text-muted" id="section-indicator"></div>
+  </div>
+  <div class="flex items-center gap-2">
+    <div id="exam-timer" class="exam-timer">{{ "%02d"|format(exam.duration_minutes) }}:00</div>
+  </div>
+</div>
+
+
+
+<!-- Exam Form -->
+<form id="exam-form" method="POST">
+  <input type="hidden" name="session_id" value="{{ exam_session.id }}" />
+
+  {% for sd in sections_data %}
+  <div class="exam-section-page" data-section-index="{{ loop.index0 }}" style="display:none">
+    {% if sd.title %}
+    <div class="section-header">{{ sd.title }}</div>
+    {% endif %}
+
+    {% for q in sd.questions %}
+    <div class="question-block no-select">
+      <div class="question-num">Question {{ loop.index }} · {{ q.points }} pt(s)</div>
+      <div class="question-text">{{ q.question_text }}</div>
+
+      {% if q.question_type == 'multiple_choice' %}
+      <div class="choices-list">
+        {% for choice in q.choices %}
+        <label class="choice-item {% if saved_map.get(q.id) == choice.choice_label %}selected{% endif %}">
+          <input type="radio" name="answer_{{ q.id }}" value="{{ choice.choice_label }}"
+                 data-qid="{{ q.id }}"
+                 {% if saved_map.get(q.id) == choice.choice_label %}checked{% endif %} />
+          <span class="choice-label-badge">{{ choice.choice_label }}</span>
+          <span>{{ choice.choice_text }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      {% else %}
+      <textarea name="answer_{{ q.id }}" class="form-control auto-save"
+                data-qid="{{ q.id }}"
+                placeholder="Type your answer here..."
+                rows="3">{{ saved_map.get(q.id, '') }}</textarea>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    <!-- Section Navigation -->
+    <div class="flex justify-between items-center mt-3">
+      {% if not loop.first %}
+      <button type="button" class="btn btn-ghost" onclick="goSection({{ loop.index0 - 1 }})">← Previous</button>
+      {% else %}
+      <div></div>
+      {% endif %}
+
+      {% if loop.last %}
+      <button id="submit-exam-btn-bottom" type="button" class="btn btn-success btn-lg">Submit Exam ✓</button>
+      {% else %}
+      <button type="button" class="btn btn-primary" onclick="goSection({{ loop.index0 + 1 }})">Next Section →</button>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</form>
+
+<script>
+const totalSections = {{ sections_data | length }};
+const SESSION_KEY = 'exam_section_{{ exam_session.id }}';
+const ANSWERS_KEY = 'exam_answers_{{ exam_session.id }}';
+let currentSection = 0;
+
+// ── RESTORE LOCAL ANSWERS INTO DOM FIRST (before goSection hides sections) ──
+// This must run before goSection so the correct checked state is in the DOM
+// when saveCurrentSectionAnswers reads it.
+(function applyLocalAnswers() {
+  try {
+    const local = JSON.parse(localStorage.getItem(ANSWERS_KEY) || '{}');
+    if (!Object.keys(local).length) return;
+
+    // Restore radio buttons
+    document.querySelectorAll('.choice-item input[type=radio]').forEach(radio => {
+      const saved = local[radio.dataset.qid];
+      if (saved !== undefined) {
+        radio.checked = (radio.value === saved);
+        if (radio.checked) {
+          // Apply selected class to the label
+          radio.closest('.choice-item')?.classList.add('selected');
+        } else {
+          radio.closest('.choice-item')?.classList.remove('selected');
+        }
+      }
+    });
+
+    // Restore textareas
+    document.querySelectorAll('textarea.auto-save').forEach(ta => {
+      const saved = local[ta.dataset.qid];
+      if (saved !== undefined) ta.value = saved;
+    });
+  } catch(e) {}
+})();
+
+function goSection(idx) {
+  if (idx < 0 || idx >= totalSections) return;
+  saveCurrentSectionAnswers();
+  document.querySelectorAll('.exam-section-page').forEach((el, i) => {
+    el.style.display = i === idx ? '' : 'none';
+  });
+  currentSection = idx;
+  try { localStorage.setItem(SESSION_KEY, idx); } catch(e) {}
+  const total = totalSections;
+  document.getElementById('section-indicator').textContent =
+    total > 1 ? `Section ${idx + 1} of ${total}` : '';
+  window.scrollTo(0, 0);
+}
+
+function saveCurrentSectionAnswers() {
+  const SESSION_ID = parseInt(document.getElementById('exam-session-id')?.value);
+  const save = window._examSaveAnswer || function(qid, val) {
+    const payload = JSON.stringify({ session_id: SESSION_ID, question_id: parseInt(qid), answer_text: val });
+    fetch('/api/save-answer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      keepalive: true,
+      body: payload
+    }).catch(() => {
+      // last resort
+      const blob = new Blob([payload], { type: 'application/json' });
+      try { navigator.sendBeacon('/api/save-answer', blob); } catch(e) {}
+    });
+  };
+  const page = document.querySelector(`.exam-section-page[data-section-index="${currentSection}"]`);
+  if (!page) return;
+  page.querySelectorAll('input[type=radio]:checked').forEach(radio => save(radio.dataset.qid, radio.value));
+  page.querySelectorAll('textarea.auto-save').forEach(ta => save(ta.dataset.qid, ta.value));
+}
+
+// Restore last visited section
+(function restoreSection() {
+  let startIdx = 0;
+  try {
+    const saved = localStorage.getItem(SESSION_KEY);
+    if (saved !== null) {
+      const n = parseInt(saved);
+      if (!isNaN(n) && n >= 0 && n < totalSections) startIdx = n;
+    }
+  } catch(e) {}
+  goSection(startIdx);
+})();
+</script>
+
+<!-- Terminated Overlay -->
+<div class="modal-overlay open" id="terminated-overlay" style="display:none !important">
+  <div class="terminated-card">
+    <div class="terminated-icon">🚫</div>
+    <div class="terminated-title">Exam Terminated</div>
+    <p class="text-muted" style="margin-bottom:1.5rem">
+      Your exam has been terminated due to too many violations. You cannot retake this exam.
+    </p>
+    <a href="{{ url_for('student_exams') }}" class="btn btn-ghost">← Back to Exams</a>
+  </div>
+</div>
+
+<style>
+#terminated-overlay.open { display:flex !important; }
+.tab-warning { border-radius:8px; font-size:0.875rem; padding:0.75rem 1rem; margin-bottom:1rem; }
+.tab-warning.danger { background:rgba(247,95,95,0.12); border:1px solid rgba(247,95,95,0.3); color:#f75f5f; }
+.tab-warning.active { background:rgba(247,201,79,0.12); border:1px solid rgba(247,201,79,0.3); color:#f7c94f; }
+
+/* Anti-copy styles */
+.no-select {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+.question-text {
+  -webkit-user-select: none;
+  user-select: none;
+}
+</style>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/exam.js') }}"></script>{% endblock %}

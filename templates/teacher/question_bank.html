@@ -1,0 +1,638 @@
+{% extends 'base.html' %}
+{% block title %}Question Bank{% endblock %}
+{% block topbar_title %}Question Bank{% endblock %}
+{% block content %}
+
+<style>
+  /* ── Modal improvements ── */
+  .qb-modal-section {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+  }
+  .qb-modal-section-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text3);
+    margin-bottom: 0.65rem;
+  }
+  .group-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.55rem 0.65rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 0.4rem;
+  }
+  .group-row:last-child { margin-bottom: 0; }
+  .group-row-name { flex: 1; font-size: 0.875rem; font-weight: 600; min-width: 0; }
+  .inline-edit-row {
+    display: none;
+    gap: 0.4rem;
+    align-items: center;
+    margin-top: 0.4rem;
+    flex-wrap: wrap;
+  }
+  /* ── Type pill selector ── */
+  .type-pills { display: flex; gap: 0.5rem; }
+  .type-pill {
+    flex: 1;
+    padding: 0.55rem 0.75rem;
+    border: 2px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg2);
+    color: var(--text2);
+    cursor: pointer;
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .type-pill:hover { border-color: var(--border2); color: var(--text); }
+  .type-pill.active { border-color: var(--accent); background: rgba(79,142,247,0.12); color: var(--accent); }
+  /* ── Answer option rows ── */
+  .answer-option {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem 0.5rem;
+    border: 2px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 0.4rem;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .answer-option:last-child { margin-bottom: 0; }
+  .answer-option.correct { border-color: var(--accent2); background: rgba(56,217,169,0.07); }
+  .answer-option-label {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--bg3); border: 2px solid var(--border2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.72rem; font-weight: 700; flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .answer-option.correct .answer-option-label {
+    background: var(--accent2); border-color: var(--accent2); color: #0d1a14;
+  }
+</style>
+
+<div class="page-header">
+  <div>
+    <div class="page-title">Question Bank</div>
+    <div class="page-subtitle">All questions across your exams and bank</div>
+  </div>
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+    <button class="btn btn-ghost" onclick="openModal('modal-manage-groups')">🗂️ Manage Groups</button>
+    <button class="btn btn-ghost" onclick="openModal('modal-import-file')">📂 Import File</button>
+    <button class="btn btn-primary" onclick="openModal('modal-add-bank-q')">+ Add Question</button>
+  </div>
+</div>
+
+{# ══════════════════════════════════════════════════
+   MANAGE GROUPS MODAL
+══════════════════════════════════════════════════ #}
+<div class="modal-overlay" id="modal-manage-groups">
+  <div class="modal" style="max-width:680px;width:95vw;max-height:88vh;display:flex;flex-direction:column;padding:1.75rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">
+      <div class="modal-title" style="margin-bottom:0;font-size:1.15rem">🗂️ Manage Groups</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-manage-groups')" style="padding:0.3rem 0.6rem;font-size:1.1rem;line-height:1">✕</button>
+    </div>
+
+    {# Create new group #}
+    <div class="qb-modal-section" style="padding:1.25rem;margin-bottom:1.25rem">
+      <div class="qb-modal-section-title" style="margin-bottom:0.85rem;font-size:0.75rem">Create New Group</div>
+      <form method="POST" action="{{ url_for('teacher_create_bank_group') }}">
+        <div class="form-group" style="margin-bottom:0.75rem">
+          <label class="form-label" style="font-size:0.82rem">Group Name</label>
+          <input type="text" name="name" class="form-control" placeholder="e.g. Chapter 3, Midterm 2025…" required style="font-size:0.9rem;padding:0.55rem 0.75rem">
+        </div>
+        <div style="display:flex;gap:0.6rem;align-items:flex-end">
+          <div style="flex:1">
+            <label class="form-label" style="font-size:0.82rem">Link to Class <span style="color:var(--text3);font-weight:400">(optional)</span></label>
+            <select name="class_id" class="form-select" style="font-size:0.9rem;padding:0.55rem 0.75rem">
+              <option value="">— Any class —</option>
+              {% for cls in teacher_classes %}
+              <option value="{{ cls.id }}">{{ cls.subject_name }} – {{ cls.block_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" style="padding:0.55rem 1.1rem;flex-shrink:0;white-space:nowrap">+ Create Group</button>
+        </div>
+      </form>
+    </div>
+
+    {# Existing groups #}
+    <div style="flex:1;overflow-y:auto;min-height:0">
+      {% if bank_groups %}
+      <div class="qb-modal-section-title" style="margin-bottom:0.75rem;font-size:0.75rem">Your Groups ({{ bank_groups|length }})</div>
+      {% for g in bank_groups %}
+      <div class="group-row" style="padding:0.85rem 1rem;margin-bottom:0.6rem;border-radius:var(--radius)">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.1rem">
+            <span class="group-row-name" style="font-size:0.95rem">{{ g.name }}</span>
+            <span class="badge badge-gray" style="font-size:0.72rem;padding:0.2rem 0.5rem">
+              {% set qcount = namespace(n=0) %}{% for q in questions %}{% if q.bank_group_id == g.id %}{% set qcount.n = qcount.n + 1 %}{% endif %}{% endfor %}
+              {{ qcount.n }} question{{ 's' if qcount.n != 1 else '' }}
+            </span>
+            {% if g.subject_name %}
+            <span class="badge badge-blue" style="font-size:0.72rem;padding:0.2rem 0.5rem">{{ g.subject_name }} · {{ g.block_name }}</span>
+            {% endif %}
+          </div>
+          {# Inline edit form #}
+          <div class="inline-edit-row" id="edit-grp-{{ g.id }}" style="margin-top:0.75rem">
+            <form method="POST" action="{{ url_for('teacher_rename_bank_group', group_id=g.id) }}"
+                  style="display:flex;gap:0.45rem;flex:1;flex-wrap:wrap;align-items:center">
+              <input type="text" name="name" class="form-control" value="{{ g.name }}"
+                     style="flex:1;min-width:130px;padding:0.45rem 0.65rem;font-size:0.875rem" required>
+              <select name="class_id" class="form-select"
+                      style="flex:1;min-width:150px;padding:0.45rem 0.65rem;font-size:0.875rem">
+                <option value="">— Any class —</option>
+                {% for cls in teacher_classes %}
+                <option value="{{ cls.id }}" {% if g.class_id == cls.id %}selected{% endif %}>
+                  {{ cls.subject_name }} – {{ cls.block_name }}
+                </option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-primary btn-sm" style="padding:0.42rem 0.85rem">Save</button>
+              <button type="button" class="btn btn-ghost btn-sm" style="padding:0.42rem 0.75rem"
+                      onclick="toggleGroupEdit({{ g.id }})">Cancel</button>
+            </form>
+          </div>
+        </div>
+        <div style="display:flex;gap:0.4rem;flex-shrink:0;margin-left:0.5rem">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="toggleGroupEdit({{ g.id }})" title="Rename" style="padding:0.4rem 0.6rem">✏️</button>
+          <form method="POST" action="{{ url_for('teacher_delete_bank_group', group_id=g.id) }}"
+                onsubmit="return confirm('Delete group \'{{ g.name }}\'? Questions will become ungrouped.')">
+            <button type="submit" class="btn btn-danger btn-sm" title="Delete" style="padding:0.4rem 0.6rem">🗑</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div style="text-align:center;padding:3rem 1rem;color:var(--text3);font-size:0.9rem">
+        <div style="font-size:2rem;margin-bottom:0.75rem">🗂️</div>
+        No groups yet. Create one above.
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="modal-footer" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)">
+      <button type="button" class="btn btn-ghost" onclick="closeModal('modal-manage-groups')">Close</button>
+    </div>
+  </div>
+</div>
+
+{# ══════════════════════════════════════════════════
+   IMPORT FILE MODAL
+══════════════════════════════════════════════════ #}
+<div class="modal-overlay" id="modal-import-file">
+  <div class="modal" style="max-width:560px;width:95vw">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+      <div class="modal-title" style="margin-bottom:0">📂 Import Questions from File</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-import-file')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
+    </div>
+
+    {# Format guide #}
+    <div class="qb-modal-section" style="margin-bottom:1rem">
+      <div class="qb-modal-section-title">📋 Required File Format (.txt)</div>
+      <div style="font-size:0.78rem;color:var(--text2);line-height:1.65;font-family:monospace;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:0.75rem 0.85rem">
+        <div style="color:var(--accent);font-weight:700;margin-bottom:0.35rem">Multiple Choice:</div>
+        <div>1. Which loop repeats a block of code?</div>
+        <div>a. if</div>
+        <div>b. for</div>
+        <div>c. print</div>
+        <div>d. input</div>
+        <div>Answer: b</div>
+        <div style="margin:0.6rem 0;border-top:1px dashed var(--border)"></div>
+        <div style="color:var(--accent2);font-weight:700;margin-bottom:0.35rem">Short Answer:</div>
+        <div>1. What is the brain of the computer?</div>
+        <div>Answer: CPU</div>
+      </div>
+      <div style="font-size:0.75rem;color:var(--text3);margin-top:0.5rem">
+        ℹ️ The group name will be taken from the filename automatically (e.g. <em>Chapter3.txt</em> → <strong>Chapter3</strong>).
+      </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('teacher_bank_import_file') }}" enctype="multipart/form-data">
+      <div class="form-group" style="margin-bottom:1rem">
+        <label class="form-label">Select .txt File</label>
+        <input type="file" name="import_file" accept=".txt,text/plain" class="form-control"
+               required style="padding:0.45rem 0.65rem;font-size:0.9rem" id="importFileInput"
+               onchange="updateImportPreview(this)">
+        <div id="importFilename" style="font-size:0.78rem;color:var(--text3);margin-top:0.35rem;display:none">
+          📄 Group will be named: <strong id="importGroupName"></strong>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding-top:0.75rem;border-top:1px solid var(--border)">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('modal-import-file')">Cancel</button>
+        <button type="submit" class="btn btn-primary">📥 Import &amp; Generate Group</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function updateImportPreview(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const name = file.name.replace(/\.[^.]+$/, '').replace(/[_\-]+/g, ' ').trim();
+  document.getElementById('importGroupName').textContent = name || 'Imported Questions';
+  document.getElementById('importFilename').style.display = 'block';
+}
+</script>
+
+{# ══════════════════════════════════════════════════
+   ADD QUESTION MODAL
+══════════════════════════════════════════════════ #}
+<div class="modal-overlay" id="modal-add-bank-q">
+  <div class="modal" style="max-width:580px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+      <div class="modal-title" style="margin-bottom:0">+ Add Question to Bank</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-bank-q')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
+    </div>
+    <form method="POST" action="{{ url_for('teacher_bank_add_question') }}" onsubmit="return bankSubmitValidate(event)">
+
+      {# Question type #}
+      <div class="form-group">
+        <label class="form-label">Question Type</label>
+        <div class="type-pills">
+          <div class="type-pill" id="pill-mc" onclick="selectType('multiple_choice')">
+            🔘 Multiple Choice
+          </div>
+          <div class="type-pill" id="pill-sa" onclick="selectType('short_answer')">
+            ✏️ Short Answer
+          </div>
+        </div>
+        <input type="hidden" name="question_type" id="bankQType">
+      </div>
+
+      {# Question text #}
+      <div class="form-group">
+        <label class="form-label">Question</label>
+        <textarea name="question_text" class="form-control" rows="3"
+                  placeholder="Type your question here…" required></textarea>
+      </div>
+
+      {# MC choices — hidden until type selected #}
+      <div id="bqChoices" style="display:none">
+        <div class="form-row" style="grid-template-columns:1fr 1fr">
+          {% for lbl in ['A','B','C','D'] %}
+          <div class="form-group">
+            <label class="form-label">Choice {{ lbl }}</label>
+            <input type="text" name="choice_{{ lbl }}" class="form-control" placeholder="Option {{ lbl }}">
+          </div>
+          {% endfor %}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Correct Answer</label>
+          <select name="correct_answer_mc" id="bankMcAnswer" class="form-select" style="max-width:120px">
+            {% for lbl in ['A','B','C','D'] %}
+            <option value="{{ lbl }}">{{ lbl }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      {# SA answer #}
+      <div id="bqShort" style="display:none">
+        <div class="form-group">
+          <label class="form-label">Expected Answer</label>
+          <input type="text" name="correct_answer_sa" id="bankSaAnswer"
+                 class="form-control" placeholder="The expected correct answer…">
+        </div>
+      </div>
+
+      {# Points + Group in a row #}
+      <div class="form-row" style="grid-template-columns:100px 1fr;margin-top:0.25rem">
+        <div class="form-group">
+          <label class="form-label">Points</label>
+          <input type="number" name="points" class="form-control" value="1" min="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Group <span style="color:var(--text3);font-weight:400">(optional)</span></label>
+          <div style="display:flex;gap:0.4rem">
+            <select name="bank_group_id" id="bankGroupSel" class="form-select" style="flex:1">
+              <option value="">— No group —</option>
+              {% for g in bank_groups %}
+              <option value="{{ g.id }}">{{ g.name }}{% if g.subject_name %} · {{ g.subject_name }}{% endif %}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="toggleInlineCreate()" style="flex-shrink:0">+ New</button>
+          </div>
+          <div id="inlineGroupCreate" style="display:none;margin-top:0.4rem">
+            <div style="display:flex;gap:0.35rem">
+              <input type="text" id="newGroupName" class="form-control" placeholder="New group name…" style="flex:1">
+              <button type="button" class="btn btn-success btn-sm" onclick="createGroupInline()">Save</button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="toggleInlineCreate()">✕</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <input type="hidden" name="correct_answer" id="bankCorrectAnswer">
+
+      <div class="modal-footer" style="padding-top:0.75rem;border-top:1px solid var(--border)">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('modal-add-bank-q')">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="bankSubmitBtn" disabled>+ Add Question</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+/* ── Type selection ── */
+function selectType(type) {
+  document.getElementById('bankQType').value = type;
+  document.getElementById('pill-mc').classList.toggle('active', type === 'multiple_choice');
+  document.getElementById('pill-sa').classList.toggle('active', type === 'short_answer');
+  document.getElementById('bqChoices').style.display = type === 'multiple_choice' ? '' : 'none';
+  document.getElementById('bqShort').style.display   = type === 'short_answer'   ? '' : 'none';
+  document.getElementById('bankSubmitBtn').disabled = false;
+  const qTypeFilter = document.getElementById('qTypeFilter');
+  if (qTypeFilter) { qTypeFilter.value = type; filterQ(); }
+}
+
+/* ── Correct answer for MC ── */
+
+/* ── Submit validation ── */
+function bankSubmitValidate(e) {
+  const type = document.getElementById('bankQType').value;
+  if (!type) { e.preventDefault(); alert('Please select a question type.'); return false; }
+  const ca = document.getElementById('bankCorrectAnswer');
+  ca.value = type === 'multiple_choice'
+    ? document.getElementById('bankMcAnswer').value
+    : document.getElementById('bankSaAnswer').value;
+  return true;
+}
+
+/* ── Group inline create ── */
+function toggleInlineCreate() {
+  const el = document.getElementById('inlineGroupCreate');
+  el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+  if (el.style.display !== 'none') document.getElementById('newGroupName').focus();
+}
+function createGroupInline() {
+  const name = document.getElementById('newGroupName').value.trim();
+  if (!name) { alert('Enter a group name.'); return; }
+  const fd = new FormData();
+  fd.append('name', name);
+  fetch('{{ url_for("teacher_create_bank_group") }}', { method: 'POST', body: fd })
+    .then(() => {
+      sessionStorage.setItem('reopenAddModal', '1');
+      sessionStorage.setItem('pendingGroupName', name);
+      location.reload();
+    });
+}
+window.addEventListener('DOMContentLoaded', () => {
+  if (sessionStorage.getItem('reopenAddModal')) {
+    sessionStorage.removeItem('reopenAddModal');
+    const pending = sessionStorage.getItem('pendingGroupName');
+    sessionStorage.removeItem('pendingGroupName');
+    openModal('modal-add-bank-q');
+    if (pending) {
+      const sel = document.getElementById('bankGroupSel');
+      if (sel) {
+        for (let o of sel.options) {
+          if (o.text.trim().startsWith(pending.trim())) { sel.value = o.value; break; }
+        }
+      }
+    }
+  }
+});
+
+/* ── Group edit toggle ── */
+function toggleGroupEdit(id) {
+  const row = document.getElementById('edit-grp-' + id);
+  row.style.display = row.style.display === 'none' || !row.style.display ? 'flex' : 'none';
+}
+</script>
+
+{% if questions %}
+{# ── Filters ── #}
+<div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
+  <input type="text" id="qSearch" class="form-control" placeholder="🔍 Search questions…"
+         style="flex:1;min-width:160px;max-width:230px" oninput="filterQ()">
+  <select id="qTypeFilter" class="form-select" style="width:160px;flex-shrink:0" onchange="filterQ()">
+    <option value="all">All Types</option>
+    <option value="multiple_choice">Multiple Choice</option>
+    <option value="short_answer">Short Answer</option>
+  </select>
+  <select id="qGroupFilter" class="form-select" style="width:180px;flex-shrink:0" onchange="filterQ()">
+    <option value="all">All Groups</option>
+    <option value="ungrouped">— Ungrouped —</option>
+    {% for g in bank_groups %}
+    <option value="g{{ g.id }}">{{ g.name }}{% if g.subject_name %} · {{ g.subject_name }}{% endif %}</option>
+    {% endfor %}
+  </select>
+</div>
+
+{# ── Grouped sections ── #}
+{% if bank_groups %}
+  {% for g in bank_groups %}
+    {% set gqs = [] %}{% for q in questions %}{% if q.bank_group_id == g.id %}{% if gqs.append(q) %}{% endif %}{% endif %}{% endfor %}
+    {% if gqs %}
+    <div class="q-group-block" data-group-id="g{{ g.id }}" style="margin-bottom:1.5rem">
+      <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem;flex-wrap:wrap">
+        <span style="font-weight:700;font-size:0.95rem">🗂️ {{ g.name }}</span>
+        <span class="badge badge-blue">{{ gqs|length }} question{{ 's' if gqs|length != 1 else '' }}</span>
+        {% if g.subject_name %}
+        <span class="badge badge-gray" style="font-size:0.75rem">{{ g.subject_name }} · {{ g.block_name }}</span>
+        {% endif %}
+      </div>
+      <div class="card" style="overflow:visible;padding:0">
+        <div class="table-wrap" style="border-radius:var(--radius)">
+        <table style="min-width:540px">
+          <thead><tr>
+            <th style="width:36px">#</th>
+            <th>Question</th>
+            <th style="width:70px">Type</th>
+            <th style="width:56px">Pts</th>
+            <th style="width:88px">Actions</th>
+          </tr></thead>
+          <tbody>
+            {% for q in gqs %}
+            <tr class="q-row"
+                data-text="{{ q.question_text | lower }}"
+                data-type="{{ q.question_type }}"
+                data-group="g{{ q.bank_group_id }}">
+              <td class="font-mono text-xs text-muted">{{ loop.index }}</td>
+              <td style="min-width:160px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ q.question_text }}">{{ q.question_text }}</td>
+              <td>{% if q.question_type == 'multiple_choice' %}<span class="badge badge-blue">MC</span>{% else %}<span class="badge badge-orange">SA</span>{% endif %}</td>
+              <td class="font-mono text-sm">{{ q.points }}</td>
+              <td>
+                <div class="flex gap-1">
+                  <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')">✏️</button>
+                  <form method="POST" action="{{ url_for('teacher_delete_question', question_id=q.id) }}"
+                        onsubmit="return confirm('Delete this question?')" style="display:inline">
+                    <input type="hidden" name="redirect_to" value="bank">
+                    <button type="submit" class="btn btn-danger btn-sm">🗑</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  {% endfor %}
+{% endif %}
+
+{# ── Ungrouped ── #}
+{% set ungrouped = [] %}
+{% for q in questions %}{% if q.bank_group_id is none %}{% if ungrouped.append(q) %}{% endif %}{% endif %}{% endfor %}
+{% if ungrouped %}
+<div class="q-group-block" data-group-id="ungrouped" style="margin-bottom:1.5rem">
+  <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem">
+    <span style="font-weight:700;font-size:0.95rem;color:var(--text2)">📄 Ungrouped</span>
+    <span class="badge badge-gray">{{ ungrouped|length }} question{{ 's' if ungrouped|length != 1 else '' }}</span>
+  </div>
+  <div class="card" style="overflow:visible;padding:0">
+    <div class="table-wrap" style="border-radius:var(--radius)">
+    <table style="min-width:540px">
+      <thead><tr>
+        <th style="width:36px">#</th>
+        <th>Question</th>
+        <th style="width:70px">Type</th>
+        <th style="width:56px">Pts</th>
+        <th style="width:88px">Actions</th>
+      </tr></thead>
+      <tbody>
+        {% for q in ungrouped %}
+        <tr class="q-row"
+            data-text="{{ q.question_text | lower }}"
+            data-type="{{ q.question_type }}"
+            data-group="ungrouped">
+          <td class="font-mono text-xs text-muted">{{ loop.index }}</td>
+          <td style="min-width:160px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ q.question_text }}">{{ q.question_text }}</td>
+          <td>{% if q.question_type == 'multiple_choice' %}<span class="badge badge-blue">MC</span>{% else %}<span class="badge badge-orange">SA</span>{% endif %}</td>
+          <td class="font-mono text-sm">{{ q.points }}</td>
+          <td>
+            <div class="flex gap-1">
+              <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')">✏️</button>
+              <form method="POST" action="{{ url_for('teacher_delete_question', question_id=q.id) }}"
+                    onsubmit="return confirm('Delete this question?')" style="display:inline">
+                <input type="hidden" name="redirect_to" value="bank">
+                <button type="submit" class="btn btn-danger btn-sm">🗑</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div id="noResults" style="display:none" class="empty-state mt-2">
+  <div class="empty-state-icon">🔍</div>
+  <div class="empty-state-title">No questions found</div>
+  <div class="empty-state-text">Try a different search or filter.</div>
+</div>
+
+{# ── Edit Modals ── #}
+{% for q in questions %}
+<div class="modal-overlay" id="edit-bq-{{ q.id }}">
+  <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+      <div class="modal-title" style="margin-bottom:0">✏️ Edit Question</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('edit-bq-{{ q.id }}')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
+    </div>
+    <form method="POST" action="{{ url_for('teacher_edit_question', question_id=q.id) }}">
+      <input type="hidden" name="redirect_to" value="bank">
+      <div class="form-group">
+        <label class="form-label">Question</label>
+        <textarea name="question_text" class="form-control" rows="3" required>{{ q.question_text }}</textarea>
+      </div>
+      <div class="form-row" style="grid-template-columns:100px 1fr">
+        <div class="form-group">
+          <label class="form-label">Points</label>
+          <input type="number" name="points" class="form-control" value="{{ q.points }}" min="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Group</label>
+          <select name="bank_group_id" class="form-select">
+            <option value="">— No group —</option>
+            {% for g in bank_groups %}
+            <option value="{{ g.id }}" {% if q.bank_group_id == g.id %}selected{% endif %}>
+              {{ g.name }}{% if g.subject_name %} · {{ g.subject_name }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      {% if q.question_type == 'multiple_choice' %}
+      <div class="form-row" style="grid-template-columns:1fr 1fr">
+        {% for lbl in ['A','B','C','D'] %}
+        {% set choice = q.choices | selectattr('choice_label','equalto',lbl) | first | default(None) %}
+        <div class="form-group">
+          <label class="form-label">Choice {{ lbl }}</label>
+          <input type="text" name="choice_{{ lbl }}" class="form-control"
+                 value="{{ choice.choice_text if choice else '' }}" placeholder="Option {{ lbl }}">
+        </div>
+        {% endfor %}
+      </div>
+      <div class="form-group">
+        <label class="form-label">Correct Answer</label>
+        <select name="correct_answer" class="form-select" style="max-width:120px">
+          {% for lbl in ['A','B','C','D'] %}
+          <option value="{{ lbl }}" {% if q.correct_answer == lbl %}selected{% endif %}>{{ lbl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <div class="form-group">
+        <label class="form-label">Expected Answer</label>
+        <input type="text" name="correct_answer" class="form-control" value="{{ q.correct_answer }}" placeholder="Expected answer">
+      </div>
+      {% endif %}
+      <div class="modal-footer" style="padding-top:0.75rem;border-top:1px solid var(--border)">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('edit-bq-{{ q.id }}')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endfor %}
+
+<script>
+function filterQ() {
+  const search = document.getElementById('qSearch').value.toLowerCase();
+  const type   = document.getElementById('qTypeFilter').value;
+  const group  = document.getElementById('qGroupFilter').value;
+  const rows   = document.querySelectorAll('.q-row');
+  let any = false;
+  rows.forEach(r => {
+    const show = (!search || r.dataset.text.includes(search))
+              && (type === 'all' || r.dataset.type === type)
+              && (group === 'all' || r.dataset.group === group);
+    r.style.display = show ? '' : 'none';
+    if (show) any = true;
+  });
+  document.querySelectorAll('.q-group-block').forEach(b => {
+    b.style.display = [...b.querySelectorAll('.q-row')].some(r => r.style.display !== 'none') ? '' : 'none';
+  });
+  document.getElementById('noResults').style.display = any ? 'none' : 'block';
+}
+</script>
+
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-icon">🗄️</div>
+  <div class="empty-state-title">No questions yet</div>
+  <div class="empty-state-text">Add questions directly to the bank, or create an exam and add questions there.</div>
+</div>
+{% endif %}
+{% endblock %}

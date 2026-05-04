@@ -1,0 +1,467 @@
+{% extends 'base.html' %}
+{% block title %}Monitoring — {{ exam.title }}{% endblock %}
+{% block topbar_title %}Live Monitoring{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">{{ exam.title }}</div>
+    <div class="page-subtitle">
+      Live Exam Monitoring
+      {% if exam.status == 'active' %}
+        <span class="badge badge-green" style="margin-left:0.5rem">● Active</span>
+      {% else %}
+        <span class="badge badge-gray" style="margin-left:0.5rem">Inactive</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="page-actions">
+    <span id="refresh-status" class="text-xs text-muted font-mono"
+          style="align-self:center; padding:0.3rem 0.6rem; background:var(--bg2);
+                 border:1px solid var(--border); border-radius:6px;"></span>
+    <a href="{{ url_for('teacher_class_detail', class_id=exam.class_id) }}" class="btn btn-ghost">← Back to Class</a>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="live">🟢 Live Sessions</button>
+  <button class="tab-btn" data-tab="logs">📋 Activity Logs</button>
+</div>
+
+<!-- LIVE TAB -->
+<div class="tab-content active" data-tab="live">
+  {% if exam.status != 'active' %}
+  <div class="empty-state">
+    <div class="empty-state-icon">👁</div>
+    <div class="empty-state-title">Exam is not active</div>
+    <div class="empty-state-text">Change the exam status to Active to start monitoring students.</div>
+    <a href="{{ url_for('teacher_exam_detail', exam_id=exam.id) }}" class="btn btn-primary mt-2">Go to Settings</a>
+  </div>
+  {% else %}
+
+  <!-- Summary stats bar -->
+  <div class="stat-cards mb-3" style="margin-bottom:1.25rem;">
+    <div class="stat-card">
+      <div class="stat-label">Connected</div>
+      <div class="stat-value green" id="count-active">{{ sessions|length }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Disconnected</div>
+      <div class="stat-value red" id="count-disconnected">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Questions</div>
+      <div class="stat-value blue" id="count-totalq">{{ total_q }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Tab Limit</div>
+      <div class="stat-value orange">{{ exam.tab_switch_limit }}</div>
+    </div>
+
+  </div>
+
+  <!-- Student cards — refreshed every 2s -->
+  <div id="monitor-list">
+    {% if sessions %}
+      {% for s in sessions %}
+      {% set pct = ((s.answered / total_q) * 100)|int if total_q > 0 else 0 %}
+      <div class="monitor-card mb-1" id="sess-{{ s.id }}" data-connected="true">
+        <div class="monitor-name">
+          <span class="connection-dot connected" title="Connected"></span>
+          {{ s.full_name }}
+        </div>
+        <div class="monitor-progress">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-muted">Progress</span>
+            <span class="text-xs font-mono progress-label">{{ s.answered }}/{{ total_q }} ({{ pct }}%)</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill green progress-fill-bar"
+                 style="width:{{ pct }}%"></div>
+          </div>
+        </div>
+        <div class="monitor-stats">
+          <div class="monitor-stat">
+            <div class="monitor-stat-val switch-count
+              {% if s.tab_switch_count >= exam.tab_switch_limit %}text-danger
+              {% elif s.tab_switch_count > 0 %}text-accent
+              {% else %}text-success{% endif %}">
+              {{ s.tab_switch_count }}
+            </div>
+            <div class="monitor-stat-label">Tab Switches</div>
+          </div>
+
+        </div>
+        <div class="monitor-actions">
+          <button class="btn btn-danger btn-sm terminate-btn"
+                  data-id="{{ s.id }}" data-name="{{ s.full_name }}">
+            Terminate
+          </button>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state" id="empty-state">
+        <div class="empty-state-icon">👥</div>
+        <div class="empty-state-title">No active students yet</div>
+        <div class="empty-state-text">Students will appear here once they start the exam.</div>
+      </div>
+    {% endif %}
+  </div>
+
+  {% endif %}
+</div>
+
+<!-- LOGS TAB -->
+<div class="tab-content" data-tab="logs">
+
+  <!-- Filter bar -->
+  <div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-bottom:1rem; align-items:center;">
+    <input type="text" id="log-filter-name" placeholder="🔍 Filter by student..." class="form-control"
+           style="max-width:220px; padding:0.4rem 0.75rem; font-size:0.85rem;"
+           oninput="applyLogFilters()" />
+    <select id="log-filter-event" class="form-select"
+            style="max-width:200px; padding:0.4rem 0.75rem; font-size:0.85rem;"
+            onchange="applyLogFilters()">
+      <option value="">All Events</option>
+      <option value="tab_switch">Tab Switch</option>
+      <option value="window_minimize">Lost Focus</option>
+      <option value="screenshot">Screenshot</option>
+      <option value="connected">Connected</option>
+      <option value="disconnected">Disconnected</option>
+    </select>
+    <button class="btn btn-ghost btn-sm" onclick="clearLogFilters()" style="font-size:0.82rem;">✕ Clear</button>
+    <span id="log-filter-count" class="text-xs text-muted" style="align-self:center;"></span>
+  </div>
+
+  <div id="logs-container">
+    {% if past_logs %}
+    <div class="card">
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Student</th><th>Event</th><th>Time</th></tr></thead>
+        <tbody id="logs-tbody">
+          {% for log in past_logs %}
+          <tr data-name="{{ log.full_name|lower }}" data-event="{{ log.event_type }}">
+            <td class="fw-600">{{ log.full_name }}</td>
+            <td>
+              {% if log.event_type == 'tab_switch' %}<span class="badge badge-yellow">Tab Switch</span>
+              {% elif log.event_type == 'window_minimize' %}<span class="badge badge-orange">Lost Focus</span>
+              {% elif log.event_type == 'screenshot' %}<span class="badge badge-red">Screenshot</span>
+              {% elif log.event_type == 'connected' %}<span class="badge badge-green">● Connected</span>
+              {% elif log.event_type == 'disconnected' %}<span class="badge badge-red">● Disconnected</span>
+              {% else %}<span class="badge badge-gray">{{ log.event_type }}</span>{% endif %}
+            </td>
+            <td class="text-sm text-muted font-mono">{{ log.logged_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="empty-state" id="logs-empty">
+      <div class="empty-state-icon">📋</div>
+      <div class="empty-state-title">No activity yet</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+.monitor-card { transition: border-color 0.3s, opacity 0.3s; }
+.monitor-card.terminated { opacity: 0.3; pointer-events: none; }
+.monitor-card.flash-new { animation: flashNew 1.2s ease; }
+.monitor-card.flash-alert { animation: flashAlert 0.6s ease; }
+@keyframes flashNew {
+  0% { background: rgba(56,217,169,0.15); border-color: var(--accent2); }
+  100% { background: var(--card); border-color: var(--border); }
+}
+@keyframes flashAlert {
+  0%,50% { background: rgba(247,95,95,0.12); border-color: var(--danger); }
+  100% { background: var(--card); border-color: var(--border); }
+}
+/* Connection status dot */
+.connection-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+  flex-shrink: 0;
+  transition: background-color 0.4s ease, box-shadow 0.4s ease;
+}
+.connection-dot.connected {
+  background: #34c759;
+  box-shadow: 0 0 0 3px rgba(52,199,89,0.25);
+}
+.connection-dot.disconnected {
+  background: #f75f5f;
+  box-shadow: 0 0 0 3px rgba(247,95,95,0.25);
+}
+.monitor-card.disconnected-card {
+  border-color: rgba(247,95,95,0.35);
+  background: rgba(247,95,95,0.04);
+}
+</style>
+
+<script>
+const EXAM_ID = {{ exam.id }};
+const TAB_LIMIT = {{ exam.tab_switch_limit }};
+const IS_ACTIVE = {{ 'true' if exam.status == 'active' else 'false' }};
+let prevSwitchCounts = {};
+let prevConnectionState = {};
+
+// ── TERMINATE ──
+function bindTerminateBtn(btn) {
+  btn.addEventListener('click', async () => {
+    const id = parseInt(btn.dataset.id);
+    const name = btn.dataset.name;
+    if (!confirm(`Terminate ${name}'s exam? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/terminate-session/${id}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.status === 'terminated') {
+        const card = document.getElementById(`sess-${id}`);
+        if (card) {
+          card.classList.add('terminated');
+          const nameEl = card.querySelector('.monitor-name');
+          if (nameEl) nameEl.insertAdjacentHTML('beforeend',
+            ' <span class="badge badge-red">Terminated</span>');
+          btn.remove();
+        }
+      }
+    } catch (e) {
+      alert('Failed to terminate session. Please try again.');
+    }
+  });
+}
+
+document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
+
+if (IS_ACTIVE) {
+
+  // ── BUILD NEW CARD HTML ──
+  function buildCard(s, totalQ) {
+    const pct = totalQ > 0 ? Math.round((s.answered / totalQ) * 100) : 0;
+    const sw = s.tab_switch_count;
+    const swColor = sw >= TAB_LIMIT ? 'text-danger' : sw > 0 ? 'text-accent' : 'text-success';
+    const barColor = 'green';
+    const isConnected = s.connected !== false;
+    const dotClass = isConnected ? 'connected' : 'disconnected';
+
+    return `
+      <div class="monitor-card mb-1 flash-new${isConnected ? '' : ' disconnected-card'}" id="sess-${s.id}" data-connected="${isConnected}">
+        <div class="monitor-name">
+          <span class="connection-dot ${dotClass}" title="${isConnected ? 'Connected' : 'Disconnected'}"></span>
+          ${s.full_name}
+        </div>
+        <div class="monitor-progress">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-muted">Progress</span>
+            <span class="text-xs font-mono progress-label">${s.answered}/${totalQ} (${pct}%)</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill ${barColor} progress-fill-bar" style="width:${pct}%"></div>
+          </div>
+        </div>
+        <div class="monitor-stats">
+          <div class="monitor-stat">
+            <div class="monitor-stat-val switch-count ${swColor}">${sw}</div>
+            <div class="monitor-stat-label">Tab Switches</div>
+          </div>
+
+        </div>
+        <div class="monitor-actions">
+          <button class="btn btn-danger btn-sm terminate-btn"
+                  data-id="${s.id}" data-name="${s.full_name.replace(/"/g, '&quot;')}">
+            Terminate
+          </button>
+        </div>
+      </div>`;
+  }
+
+  // ── UPDATE LOGS TABLE ──
+  function updateLogs(logs) {
+    if (!logs || !logs.length) return;
+    let tbody = document.getElementById('logs-tbody');
+    if (!tbody) {
+      document.getElementById('logs-container').innerHTML = `
+        <div class="card">
+          <div class="table-wrap">
+          <table>
+            <thead><tr><th>Student</th><th>Event</th><th>Time</th></tr></thead>
+            <tbody id="logs-tbody"></tbody>
+          </table>
+          </div>
+        </div>`;
+      tbody = document.getElementById('logs-tbody');
+    }
+    tbody.innerHTML = logs.map(log => {
+      let badge;
+      if (log.event_type === 'tab_switch')
+        badge = '<span class="badge badge-yellow">Tab Switch</span>';
+      else if (log.event_type === 'window_minimize')
+        badge = '<span class="badge badge-orange">Lost Focus</span>';
+      else if (log.event_type === 'screenshot')
+        badge = '<span class="badge badge-red">Screenshot</span>';
+      else if (log.event_type === 'connected')
+        badge = '<span class="badge badge-green">● Connected</span>';
+      else if (log.event_type === 'disconnected')
+        badge = '<span class="badge badge-red">● Disconnected</span>';
+      else
+        badge = `<span class="badge badge-gray">${log.event_type}</span>`;
+
+      return `<tr data-name="${log.full_name.toLowerCase()}" data-event="${log.event_type}">
+        <td class="fw-600">${log.full_name}</td>
+        <td>${badge}</td>
+        <td class="text-sm text-muted font-mono">${log.logged_at}</td>
+      </tr>`;
+    }).join('');
+    applyLogFilters();
+  }
+
+  // ── MAIN REFRESH — every 2s ──
+  async function refreshMonitoring() {
+    try {
+      const res = await fetch(`/api/monitoring/${EXAM_ID}`);
+      if (!res.ok) throw new Error('Bad response');
+      const data = await res.json();
+
+      const sessions = data.sessions || [];
+      const totalQ = data.total_q || 0;
+      const list = document.getElementById('monitor-list');
+      const activeIds = new Set(sessions.map(s => s.id));
+
+      // Update summary
+      const connectedCount = sessions.filter(s => s.connected !== false).length;
+      const disconnectedCount = sessions.filter(s => s.connected === false).length;
+      document.getElementById('count-active').textContent = connectedCount;
+      document.getElementById('count-disconnected').textContent = disconnectedCount;
+      document.getElementById('count-totalq').textContent = totalQ;
+
+
+      if (sessions.length === 0) {
+        if (!document.getElementById('empty-state')) {
+          list.innerHTML = `
+            <div class="empty-state" id="empty-state">
+              <div class="empty-state-icon">👥</div>
+              <div class="empty-state-title">No active students yet</div>
+              <div class="empty-state-text">Students will appear here once they start the exam.</div>
+            </div>`;
+        }
+      } else {
+        const es = document.getElementById('empty-state');
+        if (es) es.remove();
+
+        sessions.forEach(s => {
+          const card = document.getElementById(`sess-${s.id}`);
+          const isConnected = s.connected !== false;
+
+          if (card && !card.classList.contains('terminated')) {
+            // Update progress
+            const pct = totalQ > 0 ? Math.round((s.answered / totalQ) * 100) : 0;
+            const bar = card.querySelector('.progress-fill-bar');
+            const label = card.querySelector('.progress-label');
+            if (bar) {
+              bar.style.width = pct + '%';
+              bar.className = 'progress-fill green progress-fill-bar';
+            }
+            if (label) label.textContent = `${s.answered}/${totalQ} (${pct}%)`;
+
+            // Update tab switch count + flash on increase
+            const prev = prevSwitchCounts[s.id] || 0;
+            const sw = s.tab_switch_count;
+            const swEl = card.querySelector('.switch-count');
+            if (swEl) {
+              swEl.textContent = sw;
+              swEl.className = 'monitor-stat-val switch-count ' + (
+                sw >= TAB_LIMIT ? 'text-danger' : sw > 0 ? 'text-accent' : 'text-success'
+              );
+            }
+            if (sw > prev) {
+              card.classList.remove('flash-alert');
+              void card.offsetWidth;
+              card.classList.add('flash-alert');
+            }
+
+            // Update connection dot instantly
+            const dot = card.querySelector('.connection-dot');
+            if (dot) {
+              dot.className = `connection-dot ${isConnected ? 'connected' : 'disconnected'}`;
+              dot.title = isConnected ? 'Connected' : 'Disconnected';
+            }
+            isConnected
+              ? card.classList.remove('disconnected-card')
+              : card.classList.add('disconnected-card');
+
+
+          } else if (!card) {
+            const div = document.createElement('div');
+            div.innerHTML = buildCard(s, totalQ);
+            const newCard = div.firstElementChild;
+            list.appendChild(newCard);
+            newCard.querySelector('.terminate-btn') && bindTerminateBtn(newCard.querySelector('.terminate-btn'));
+          }
+
+          prevSwitchCounts[s.id] = s.tab_switch_count;
+          prevConnectionState[s.id] = isConnected;
+        });
+
+        // Remove cards for sessions no longer present
+        list.querySelectorAll('.monitor-card:not(.terminated)').forEach(card => {
+          const id = parseInt(card.id.replace('sess-', ''));
+          if (!activeIds.has(id)) {
+            card.style.transition = 'opacity 0.6s';
+            card.style.opacity = '0';
+            setTimeout(() => card.remove(), 600);
+          }
+        });
+      }
+
+      updateLogs(data.logs);
+
+      const statusEl = document.getElementById('refresh-status');
+      if (statusEl) statusEl.textContent = `↻ ${new Date().toLocaleTimeString()}`;
+
+    } catch (e) {
+      const statusEl = document.getElementById('refresh-status');
+      if (statusEl) statusEl.textContent = '⚠ Connection error';
+    }
+  }
+
+  // Fast refresh: every 2 seconds
+  refreshMonitoring();
+  setInterval(refreshMonitoring, 2000);
+}
+
+// ── LOG FILTERS ──
+function applyLogFilters() {
+  const nameVal = (document.getElementById('log-filter-name')?.value || '').toLowerCase().trim();
+  const eventVal = (document.getElementById('log-filter-event')?.value || '').trim();
+  const rows = document.querySelectorAll('#logs-tbody tr');
+  let visible = 0;
+  rows.forEach(row => {
+    const nameMatch = !nameVal || (row.dataset.name || '').includes(nameVal);
+    const eventMatch = !eventVal || row.dataset.event === eventVal;
+    const show = nameMatch && eventMatch;
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  const countEl = document.getElementById('log-filter-count');
+  if (countEl) {
+    countEl.textContent = rows.length > 0
+      ? `Showing ${visible} of ${rows.length} events`
+      : '';
+  }
+}
+
+function clearLogFilters() {
+  const nameEl = document.getElementById('log-filter-name');
+  const eventEl = document.getElementById('log-filter-event');
+  if (nameEl) nameEl.value = '';
+  if (eventEl) eventEl.value = '';
+  applyLogFilters();
+}
+</script>
+{% endblock %}

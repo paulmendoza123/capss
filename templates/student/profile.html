@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block title %}My Profile{% endblock %}
+{% block topbar_title %}My Profile{% endblock %}
+{% block content %}
+<div class="page-title mb-3">My Profile</div>
+<div class="card" style="max-width:480px">
+  <div class="form-group">
+    <div class="form-label">Full Name</div>
+    <div class="fw-600">{{ user.full_name }}</div>
+  </div>
+  <div class="divider"></div>
+  <div class="form-group">
+    <div class="form-label">Email</div>
+    <div class="font-mono">{{ user.email }}</div>
+  </div>
+  <div class="divider"></div>
+  <div class="form-row">
+    <div class="form-group">
+      <div class="form-label">Program</div>
+      <div>{{ user.program or '—' }}</div>
+    </div>
+    <div class="form-group">
+      <div class="form-label">Year Level</div>
+      <div>{{ user.year_level or '—' }}</div>
+    </div>
+  </div>
+  <div class="divider"></div>
+  <div class="form-group">
+    <div class="form-label">Role</div>
+    <span class="badge badge-blue">{{ user.role }}</span>
+  </div>
+  <div class="form-group">
+    <div class="form-label">Member Since</div>
+    <div class="text-muted text-sm">{{ user.created_at }}</div>
+  </div>
+</div>
+{% endblock %}

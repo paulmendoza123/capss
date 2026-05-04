@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+{% block title %}Class Management{% endblock %}
+{% block topbar_title %}Class Management{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">All Classes</div>
+    <div class="page-subtitle">{{ classes|length }} classes across the system</div>
+  </div>
+</div>
+
+{% if classes %}
+<!-- Search & Filter -->
+<div class="card mb-2">
+  <div class="flex gap-2" style="flex-wrap:wrap;align-items:center">
+    <input type="text" id="class-search" class="form-control" placeholder="Search by subject, block, or teacher…" style="flex:1;min-width:200px" />
+    <select id="class-program-filter" class="form-select" style="width:auto;min-width:140px">
+      <option value="">All Programs</option>
+      {% for c in classes %}
+        <option value="{{ c.program }}">{{ c.program }}</option>
+      {% endfor %}
+    </select>
+    <select id="class-status-filter" class="form-select" style="width:auto;min-width:120px">
+      <option value="">All Status</option>
+      <option value="1">Active</option>
+      <option value="0">Inactive</option>
+    </select>
+  </div>
+</div>
+
+<div class="flex gap-2 mb-2" style="flex-wrap:wrap">
+  <span class="badge badge-green" id="class-active-count">0 Active</span>
+  <span class="badge badge-gray" id="class-inactive-count">0 Inactive</span>
+  <span class="badge badge-gray" id="class-visible-count">Showing all</span>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table id="class-table">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Subject</th>
+          <th>Block</th>
+          <th>Program / Year</th>
+          <th>Teacher</th>
+          <th>Students</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in classes %}
+        <tr data-subject="{{ c.subject_name|lower }}" data-block="{{ c.block_name|lower }}" data-teacher="{{ c.teacher_name|lower }}" data-program="{{ c.program }}" data-active="{{ c.is_active }}">
+          <td class="font-mono fw-600" style="color:var(--accent)">{{ c.class_code }}</td>
+          <td class="fw-600">{{ c.subject_name }}</td>
+          <td class="text-sm">{{ c.block_name }}</td>
+          <td class="text-sm">{{ c.program }} · {{ c.year_level }}</td>
+          <td class="text-sm">{{ c.teacher_name }}</td>
+          <td class="font-mono text-sm">{{ c.enrollment_count }}</td>
+          <td>
+            {% if c.is_active %}
+              <span class="badge badge-green">Active</span>
+            {% else %}
+              <span class="badge badge-gray">Inactive</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="flex gap-1">
+              <a href="{{ url_for('admin_edit_class', class_id=c.id) }}" class="btn btn-ghost btn-sm">✏️ Edit</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const search = document.getElementById('class-search');
+  const programFilter = document.getElementById('class-program-filter');
+  const statusFilter = document.getElementById('class-status-filter');
+  const rows = document.querySelectorAll('#class-table tbody tr');
+
+  // Deduplicate program options
+  const seen = new Set();
+  document.querySelectorAll('#class-program-filter option').forEach(opt => {
+    if (opt.value && seen.has(opt.value)) opt.remove();
+    else seen.add(opt.value);
+  });
+
+  let activeCount = 0, inactiveCount = 0;
+  rows.forEach(r => { r.dataset.active === '1' ? activeCount++ : inactiveCount++; });
+  document.getElementById('class-active-count').textContent = activeCount + ' Active';
+  document.getElementById('class-inactive-count').textContent = inactiveCount + ' Inactive';
+
+  function filter() {
+    const q = search.value.toLowerCase();
+    const prog = programFilter.value;
+    const st = statusFilter.value;
+    let vis = 0;
+    rows.forEach(r => {
+      const matchQ = !q || r.dataset.subject.includes(q) || r.dataset.block.includes(q) || r.dataset.teacher.includes(q);
+      const matchP = !prog || r.dataset.program === prog;
+      const matchS = !st || r.dataset.active === st;
+      const show = matchQ && matchP && matchS;
+      r.style.display = show ? '' : 'none';
+      if (show) vis++;
+    });
+    document.getElementById('class-visible-count').textContent = 'Showing ' + vis + ' of ' + rows.length;
+  }
+  search.addEventListener('input', filter);
+  programFilter.addEventListener('change', filter);
+  statusFilter.addEventListener('change', filter);
+  filter();
+})();
+</script>
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-icon">📚</div>
+  <div class="empty-state-title">No classes yet</div>
+  <div class="empty-state-text">Classes created by teachers will appear here.</div>
+</div>
+{% endif %}
+{% endblock %}
