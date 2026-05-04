@@ -30,108 +30,6 @@
     if (blocked) { e.preventDefault(); e.stopPropagation(); }
   });
 
-  // ── SCREENSHOT BLOCKING & DETECTION ──
-  // 1. CSS-level: make content invisible to screen capture APIs (where supported)
-  (function applyScreenshotBlock() {
-    const style = document.createElement('style');
-    style.id = 'spark-screenshot-block';
-    style.textContent = `
-      /* Chrome/Edge: hide from getDisplayMedia captures */
-      body { -webkit-user-select: none !important; }
-      #exam-content, .exam-question, .question-card, .choice-item {
-        -webkit-user-select: none !important;
-        user-select: none !important;
-      }
-      /* Overlay shown during detected capture */
-      #screenshot-overlay {
-        display: none;
-        position: fixed; inset: 0; z-index: 99999;
-        background: #111;
-        align-items: center; justify-content: center;
-        flex-direction: column; gap: 1rem;
-        color: #fff; font-size: 1.2rem; font-weight: 600;
-        text-align: center; padding: 2rem;
-      }
-      #screenshot-overlay.active { display: flex; }
-    `;
-    document.head.appendChild(style);
-
-    // Inject dark overlay element
-    const overlay = document.createElement('div');
-    overlay.id = 'screenshot-overlay';
-    overlay.innerHTML = `
-      <div style="font-size:2.5rem">🚫</div>
-      <div>Screenshots are not allowed during this exam.</div>
-    `;
-    document.body.appendChild(overlay);
-  })();
-
-  // 2. Detect PrintScreen / screenshot keyboard shortcuts
-  let _screenshotFlashTimer = null;
-  function onScreenshotDetected(method) {
-    if (terminated) return;
-    // Briefly show blackout overlay
-    const overlay = document.getElementById('screenshot-overlay');
-    if (overlay) {
-      overlay.classList.add('active');
-      clearTimeout(_screenshotFlashTimer);
-      _screenshotFlashTimer = setTimeout(() => overlay.classList.remove('active'), 2500);
-    }
-    // Log to server
-    logEvent('screenshot');
-  }
-
-  document.addEventListener('keyup', e => {
-    // PrintScreen (all platforms)
-    if (e.key === 'PrintScreen' || e.code === 'PrintScreen') {
-      // Clear clipboard to prevent pasting the captured image
-      try {
-        navigator.clipboard.writeText('').catch(() => {});
-      } catch(ex) {}
-      onScreenshotDetected('printscreen');
-    }
-    // macOS: Cmd+Shift+3 (full screen), Cmd+Shift+4 (selection), Cmd+Shift+5 (toolbar)
-    if (e.metaKey && e.shiftKey && ['3','4','5'].includes(e.key)) {
-      onScreenshotDetected('mac_screenshot');
-    }
-    // Windows Snipping Tool: Win+Shift+S — detected via key combo approximation
-    if (e.key === 'S' && e.shiftKey && (e.metaKey || e.getModifierState?.('OS'))) {
-      onScreenshotDetected('snipping_tool');
-    }
-  });
-
-  // 3. Detect screen capture via Page Visibility + visibilityState changes
-  //    macOS screenshot briefly steals focus; catch it via blur without visibilitychange
-  let _lastBlurTime = 0;
-  let _screenshotBlurSuppressed = false;
-  window.addEventListener('blur', () => { _lastBlurTime = Date.now(); _screenshotBlurSuppressed = false; });
-  window.addEventListener('focus', () => {
-    // Very short blur (<800ms) that isn't a full tab switch = likely screenshot tool
-    const delta = Date.now() - _lastBlurTime;
-    if (delta > 0 && delta < 800 && !document.hidden) {
-      _screenshotBlurSuppressed = true;
-      onScreenshotDetected('focus_blur_rapid');
-    }
-  });
-
-  // ── TIMER ──
-  const timerEl = document.getElementById('exam-timer');
-  function updateTimer() {
-    if (terminated) return;
-    const m = Math.floor(timerSeconds / 60);
-    const s = timerSeconds % 60;
-    if (timerEl) {
-      timerEl.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-      timerEl.className = 'exam-timer';
-      if (timerSeconds <= 60) timerEl.classList.add('danger');
-      else if (timerSeconds <= 300) timerEl.classList.add('warning');
-    }
-    if (timerSeconds <= 0) { submitExam(); return; }
-    timerSeconds--;
-    setTimeout(updateTimer, 1000);
-  }
-  updateTimer();
-
   // ── BLUR OVERLAY ──
   const blurOverlay = document.getElementById('blur-overlay');
   let blurShown = false;
@@ -160,10 +58,9 @@
   });
 
   // window blur — app switch, minimize
-  // Delayed 800ms so screenshot blurs (which return focus quickly) can be suppressed
   window.addEventListener('blur', () => {
     setTimeout(() => {
-      if (!_screenshotBlurSuppressed && !terminated) {
+      if (!terminated) {
         showBlur('Window minimized or focus lost.');
         logEvent('window_minimize');
       }

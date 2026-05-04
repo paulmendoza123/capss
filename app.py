@@ -2785,13 +2785,155 @@ def api_monitoring(exam_id):
         ORDER BY sl.logged_at DESC LIMIT 50
     ''', (exam_id,)).fetchall()
 
+    # Results data
+    passing_score = exam['passing_score'] if exam['passing_score'] is not None else 75
+    results_rows = conn.execute('''
+        SELECT u.full_name, es.score, es.total_points, es.status, es.submitted_at
+        FROM exam_sessions es JOIN users u ON es.student_id = u.id
+        WHERE es.exam_id=?
+        ORDER BY
+            CASE es.status WHEN 'ongoing' THEN 0 WHEN 'submitted' THEN 1 ELSE 2 END,
+            es.score DESC
+    ''', (exam_id,)).fetchall()
+    results_list = []
+    for r in results_rows:
+        row = dict(r)
+        if row['score'] is not None and row['total_points']:
+            row['pct'] = round((row['score'] / row['total_points']) * 100)
+        else:
+            row['pct'] = None
+        results_list.append(row)
+
+    submitted_sessions = conn.execute(
+        "SELECT id FROM exam_sessions WHERE exam_id=? AND status='submitted'", (exam_id,)
+    ).fetchall()
+    total_submitted = len(submitted_sessions)
+    session_ids = [r['id'] for r in submitted_sessions]
+
+    questions_raw = conn.execute('''
+        SELECT q.id, q.question_text, q.correct_answer,
+               s.title as section_title, q.order_index, s.order_index as sec_order
+        FROM questions q
+        LEFT JOIN sections s ON q.section_id = s.id
+        WHERE q.exam_id = ?
+        ORDER BY s.order_index, q.order_index
+    ''', (exam_id,)).fetchall()
+
+    question_stats = []
+    for q in questions_raw:
+        if session_ids:
+            correct_count = conn.execute('''
+                SELECT COUNT(*) FROM answers
+                WHERE question_id=? AND session_id IN ({})
+                AND LOWER(TRIM(answer_text)) = LOWER(TRIM(?))
+            '''.format(','.join('?' * len(session_ids))),
+            [q['id']] + session_ids + [q['correct_answer']]).fetchone()[0]
+        else:
+            correct_count = 0
+        pct = round((correct_count / total_submitted * 100)) if total_submitted else 0
+        question_stats.append({
+            'question_text': q['question_text'],
+            'section_title': q['section_title'],
+            'correct_count': correct_count,
+            'total': total_submitted,
+            'pct': pct,
+        })
+    question_stats.sort(key=lambda x: x['pct'], reverse=True)
+    for i, qs in enumerate(question_stats, 1):
+        qs['number'] = i
+
     return jsonify({
         'sessions': sessions_data,
         'total_q': total_q,
         'tab_limit': exam['tab_switch_limit'],
         'tab_switch_enabled': bool(exam['tab_switch_enabled']),
-        'logs': [dict(l) for l in recent_logs]
+        'logs': [dict(l) for l in recent_logs],
+        'results': results_list,
+        'question_stats': question_stats,
+        'total_submitted': total_submitted,
+        'passing_score': passing_score,
     })
+
+@app.route('/api/results/<int:exam_id>')
+@login_required
+def api_results(exam_id):
+    if session.get('role') not in ('teacher', 'admin'):
+        return jsonify({'error': 'Not authorized'}), 403
+    conn = get_db()
+    exam = conn.execute(
+        'SELECT e.*, c.teacher_id FROM exams e JOIN classes c ON e.class_id = c.id WHERE e.id=?',
+        (exam_id,)
+    ).fetchone()
+    if not exam or (session.get('role') == 'teacher' and int(exam['teacher_id']) != int(session['user_id'])):
+        return jsonify({'error': 'Not authorized'}), 403
+
+    passing_score = exam['passing_score'] if exam['passing_score'] is not None else 75
+
+    results = conn.execute('''
+        SELECT u.full_name, u.id as student_id, es.score, es.total_points,
+               es.status, es.submitted_at, es.tab_switch_count
+        FROM exam_sessions es JOIN users u ON es.student_id = u.id
+        WHERE es.exam_id=?
+        ORDER BY es.score DESC
+    ''', (exam_id,)).fetchall()
+
+    results_list = []
+    for r in results:
+        row = dict(r)
+        if row['score'] is not None and row['total_points']:
+            pct = round((row['score'] / row['total_points']) * 100)
+        else:
+            pct = None
+        row['pct'] = pct
+        results_list.append(row)
+
+    submitted_sessions = conn.execute(
+        "SELECT id FROM exam_sessions WHERE exam_id=? AND status='submitted'",
+        (exam_id,)
+    ).fetchall()
+    total_submitted = len(submitted_sessions)
+    session_ids = [r['id'] for r in submitted_sessions]
+
+    questions_raw = conn.execute('''
+        SELECT q.id, q.question_text, q.question_type, q.points, q.correct_answer,
+               s.title as section_title, q.order_index, s.order_index as sec_order
+        FROM questions q
+        LEFT JOIN sections s ON q.section_id = s.id
+        WHERE q.exam_id = ?
+        ORDER BY s.order_index, q.order_index
+    ''', (exam_id,)).fetchall()
+
+    question_stats = []
+    for q in questions_raw:
+        if session_ids:
+            correct_count = conn.execute('''
+                SELECT COUNT(*) FROM answers
+                WHERE question_id=? AND session_id IN ({})
+                AND LOWER(TRIM(answer_text)) = LOWER(TRIM(?))
+            '''.format(','.join('?' * len(session_ids))),
+            [q['id']] + session_ids + [q['correct_answer']]).fetchone()[0]
+        else:
+            correct_count = 0
+        pct = round((correct_count / total_submitted * 100)) if total_submitted else 0
+        question_stats.append({
+            'question_text': q['question_text'],
+            'section_title': q['section_title'],
+            'correct_count': correct_count,
+            'total': total_submitted,
+            'pct': pct,
+        })
+
+    question_stats.sort(key=lambda x: x['pct'], reverse=True)
+    for i, qs in enumerate(question_stats, 1):
+        qs['number'] = i
+
+    return jsonify({
+        'results': results_list,
+        'question_stats': question_stats,
+        'total_submitted': total_submitted,
+        'passing_score': passing_score,
+    })
+
 
 @app.route('/api/terminate-session/<int:session_id>', methods=['POST'])
 @login_required

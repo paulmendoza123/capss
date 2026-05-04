@@ -127,7 +127,6 @@
       <option value="">All Events</option>
       <option value="tab_switch">Tab Switch</option>
       <option value="window_minimize">Lost Focus</option>
-      <option value="screenshot">Screenshot</option>
       <option value="connected">Connected</option>
       <option value="disconnected">Disconnected</option>
     </select>
@@ -148,7 +147,6 @@
             <td>
               {% if log.event_type == 'tab_switch' %}<span class="badge badge-yellow">Tab Switch</span>
               {% elif log.event_type == 'window_minimize' %}<span class="badge badge-orange">Lost Focus</span>
-              {% elif log.event_type == 'screenshot' %}<span class="badge badge-red">Screenshot</span>
               {% elif log.event_type == 'connected' %}<span class="badge badge-green">● Connected</span>
               {% elif log.event_type == 'disconnected' %}<span class="badge badge-red">● Disconnected</span>
               {% else %}<span class="badge badge-gray">{{ log.event_type }}</span>{% endif %}
@@ -172,8 +170,42 @@
 <!-- RESULTS TAB -->
 <div class="tab-content" data-tab="results">
 
-  {% set pass_pct = exam.passing_score if exam.passing_score is not none else 75 %}
+  <!-- Summary stats — updated by JS -->
+  <div class="stat-cards mb-3" style="margin-bottom:1.25rem;">
+    <div class="stat-card">
+      <div class="stat-label">Total</div>
+      <div class="stat-value blue" id="res-total">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Ongoing</div>
+      <div class="stat-value orange" id="res-ongoing">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Passed</div>
+      <div class="stat-value green" id="res-passed">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Failed</div>
+      <div class="stat-value red" id="res-failed">—</div>
+    </div>
+  </div>
 
+  <!-- Results table — populated by JS -->
+  <div id="results-container">
+    <div class="empty-state" id="results-loading">
+      <div class="empty-state-icon">⏳</div>
+      <div class="empty-state-title">Loading results…</div>
+    </div>
+  </div>
+
+  <!-- Question analysis — populated by JS -->
+  <div id="question-stats-container"></div>
+
+</div>
+
+<!-- keep the old Jinja results/question_stats for the CSV export function -->
+{% if False %}
+  {% set pass_pct = exam.passing_score if exam.passing_score is not none else 75 %}
   {% if results %}
   {% set submitted = results | selectattr('status', 'eq', 'submitted') | list %}
   {% set pass_count = [] %}
@@ -182,21 +214,6 @@
       {% if pass_count.append(1) %}{% endif %}
     {% endif %}
   {% endfor %}
-
-  <div class="stat-cards mb-3" style="margin-bottom:1.25rem;">
-    <div class="stat-card">
-      <div class="stat-label">Total Submissions</div>
-      <div class="stat-value blue">{{ results | length }}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Passed</div>
-      <div class="stat-value green">{{ pass_count | length }}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Failed</div>
-      <div class="stat-value red">{{ submitted | length - pass_count | length }}</div>
-    </div>
-  </div>
 
   <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-bottom:0.75rem;">
     <button onclick="generateResultsReport()" class="btn btn-primary" style="font-size:0.85rem">📄 Generate Report</button>
@@ -291,14 +308,8 @@
   {% endif %}
 
   {% else %}
-  <div class="empty-state">
-    <div class="empty-state-icon">📊</div>
-    <div class="empty-state-title">No submissions yet</div>
-    <div class="empty-state-text">Results will appear here once students submit the exam.</div>
-  </div>
   {% endif %}
-
-</div>
+{% endif %}
 
 <style>
 .monitor-card { transition: border-color 0.3s, opacity 0.3s; }
@@ -371,9 +382,7 @@ function bindTerminateBtn(btn) {
 
 document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
 
-if (IS_ACTIVE) {
-
-  // ── BUILD NEW CARD HTML ──
+// ── BUILD NEW CARD HTML ──
   function buildCard(s, totalQ) {
     const pct = totalQ > 0 ? Math.round((s.answered / totalQ) * 100) : 0;
     const sw = s.tab_switch_count;
@@ -382,11 +391,12 @@ if (IS_ACTIVE) {
     const isConnected = s.connected !== false;
     const dotClass = isConnected ? 'connected' : 'disconnected';
 
+    const safeName = s.full_name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return `
       <div class="monitor-card mb-1 flash-new${isConnected ? '' : ' disconnected-card'}" id="sess-${s.id}" data-connected="${isConnected}">
         <div class="monitor-name">
           <span class="connection-dot ${dotClass}" title="${isConnected ? 'Connected' : 'Disconnected'}"></span>
-          ${s.full_name}
+          ${safeName}
         </div>
         <div class="monitor-progress">
           <div class="flex items-center justify-between mb-1">
@@ -415,10 +425,11 @@ if (IS_ACTIVE) {
 
   // ── UPDATE LOGS TABLE ──
   function updateLogs(logs) {
-    if (!logs || !logs.length) return;
     let tbody = document.getElementById('logs-tbody');
     if (!tbody) {
-      document.getElementById('logs-container').innerHTML = `
+      const container = document.getElementById('logs-container');
+      if (!container) return;
+      container.innerHTML = `
         <div class="card">
           <div class="table-wrap">
           <table>
@@ -429,28 +440,137 @@ if (IS_ACTIVE) {
         </div>`;
       tbody = document.getElementById('logs-tbody');
     }
+    if (!logs || !logs.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted text-sm" style="padding:1rem">No activity yet</td></tr>';
+      return;
+    }
     tbody.innerHTML = logs.map(log => {
       let badge;
       if (log.event_type === 'tab_switch')
         badge = '<span class="badge badge-yellow">Tab Switch</span>';
       else if (log.event_type === 'window_minimize')
         badge = '<span class="badge badge-orange">Lost Focus</span>';
-      else if (log.event_type === 'screenshot')
-        badge = '<span class="badge badge-red">Screenshot</span>';
       else if (log.event_type === 'connected')
         badge = '<span class="badge badge-green">● Connected</span>';
       else if (log.event_type === 'disconnected')
         badge = '<span class="badge badge-red">● Disconnected</span>';
       else
         badge = `<span class="badge badge-gray">${log.event_type}</span>`;
-
-      return `<tr data-name="${log.full_name.toLowerCase()}" data-event="${log.event_type}">
-        <td class="fw-600">${log.full_name}</td>
+      const name = (log.full_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return `<tr data-name="${name.toLowerCase()}" data-event="${log.event_type}">
+        <td class="fw-600">${name}</td>
         <td>${badge}</td>
         <td class="text-sm text-muted font-mono">${log.logged_at}</td>
       </tr>`;
     }).join('');
     applyLogFilters();
+  }
+
+  // ── UPDATE RESULTS TAB ──
+  function updateResults(data) {
+    const results = data.results || [];
+    const passPct = data.passing_score ?? 75;
+    const totalSubmitted = data.total_submitted || 0;
+    const questionStats = data.question_stats || [];
+
+    const passCount = results.filter(r => r.pct !== null && r.pct >= passPct && r.status === 'submitted').length;
+    const failCount = results.filter(r => r.status === 'submitted' && (r.pct === null || r.pct < passPct)).length;
+    const ongoingCount = results.filter(r => r.status === 'ongoing').length;
+    const totalEl = document.getElementById('res-total');
+    const passedEl = document.getElementById('res-passed');
+    const failedEl = document.getElementById('res-failed');
+    if (totalEl) totalEl.textContent = results.length;
+    if (passedEl) passedEl.textContent = passCount;
+    if (failedEl) failedEl.textContent = failCount;
+    const ongoingEl = document.getElementById('res-ongoing');
+    if (ongoingEl) ongoingEl.textContent = ongoingCount;
+
+    const container = document.getElementById('results-container');
+    if (!container) return;
+
+    if (results.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📊</div>
+          <div class="empty-state-title">No submissions yet</div>
+          <div class="empty-state-text">Results will appear here once students submit the exam.</div>
+        </div>`;
+    } else {
+    const rows = results.map(r => {
+        const name = (r.full_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const scoreCell = r.status === 'ongoing'
+          ? '<span class="text-muted text-sm">In progress…</span>'
+          : r.score !== null && r.total_points
+            ? `${parseInt(r.score)} / ${r.total_points}` : '—';
+        const pctCell = r.status === 'ongoing'
+          ? '—'
+          : r.pct !== null
+            ? `<span class="fw-600 ${r.pct >= passPct ? 'text-success' : 'text-danger'}">${r.pct}%</span>` : '—';
+        let statusBadge;
+        if (r.status === 'terminated') statusBadge = '<span class="badge badge-red">Terminated</span>';
+        else if (r.status === 'ongoing') statusBadge = '<span class="badge badge-yellow">● Ongoing</span>';
+        else if (r.pct !== null && r.pct >= passPct) statusBadge = '<span class="badge badge-green">Passed</span>';
+        else statusBadge = '<span class="badge badge-red">Failed</span>';
+        return `<tr>
+          <td class="fw-600">${name}</td>
+          <td>${scoreCell}</td>
+          <td>${pctCell}</td>
+          <td>${statusBadge}</td>
+          <td class="text-sm text-muted">${r.submitted_at || '—'}</td>
+        </tr>`;
+      }).join('');
+      container.innerHTML = `
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-bottom:0.75rem;">
+          <button onclick="generateResultsReport()" class="btn btn-primary" style="font-size:0.85rem">📄 Export CSV</button>
+        </div>
+        <div class="card" style="padding:0">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Student</th><th>Score</th><th>Percentage</th><th>Status</th><th>Submitted</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>`;
+    }
+
+    const qContainer = document.getElementById('question-stats-container');
+    if (qContainer) {
+      if (questionStats.length > 0 && totalSubmitted > 0) {
+        const qRows = questionStats.map(qs => {
+          const barColor = qs.pct >= passPct ? 'var(--accent2)' : qs.pct >= 40 ? '#f7c94f' : 'var(--danger)';
+          const labelClass = qs.pct >= passPct ? 'text-success' : qs.pct >= 40 ? 'text-accent' : 'text-danger';
+          return `<tr>
+            <td class="font-mono text-xs text-muted">${qs.number}</td>
+            <td style="max-width:320px">${qs.question_text}</td>
+            <td class="text-sm text-muted">${qs.section_title || '—'}</td>
+            <td class="font-mono text-sm">${qs.correct_count} / ${qs.total}</td>
+            <td style="min-width:140px">
+              <div style="display:flex;align-items:center;gap:0.5rem">
+                <div style="flex:1;background:var(--border);border-radius:99px;height:8px;overflow:hidden">
+                  <div style="height:100%;border-radius:99px;width:${qs.pct}%;background:${barColor}"></div>
+                </div>
+                <span class="text-sm fw-600 ${labelClass}">${qs.pct}%</span>
+              </div>
+            </td>
+          </tr>`;
+        }).join('');
+        qContainer.innerHTML = `
+          <div class="card mt-3" style="padding:0;overflow:visible">
+            <div style="padding:1.25rem 1.25rem 0.75rem">
+              <div class="card-title mb-1">Question Analysis</div>
+              <div class="text-sm text-muted mb-2">Sorted by most answered correctly — based on ${totalSubmitted} submission(s).</div>
+            </div>
+            <div class="table-wrap">
+              <table style="min-width:480px">
+                <thead><tr><th>#</th><th>Question</th><th>Section</th><th>Correct</th><th>Rate</th></tr></thead>
+                <tbody>${qRows}</tbody>
+              </table>
+            </div>
+          </div>`;
+      } else {
+        qContainer.innerHTML = '';
+      }
+    }
   }
 
   // ── MAIN REFRESH — every 2s ──
@@ -465,14 +585,18 @@ if (IS_ACTIVE) {
       const list = document.getElementById('monitor-list');
       const activeIds = new Set(sessions.map(s => s.id));
 
-      // Update summary
+      // Update summary (only present when exam is active)
       const connectedCount = sessions.filter(s => s.connected !== false).length;
       const disconnectedCount = sessions.filter(s => s.connected === false).length;
-      document.getElementById('count-active').textContent = connectedCount;
-      document.getElementById('count-disconnected').textContent = disconnectedCount;
-      document.getElementById('count-totalq').textContent = totalQ;
+      const countActive = document.getElementById('count-active');
+      const countDisconn = document.getElementById('count-disconnected');
+      const countTotalQ = document.getElementById('count-totalq');
+      if (countActive) countActive.textContent = connectedCount;
+      if (countDisconn) countDisconn.textContent = disconnectedCount;
+      if (countTotalQ) countTotalQ.textContent = totalQ;
 
 
+      if (list) {
       if (sessions.length === 0) {
         if (!document.getElementById('empty-state')) {
           list.innerHTML = `
@@ -550,22 +674,24 @@ if (IS_ACTIVE) {
           }
         });
       }
+      } // end if (list)
 
       updateLogs(data.logs);
+      updateResults(data);
 
       const statusEl = document.getElementById('refresh-status');
       if (statusEl) statusEl.textContent = `↻ ${new Date().toLocaleTimeString()}`;
 
     } catch (e) {
+      console.error('refreshMonitoring error:', e);
       const statusEl = document.getElementById('refresh-status');
       if (statusEl) statusEl.textContent = '⚠ Connection error';
     }
   }
 
-  // Fast refresh: every 2 seconds
-  refreshMonitoring();
-  setInterval(refreshMonitoring, 2000);
-}
+// Fast refresh: every 2 seconds
+refreshMonitoring();
+setInterval(refreshMonitoring, 1000);
 
 // ── LOG FILTERS ──
 function applyLogFilters() {
@@ -596,34 +722,37 @@ function clearLogFilters() {
   applyLogFilters();
 }
 
-// -- GENERATE RESULTS REPORT --
+
 function generateResultsReport() {
   const examTitle = {{ exam.title | tojson }};
   const passPct = {{ exam.passing_score if exam.passing_score is not none else 75 }};
-  const rows = [
-    {% for r in results %}
-    {% set pct = ((r.score / r.total_points) * 100)|int if r.total_points and r.score is not none else 0 %}
-    {
-      student: {{ r.full_name | tojson }},
-      score: {{ (r.score|int|string ~ ' out of ' ~ r.total_points|string) | tojson if r.score is not none else '"\u2014"' }},
-      percentage: {{ (pct|string ~ '%') | tojson if r.score is not none and r.total_points else '"\u2014"' }},
-      status: {% if r.status == 'terminated' %}"Terminated"{% elif r.status == 'ongoing' %}"Ongoing"{% elif pct >= (exam.passing_score if exam.passing_score is not none else 75) %}"Passed"{% else %}"Failed"{% endif %},
-      submitted: {{ (r.submitted_at | string) | tojson if r.submitted_at else '"\u2014"' }}
-    }{% if not loop.last %},{% endif %}
-    {% endfor %}
-  ];
-  const csvHeader = ['Student', 'Score', 'Percentage', 'Status', 'Submitted'];
-  const csvRows = rows.map(r => [
-    `"${r.student}"`, `"${r.score}"`, `"${r.percentage}"`, `"${r.status}"`, `"${r.submitted}"`
-  ].join(','));
-  const csvContent = [csvHeader.join(','), ...csvRows].join('\n');
-  const blob = new Blob([csvContent], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${examTitle.replace(/\s+/g,'_')}_Results.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  fetch(`/api/results/${EXAM_ID}`)
+    .then(r => r.json())
+    .then(data => {
+      const results = data.results || [];
+      const csvHeader = ['Student', 'Score', 'Percentage', 'Status', 'Submitted'];
+      const csvRows = results.map(r => {
+        const score = r.score !== null && r.total_points
+          ? `${parseInt(r.score)} out of ${r.total_points}` : '—';
+        const pct = r.pct !== null ? `${r.pct}%` : '—';
+        let status;
+        if (r.status === 'terminated') status = 'Terminated';
+        else if (r.status === 'ongoing') status = 'Ongoing';
+        else if (r.pct !== null && r.pct >= passPct) status = 'Passed';
+        else status = 'Failed';
+        const submitted = r.submitted_at || '—';
+        return [`"${r.full_name}"`, `"${score}"`, `"${pct}"`, `"${status}"`, `"${submitted}"`].join(',');
+      });
+      const csvContent = [csvHeader.join(','), ...csvRows].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${examTitle.replace(/\s+/g,'_')}_Results.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    })
+    .catch(() => alert('Failed to export results. Please try again.'));
 }
 </script>
 {% endblock %}
