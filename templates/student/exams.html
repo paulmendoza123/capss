@@ -14,9 +14,20 @@
 {% set completed = exams | selectattr('display_status', 'eq', 'completed') | list %}
 
 {% if exams %}
+{% set classes = [] %}
+{% for exam in exams %}
+  {% set class_key = exam.subject_name ~ ' · ' ~ exam.block_name %}
+  {% if class_key not in classes %}{% set _ = classes.append(class_key) %}{% endif %}
+{% endfor %}
 <!-- Search & Filter -->
 <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
   <input type="text" id="examSearch" class="form-control" placeholder="🔍 Search exams..." style="flex:1;min-width:180px;max-width:260px" oninput="filterExams()">
+  <select id="classFilter" class="form-select" style="width:200px;flex-shrink:0" onchange="filterExams()">
+    <option value="all">All Classes</option>
+    {% for class_key in classes | sort %}
+    <option value="{{ class_key | lower }}">{{ class_key }}</option>
+    {% endfor %}
+  </select>
   <select id="examFilter" class="form-select" style="width:160px;flex-shrink:0" onchange="filterExams()">
     <option value="all">All Status</option>
     <option value="active">🟢 Active</option>
@@ -30,7 +41,7 @@
 <div class="exam-section mb-3" data-section="active">
   <div class="text-xs text-muted font-mono mb-2" style="text-transform:uppercase;letter-spacing:.1em">🟢 Active</div>
   {% for exam in active_exams %}
-  <div class="exam-card mb-1 exam-item" data-title="{{ exam.title | lower }}" data-subject="{{ exam.subject_name | lower }}" data-status="{{ exam.display_status }}">
+  <div class="exam-card mb-1 exam-item" data-title="{{ exam.title | lower }}" data-subject="{{ exam.subject_name | lower }}" data-status="{{ exam.display_status }}" data-classkey="{{ (exam.subject_name ~ ' · ' ~ exam.block_name) | lower }}">
     <div class="flex items-center justify-between">
       <div>
         <div class="exam-card-title">{{ exam.title }}</div>
@@ -65,7 +76,7 @@
 <div class="exam-section mb-3" data-section="upcoming">
   <div class="text-xs text-muted font-mono mb-2" style="text-transform:uppercase;letter-spacing:.1em">🕐 Upcoming</div>
   {% for exam in upcoming %}
-  <div class="exam-card mb-1 exam-item" data-title="{{ exam.title | lower }}" data-subject="{{ exam.subject_name | lower }}" data-status="{{ exam.display_status }}">
+  <div class="exam-card mb-1 exam-item" data-title="{{ exam.title | lower }}" data-subject="{{ exam.subject_name | lower }}" data-status="{{ exam.display_status }}" data-classkey="{{ (exam.subject_name ~ ' · ' ~ exam.block_name) | lower }}">
     <div class="exam-card-title">{{ exam.title }}</div>
     <div class="exam-card-meta">
       <span class="exam-meta-item">📚 {{ exam.subject_name }} · {{ exam.block_name }}</span>
@@ -82,7 +93,7 @@
 <div class="exam-section mb-3" data-section="completed">
   <div class="text-xs text-muted font-mono mb-2" style="text-transform:uppercase;letter-spacing:.1em">✅ Completed</div>
   {% for exam in completed %}
-  <div class="exam-card mb-1 exam-item" data-title="{{ exam.title | lower }}" data-subject="{{ exam.subject_name | lower }}" data-status="{{ exam.display_status }}">
+  <div class="exam-card mb-1 exam-item" data-title="{{ exam.title | lower }}" data-subject="{{ exam.subject_name | lower }}" data-status="{{ exam.display_status }}" data-classkey="{{ (exam.subject_name ~ ' · ' ~ exam.block_name) | lower }}">
     <div class="flex items-center justify-between">
       <div>
         <div class="exam-card-title">{{ exam.title }}</div>
@@ -134,6 +145,7 @@
 function filterExams() {
   const search = document.getElementById('examSearch').value.toLowerCase();
   const filter = document.getElementById('examFilter').value;
+  const cls = document.getElementById('classFilter').value;
   const items = document.querySelectorAll('.exam-item');
   const sections = document.querySelectorAll('.exam-section');
   let anyVisible = false;
@@ -142,9 +154,11 @@ function filterExams() {
     const title = item.dataset.title || '';
     const subject = item.dataset.subject || '';
     const status = item.dataset.status || '';
+    const classkey = item.dataset.classkey || '';
     const matchSearch = !search || title.includes(search) || subject.includes(search);
     const matchFilter = filter === 'all' || filter === status;
-    const show = matchSearch && matchFilter;
+    const matchClass = cls === 'all' || classkey === cls;
+    const show = matchSearch && matchFilter && matchClass;
     item.style.display = show ? '' : 'none';
     if (show) anyVisible = true;
   });

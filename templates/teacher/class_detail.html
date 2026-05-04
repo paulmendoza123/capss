@@ -21,7 +21,6 @@
 
 <div class="tabs">
   <button class="tab-btn active" data-tab="exams">📝 Exams</button>
-  <button class="tab-btn" data-tab="results">📊 Results</button>
   <button class="tab-btn" data-tab="students">👥 Students ({{ students|length }})</button>
 </div>
 
@@ -65,41 +64,6 @@
     <div class="empty-state-icon">📝</div>
     <div class="empty-state-title">No exams yet</div>
     <a href="{{ url_for('teacher_create_exam', class_id=cls.id) }}" class="btn btn-primary mt-2">➕ Create Exam</a>
-  </div>
-  {% endif %}
-</div>
-
-<!-- RESULTS TAB -->
-<div class="tab-content" data-tab="results">
-  {% if exams %}
-  {% for exam in exams %}
-  <div class="exam-card mb-1">
-    <div class="flex items-center justify-between flex-wrap gap-1">
-      <div>
-        <div class="exam-card-title">{{ exam.title }}</div>
-        <div class="exam-card-meta">
-          <span class="exam-meta-item">
-            👥 {{ exam.submission_count }} / {{ students|length }} submitted
-          </span>
-          {% if exam.avg_score is not none %}
-          <span class="exam-meta-item">
-            📈 Avg: <span class="fw-600 {% if exam.avg_pct >= (exam.passing_score if exam.passing_score is not none else 75) %}text-success{% else %}text-danger{% endif %}">
-              {{ exam.avg_score }} / {{ exam.total_pts }} ({{ exam.avg_pct }}%)
-            </span>
-          </span>
-          <span class="exam-meta-item text-success">✓ {{ exam.pass_count }} passed</span>
-          <span class="exam-meta-item text-danger">✗ {{ exam.fail_count }} failed</span>
-          {% endif %}
-        </div>
-      </div>
-      <a href="{{ url_for('teacher_exam_results', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">View All Results →</a>
-    </div>
-  </div>
-  {% endfor %}
-  {% else %}
-  <div class="empty-state">
-    <div class="empty-state-icon">📊</div>
-    <div class="empty-state-title">No exams to show results for</div>
   </div>
   {% endif %}
 </div>

@@ -10,8 +10,19 @@
 </div>
 
 {% if exams %}
+{% set classes = [] %}
+{% for exam in exams %}
+  {% set class_key = exam.subject_name ~ ' · ' ~ exam.block_name %}
+  {% if class_key not in classes %}{% set _ = classes.append(class_key) %}{% endif %}
+{% endfor %}
 <div class="flex gap-1 mb-3" style="flex-wrap:wrap;align-items:center">
   <input type="text" id="examSearch" class="form-control" placeholder="🔍 Search exams or class..." style="max-width:260px" oninput="filterExams()">
+  <select id="classFilter" class="form-select" style="max-width:200px" onchange="filterExams()">
+    <option value="all">All Classes</option>
+    {% for class_key in classes | sort %}
+    <option value="{{ class_key | lower }}">{{ class_key }}</option>
+    {% endfor %}
+  </select>
   <select id="statusFilter" class="form-select" style="max-width:160px" onchange="filterExams()">
     <option value="all">All Status</option>
     <option value="upcoming">Upcoming</option>
@@ -39,6 +50,7 @@
         <tr class="exam-row"
             data-title="{{ exam.title | lower }}"
             data-class="{{ (exam.subject_name ~ ' ' ~ exam.block_name) | lower }}"
+            data-classkey="{{ (exam.subject_name ~ ' · ' ~ exam.block_name) | lower }}"
             data-status="{{ exam.status }}">
           <td class="fw-600">{{ exam.title }}</td>
           <td class="text-sm">{{ exam.subject_name }} · {{ exam.block_name }}</td>
@@ -71,12 +83,14 @@
 function filterExams() {
   const search = document.getElementById('examSearch').value.toLowerCase();
   const status = document.getElementById('statusFilter').value;
+  const cls = document.getElementById('classFilter').value;
   const rows = document.querySelectorAll('.exam-row');
   let any = false;
   rows.forEach(r => {
     const matchSearch = !search || r.dataset.title.includes(search) || r.dataset.class.includes(search);
     const matchStatus = status === 'all' || r.dataset.status === status;
-    const show = matchSearch && matchStatus;
+    const matchClass = cls === 'all' || r.dataset.classkey === cls;
+    const show = matchSearch && matchStatus && matchClass;
     r.style.display = show ? '' : 'none';
     if (show) any = true;
   });

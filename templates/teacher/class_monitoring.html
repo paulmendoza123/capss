@@ -49,6 +49,7 @@
         </form>
         {% endif %}
         <a href="{{ url_for('teacher_exam_monitoring', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">🔍 Full View</a>
+        <a href="{{ url_for('teacher_exam_results', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">📊 Results</a>
       </div>
     </div>
 

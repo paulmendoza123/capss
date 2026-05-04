@@ -1236,8 +1236,58 @@ def teacher_exam_monitoring(exam_id):
         WHERE sl.exam_id=?
         ORDER BY sl.logged_at DESC LIMIT 100
     ''', (exam_id,)).fetchall()
+
+    # Results data for the Results tab
+    results = conn.execute('''
+        SELECT u.full_name, u.id as student_id, es.score, es.total_points, es.status, es.submitted_at, es.tab_switch_count
+        FROM exam_sessions es JOIN users u ON es.student_id = u.id
+        WHERE es.exam_id=?
+        ORDER BY es.score DESC
+    ''', (exam_id,)).fetchall()
+
+    submitted_sessions = conn.execute(
+        "SELECT id FROM exam_sessions WHERE exam_id=? AND status='submitted'",
+        (exam_id,)).fetchall()
+    total_submitted = len(submitted_sessions)
+    session_ids = [r['id'] for r in submitted_sessions]
+
+    questions_raw = conn.execute('''
+        SELECT q.id, q.question_text, q.question_type, q.points, q.correct_answer,
+               s.title as section_title, q.order_index, s.order_index as sec_order
+        FROM questions q
+        LEFT JOIN sections s ON q.section_id = s.id
+        WHERE q.exam_id = ?
+        ORDER BY s.order_index, q.order_index
+    ''', (exam_id,)).fetchall()
+
+    question_stats = []
+    for q in questions_raw:
+        if session_ids:
+            correct_count = conn.execute('''
+                SELECT COUNT(*) FROM answers
+                WHERE question_id=? AND session_id IN ({})
+                AND LOWER(TRIM(answer_text)) = LOWER(TRIM(?))
+            '''.format(','.join('?' * len(session_ids))),
+            [q['id']] + session_ids + [q['correct_answer']]).fetchone()[0]
+        else:
+            correct_count = 0
+        pct = round((correct_count / total_submitted * 100)) if total_submitted else 0
+        question_stats.append({
+            'question_text': q['question_text'],
+            'question_type': q['question_type'],
+            'section_title': q['section_title'],
+            'correct_count': correct_count,
+            'total': total_submitted,
+            'pct': pct,
+        })
+    question_stats.sort(key=lambda x: x['pct'], reverse=True)
+    for i, qs in enumerate(question_stats, 1):
+        qs['number'] = i
+
     return render_template('teacher/exam_monitoring.html', exam=exam,
-                           sessions=active_sessions, past_logs=past_logs, total_q=total_q)
+                           sessions=active_sessions, past_logs=past_logs, total_q=total_q,
+                           results=results, question_stats=question_stats,
+                           total_submitted=total_submitted)
 
 @app.route('/teacher/exam/<int:exam_id>/results')
 @role_required('teacher')

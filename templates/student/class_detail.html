@@ -17,7 +17,6 @@
 
 <div class="tabs" id="class-tabs">
   <button class="tab-btn active" data-tab="exams">📝 Exams</button>
-  <button class="tab-btn" data-tab="results">📊 Results</button>
 </div>
 
 <!-- EXAMS TAB -->
@@ -98,7 +97,12 @@
           {% if exam.session_status == 'terminated' %}
             <span class="badge badge-red">Terminated</span>
           {% else %}
-            <span class="badge badge-green">Submitted</span>
+            <div class="flex gap-1 items-center">
+              <span class="badge badge-green">Submitted</span>
+              {% if exam.show_results %}
+              <a href="{{ url_for('student_exam_result', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">View Result →</a>
+              {% endif %}
+            </div>
           {% endif %}
         </div>
       </div>
@@ -133,74 +137,4 @@
   {% endif %}
 </div>
 
-<!-- RESULTS TAB -->
-<div class="tab-content" data-tab="results">
-  {% set has_results = namespace(val=false) %}
-  {% for exam in exams %}
-    {% if exam.session_status == 'submitted' or exam.session_status == 'terminated' %}
-      {% set has_results.val = true %}
-    {% endif %}
-  {% endfor %}
-
-  {% if has_results.val %}
-  <div class="card">
-    <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Exam</th>
-          <th>Score</th>
-          <th>Percentage</th>
-          <th>Status</th>
-          <th>Result</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for exam in exams %}
-        {% if exam.session_status == 'submitted' or exam.session_status == 'terminated' %}
-        <tr>
-          <td class="fw-600">{{ exam.title }}</td>
-          <td class="font-mono">
-            {% if exam.score is not none %}{{ exam.score|int }} / {{ exam.total_points }}{% else %}0 / {{ exam.total_points or '—' }}{% endif %}
-          </td>
-          <td>
-            {% if exam.score is not none and exam.total_points %}
-              {% set pct = (exam.score / exam.total_points * 100)|int %}
-              {% set ep = exam.passing_score if exam.passing_score is not none else 75 %}
-              <span class="{% if pct >= ep %}text-success{% else %}text-danger{% endif %} fw-600">{{ pct }}%</span>
-            {% elif exam.total_points %}
-              <span class="text-danger fw-600">0%</span>
-            {% else %}—{% endif %}
-          </td>
-          <td>
-            {% if exam.session_status == 'terminated' %}
-              <span class="badge badge-red">Terminated</span>
-            {% elif exam.score is not none and exam.total_points and (exam.score / exam.total_points * 100) >= (exam.passing_score if exam.passing_score is not none else 75) %}
-              <span class="badge badge-green">Passed</span>
-            {% else %}
-              <span class="badge badge-red">Failed</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if exam.session_status != 'terminated' and exam.show_results %}
-            <a href="{{ url_for('student_exam_result', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">View →</a>
-            {% else %}
-            <span class="text-muted text-sm">—</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endif %}
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </div>
-  {% else %}
-  <div class="empty-state">
-    <div class="empty-state-icon">📊</div>
-    <div class="empty-state-title">No results yet</div>
-    <div class="empty-state-text">Complete an exam to see your results here.</div>
-  </div>
-  {% endif %}
-</div>
 {% endblock %}
