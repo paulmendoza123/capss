@@ -3,17 +3,6 @@
 {% block topbar_title %}Allowed Teacher Emails{% endblock %}
 {% block content %}
 
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% for cat, msg in messages %}
-  <div class="alert" style="padding:0.75rem 1rem;margin-bottom:1rem;border-radius:8px;
-    background:{% if cat=='error' %}rgba(247,95,95,0.12){% else %}rgba(56,217,169,0.12){% endif %};
-    border:1px solid {% if cat=='error' %}rgba(247,95,95,0.35){% else %}rgba(56,217,169,0.35){% endif %};
-    color:{% if cat=='error' %}#f75f5f{% else %}#38d9a9{% endif %};font-size:0.9rem">
-    {{ msg }}
-  </div>
-  {% endfor %}
-{% endwith %}
-
 <div class="page-header">
   <div>
     <div class="page-title">Allowed Teacher Emails</div>
@@ -21,41 +10,26 @@
   </div>
 </div>
 
-<div class="cards-grid">
-
-  <!-- Add Single Email -->
-  <div class="card">
-    <div class="card-title mb-2">Add Teacher Email</div>
-    <form method="POST" action="{{ url_for('admin_add_teacher_email') }}" class="flex gap-2" style="align-items:flex-end">
-      <div class="form-group" style="flex:1;margin-bottom:0">
-        <label class="form-label">Email Address</label>
-        <input type="email" name="email" class="form-control" placeholder="professor@school.edu" required />
-      </div>
-      <button type="submit" class="btn btn-primary btn-sm" style="height:38px;white-space:nowrap">Add Email</button>
-    </form>
-  </div>
-
-  <!-- Bulk Import -->
-  <div class="card">
-    <div class="card-title mb-2">Bulk Import</div>
-    <form method="POST" action="{{ url_for('admin_bulk_add_teacher_emails') }}">
-      <div class="form-group">
-        <label class="form-label">Paste emails (comma, newline, or semicolon separated)</label>
-        <textarea name="emails_bulk" class="form-control" rows="5"
-                  placeholder="prof1@school.edu, prof2@school.edu&#10;prof3@school.edu"
-                  style="font-family:monospace;font-size:0.85rem;resize:vertical"></textarea>
-      </div>
-      <button type="submit" class="btn btn-primary btn-sm">Import Emails</button>
-    </form>
-  </div>
-
+<!-- Add Emails (single or multiple) -->
+<div class="card" style="margin-bottom:1rem">
+  <div class="card-title mb-2">Add Emails</div>
+  <form method="POST" action="{{ url_for('admin_bulk_add_teacher_emails') }}">
+    <div class="form-group">
+      <label class="form-label">Enter one or more emails (comma, newline, or semicolon separated)</label>
+      <textarea name="emails_bulk" class="form-control" rows="3"
+                placeholder="prof1@school.edu, prof2@school.edu&#10;prof3@school.edu"
+                required
+                style="font-family:monospace;font-size:0.85rem;resize:vertical;text-transform:none !important"></textarea>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Add Emails</button>
+  </form>
 </div>
 
-<!-- Search & Email List -->
-<div class="card mb-2" style="margin-top:1rem">
-  <form method="GET" class="flex gap-2" style="align-items:center">
+<!-- Search -->
+<div class="card mb-2">
+  <form method="GET" class="flex gap-2" style="align-items:center;flex-wrap:wrap">
     <input type="text" name="search" class="form-control" placeholder="Search emails…"
-           value="{{ search }}" style="flex:1;min-width:200px" />
+           value="{{ search }}" style="flex:1;min-width:200px;text-transform:none !important" />
     <button type="submit" class="btn btn-primary btn-sm" style="height:38px">Search</button>
     {% if search %}
     <a href="{{ url_for('admin_allowed_teachers') }}" class="btn btn-sm"
@@ -64,6 +38,7 @@
   </form>
 </div>
 
+<!-- Email List -->
 <div class="card">
   <div class="table-wrap">
     <table>
@@ -80,7 +55,7 @@
           {% for e in emails %}
           <tr>
             <td class="text-muted">{{ loop.index }}</td>
-            <td style="font-family:monospace;font-size:0.9rem">{{ e.email }}</td>
+            <td style="font-family:monospace;font-size:0.9rem;text-transform:none">{{ e.email }}</td>
             <td class="text-muted text-xs">{{ e.added_at[:16] if e.added_at else '—' }}</td>
             <td>
               <form method="POST" action="{{ url_for('admin_delete_teacher_email', email_id=e.id) }}"
