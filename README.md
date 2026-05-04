@@ -73,7 +73,7 @@ Open: **http://localhost:5000**
 
 | Role    | Email              | Password   |
 |---------|--------------------|------------|
-| Admin   | admin@spark.edu    | admin123   |
+| Admin   | admin@spark.edu    | hash  |
 
 > Teachers and students are created via Admin → User Management,
 > or students can self-register at `/signup`.
