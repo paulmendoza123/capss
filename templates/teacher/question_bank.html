@@ -201,7 +201,7 @@
 
     {# Format guide #}
     <div class="qb-modal-section" style="margin-bottom:1rem">
-      <div class="qb-modal-section-title">📋 Required File Format (.txt)</div>
+      <div class="qb-modal-section-title">📋 Required File Format (.json)</div>
       <div style="font-size:0.78rem;color:var(--text2);line-height:1.65;font-family:monospace;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:0.75rem 0.85rem">
         <div style="color:var(--accent);font-weight:700;margin-bottom:0.35rem">Multiple Choice:</div>
         <div>1. Which loop repeats a block of code?</div>
@@ -216,14 +216,14 @@
         <div>Answer: CPU</div>
       </div>
       <div style="font-size:0.75rem;color:var(--text3);margin-top:0.5rem">
-        ℹ️ The group name will be taken from the filename automatically (e.g. <em>Chapter3.txt</em> → <strong>Chapter3</strong>).
+        ℹ️ The group name will be taken from the filename automatically (e.g. <em>Chapter3.json</em> → <strong>Chapter3</strong>).
       </div>
     </div>
 
     <form method="POST" action="{{ url_for('teacher_bank_import_file') }}" enctype="multipart/form-data">
       <div class="form-group" style="margin-bottom:1rem">
-        <label class="form-label">Select .txt File</label>
-        <input type="file" name="import_file" accept=".txt,text/plain" class="form-control"
+        <label class="form-label">Select .json File</label>
+        <input type="file" name="import_file" accept=".json" class="form-control"
                required style="padding:0.45rem 0.65rem;font-size:0.9rem" id="importFileInput"
                onchange="updateImportPreview(this)">
         <div id="importFilename" style="font-size:0.78rem;color:var(--text3);margin-top:0.35rem;display:none">

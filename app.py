@@ -982,7 +982,33 @@ def student_exam_result(exam_id):
 def student_profile():
     conn = get_db()
     user = conn.execute('SELECT * FROM users WHERE id=?', (session['user_id'],)).fetchone()
-    return render_template('student/profile.html', user=user)
+    exam_history = conn.execute('''
+        SELECT es.*, e.title as exam_title, e.status as exam_status,
+               c.subject_name, c.block_name, e.passing_score,
+               CASE WHEN es.total_points > 0
+                    THEN ROUND(es.score * 100.0 / es.total_points, 1)
+                    ELSE 0 END as percentage
+        FROM exam_sessions es
+        JOIN exams e ON es.exam_id = e.id
+        JOIN classes c ON e.class_id = c.id
+        WHERE es.student_id = ?
+        ORDER BY es.started_at DESC
+    ''', (session['user_id'],)).fetchall()
+    # Current enrolled classes
+    enrolled_classes = conn.execute('''
+        SELECT c.*, u.full_name as teacher_name,
+               COUNT(DISTINCT ce2.student_id) as classmate_count,
+               COUNT(DISTINCT e.id) as exam_count
+        FROM class_enrollments ce
+        JOIN classes c ON ce.class_id = c.id
+        JOIN users u ON c.teacher_id = u.id
+        LEFT JOIN class_enrollments ce2 ON c.id = ce2.class_id
+        LEFT JOIN exams e ON c.id = e.class_id
+        WHERE ce.student_id = ?
+        GROUP BY c.id
+        ORDER BY c.is_active DESC, c.created_at DESC
+    ''', (session['user_id'],)).fetchall()
+    return render_template('student/profile.html', user=user, exam_history=exam_history, enrolled_classes=enrolled_classes)
 
 # ─── Teacher Routes ───────────────────────────────────────────────────────────
 
@@ -1846,7 +1872,7 @@ def teacher_bank_add_question():
 @app.route('/teacher/question-bank/import', methods=['POST'])
 @role_required('teacher')
 def teacher_bank_import_file():
-    """Parse an uploaded .txt file and bulk-add questions to the bank."""
+    """Parse an uploaded .json file and bulk-add questions to the bank."""
     import re as _re
     conn = get_db()
     uploaded = request.files.get('import_file')
@@ -1864,7 +1890,7 @@ def teacher_bank_import_file():
     try:
         content = uploaded.read().decode('utf-8', errors='replace')
     except Exception:
-        flash('Could not read file. Make sure it is a plain text (.txt) file.', 'error')
+        flash('Could not read file. Make sure it is a valid (.json) file.', 'error')
         return redirect(url_for('teacher_question_bank'))
 
     # ── Parse questions ──────────────────────────────────────────────────────
@@ -2062,7 +2088,50 @@ def teacher_question_bank():
 def teacher_profile():
     conn = get_db()
     user = conn.execute('SELECT * FROM users WHERE id=?', (session['user_id'],)).fetchone()
-    return render_template('teacher/profile.html', user=user)
+    exam_history = conn.execute('''
+        SELECT e.*, c.subject_name, c.block_name,
+               COUNT(DISTINCT es.id) as total_takers,
+               ROUND(AVG(CASE WHEN es.total_points > 0
+                    THEN es.score * 100.0 / es.total_points ELSE NULL END), 1) as avg_score
+        FROM exams e
+        JOIN classes c ON e.class_id = c.id
+        LEFT JOIN exam_sessions es ON e.id = es.exam_id AND es.status = 'submitted'
+        WHERE c.teacher_id = ?
+        GROUP BY e.id
+        ORDER BY e.created_at DESC
+    ''', (session['user_id'],)).fetchall()
+    # Per-question correct count for bar graph
+    question_stats = conn.execute('''
+        SELECT e.id as exam_id, e.title as exam_title,
+               q.id as q_id, q.question_text, q.question_type, q.correct_answer,
+               COUNT(DISTINCT es.id) as total_answered,
+               SUM(CASE
+                   WHEN q.question_type = 'multiple_choice'
+                        AND UPPER(TRIM(a.answer_text)) = UPPER(TRIM(q.correct_answer)) THEN 1
+                   WHEN q.question_type = 'short_answer'
+                        AND LOWER(TRIM(a.answer_text)) = LOWER(TRIM(q.correct_answer)) THEN 1
+                   ELSE 0
+               END) as correct_count
+        FROM exams e
+        JOIN classes c ON e.class_id = c.id
+        JOIN questions q ON q.exam_id = e.id
+        LEFT JOIN exam_sessions es ON e.id = es.exam_id AND es.status = 'submitted'
+        LEFT JOIN answers a ON a.session_id = es.id AND a.question_id = q.id
+        WHERE c.teacher_id = ?
+        GROUP BY e.id, q.id
+        ORDER BY e.created_at DESC, q.order_index
+    ''', (session['user_id'],)).fetchall()
+    exam_questions = {}
+    for row in question_stats:
+        eid = row['exam_id']
+        if eid not in exam_questions:
+            exam_questions[eid] = {'title': row['exam_title'], 'questions': []}
+        exam_questions[eid]['questions'].append({
+            'text': row['question_text'][:60],
+            'total': row['total_answered'] or 0,
+            'correct': row['correct_count'] or 0,
+        })
+    return render_template('teacher/profile.html', user=user, exam_history=exam_history, exam_questions=exam_questions)
 
 # ─── Admin Routes ─────────────────────────────────────────────────────────────
 
