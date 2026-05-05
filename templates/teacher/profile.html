@@ -39,31 +39,4 @@
   </div>
 </div>
 
-<!-- Per-Question Bar Graph -->
-{% if exam_questions %}
-<div class="page-title mb-2" style="margin-top:2rem">Question Performance</div>
-<div class="page-subtitle mb-2" style="color:var(--text3);font-size:0.85rem">Students who answered correctly per question</div>
-
-{% for exam_id, exam_data in exam_questions.items() %}
-<div class="card" style="margin-bottom:1rem">
-  <div class="card-title mb-2">{{ exam_data.title }}</div>
-  {% for q in exam_data.questions %}
-  <div style="margin-bottom:0.75rem">
-    <div style="display:flex;justify-content:space-between;font-size:0.8rem;margin-bottom:0.25rem">
-      <span class="text-sm" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ q.text }}">Q{{ loop.index }}. {{ q.text }}</span>
-      <span class="fw-600 text-sm" style="margin-left:0.5rem;white-space:nowrap">{{ q.correct }}/{{ q.total }}</span>
-    </div>
-    <div style="background:var(--bg3,#2a2d3a);border-radius:6px;height:22px;overflow:hidden;position:relative">
-      {% set pct = (q.correct * 100 / q.total) if q.total > 0 else 0 %}
-      <div style="height:100%;width:{{ pct }}%;background:{% if pct >= 75 %}var(--accent2,#1db885){% elif pct >= 50 %}var(--accent3,#e07c30){% else %}var(--danger,#e04545){% endif %};border-radius:6px;transition:width 0.5s ease;display:flex;align-items:center;justify-content:flex-end;padding-right:6px">
-        {% if pct > 15 %}<span style="font-size:0.7rem;color:#fff;font-weight:600">{{ pct|round(0)|int }}%</span>{% endif %}
-      </div>
-      {% if pct <= 15 and q.total > 0 %}<span style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:0.7rem;color:var(--text3);font-weight:600">{{ pct|round(0)|int }}%</span>{% endif %}
-    </div>
-  </div>
-  {% endfor %}
-</div>
-{% endfor %}
-{% endif %}
-
 {% endblock %}
