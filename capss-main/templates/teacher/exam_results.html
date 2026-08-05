@@ -1,0 +1,211 @@
+{% extends 'base.html' %}
+{% block title %}Results — {{ exam.title }}{% endblock %}
+{% block topbar_title %}Exam Results{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">{{ exam.title }}</div>
+    <div class="page-subtitle">{{ exam.subject_name }} · {{ exam.block_name }}</div>
+  </div>
+  <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+    {% if results %}
+    <button onclick="generateReport()" class="btn btn-primary" style="font-size:0.85rem">📄 Generate Report</button>
+    {% endif %}
+    <a href="{{ url_for('teacher_class_detail', class_id=exam.class_id) }}" class="btn btn-ghost">← Back to Class</a>
+  </div>
+</div>
+
+{% if results %}
+{% set submitted = results | selectattr('status', 'eq', 'submitted') | list %}
+{% set pass_pct = exam.passing_score if exam.passing_score is not none else 75 %}
+{% set pass_count = [] %}
+{% for r in submitted %}
+  {% if r.total_points and r.score is not none and (r.score / r.total_points * 100) >= pass_pct %}
+    {% if pass_count.append(1) %}{% endif %}
+  {% endif %}
+{% endfor %}
+
+<div class="stat-cards mb-3">
+  <div class="stat-card">
+    <div class="stat-label">Total Submissions</div>
+    <div class="stat-value blue">{{ results | length }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Passed</div>
+    <div class="stat-value green">{{ pass_count | length }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Failed</div>
+    <div class="stat-value red">{{ submitted | length - pass_count | length }}</div>
+  </div>
+</div>
+
+<div class="card" style="padding:0;overflow:visible">
+  <div class="table-wrap">
+    <table style="min-width:540px">
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Score</th>
+          <th>Percentage</th>
+          <th>Status</th>
+          <th>Submitted</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in results %}
+        {% set pct = ((r.score / r.total_points) * 100)|int if r.total_points and r.score is not none else 0 %}
+        <tr>
+          <td class="fw-600">{{ r.full_name }}</td>
+          <td class="font-mono">
+            {% if r.score is not none %}{{ r.score|int }} / {{ r.total_points }}{% else %}—{% endif %}
+          </td>
+          <td>
+            {% if r.score is not none and r.total_points %}
+            <span class="fw-600 {% if pct >= pass_pct %}text-success{% else %}text-danger{% endif %}">{{ pct }}%</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if r.status == 'terminated' %}
+              <span class="badge badge-red">Terminated</span>
+            {% elif r.status == 'ongoing' %}
+              <span class="badge badge-yellow">Ongoing</span>
+            {% elif pct >= pass_pct %}
+              <span class="badge badge-green">Passed</span>
+            {% else %}
+              <span class="badge badge-red">Failed</span>
+            {% endif %}
+          </td>
+          <td class="text-sm text-muted">{{ r.submitted_at or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% if section_stats and total_submitted > 0 %}
+<div class="card mt-3" style="padding:1.25rem">
+  <div class="card-title mb-1">Per-Section Analytics</div>
+  <div class="text-sm text-muted mb-2">Average correctness per exam section, based on {{ total_submitted }} submission(s).</div>
+  <div class="table-wrap">
+    <table style="min-width:420px">
+      <thead>
+        <tr>
+          <th>Section</th>
+          <th>Questions</th>
+          <th>Average Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ss in section_stats %}
+        <tr>
+          <td class="fw-600">{{ ss.section_title }}</td>
+          <td class="font-mono text-sm">{{ ss.question_count }}</td>
+          <td style="min-width:140px">
+            <div style="display:flex;align-items:center;gap:0.5rem">
+              <div style="flex:1;background:var(--border);border-radius:99px;height:8px;overflow:hidden">
+                <div style="height:100%;border-radius:99px;width:{{ ss.avg_pct }}%;
+                  background:{% if ss.avg_pct >= pass_pct %}var(--accent2){% elif ss.avg_pct >= 40 %}#f7c94f{% else %}var(--danger){% endif %}">
+                </div>
+              </div>
+              <span class="text-sm fw-600 {% if ss.avg_pct >= pass_pct %}text-success{% elif ss.avg_pct >= 40 %}text-accent{% else %}text-danger{% endif %}">
+                {{ ss.avg_pct }}%
+              </span>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% if question_stats and total_submitted > 0 %}
+<div class="card mt-3" style="padding:0;overflow:visible">
+  <div style="padding:1.25rem 1.25rem 0.75rem">
+    <div class="card-title mb-1">Question Analysis</div>
+    <div class="text-sm text-muted mb-2">Sorted by most answered correctly — based on {{ total_submitted }} submission(s).</div>
+  </div>
+  <div class="table-wrap">
+    <table style="min-width:480px">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Question</th>
+          <th>Section</th>
+          <th>Correct</th>
+          <th>Rate</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for qs in question_stats %}
+        <tr>
+          <td class="font-mono text-xs text-muted">{{ qs.number }}</td>
+          <td style="max-width:320px">{{ qs.question_text }}</td>
+          <td class="text-sm text-muted">{{ qs.section_title or '—' }}</td>
+          <td class="font-mono text-sm">{{ qs.correct_count }} / {{ qs.total }}</td>
+          <td style="min-width:140px">
+            <div style="display:flex;align-items:center;gap:0.5rem">
+              <div style="flex:1;background:var(--border);border-radius:99px;height:8px;overflow:hidden">
+                <div style="height:100%;border-radius:99px;width:{{ qs.pct }}%;
+                  background:{% if qs.pct >= pass_pct %}var(--accent2){% elif qs.pct >= 40 %}#f7c94f{% else %}var(--danger){% endif %}">
+                </div>
+              </div>
+              <span class="text-sm fw-600 {% if qs.pct >= pass_pct %}text-success{% elif qs.pct >= 40 %}text-accent{% else %}text-danger{% endif %}">
+                {{ qs.pct }}%
+              </span>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-icon">📊</div>
+  <div class="empty-state-title">No submissions yet</div>
+  <div class="empty-state-text">Results will appear here once students submit the exam.</div>
+</div>
+{% endif %}
+
+<script>
+function generateReport() {
+  const examTitle = {{ exam.title | tojson }};
+  const passPct = {{ exam.passing_score if exam.passing_score is not none else 75 }};
+
+  const rows = [
+    {% for r in results %}
+    {% set pct = ((r.score / r.total_points) * 100)|int if r.total_points and r.score is not none else 0 %}
+    {
+      student: {{ r.full_name | tojson }},
+      score: {{ (r.score|int|string ~ ' out of ' ~ r.total_points|string) | tojson if r.score is not none else '"—"' }},
+      percentage: {{ (pct|string ~ '%') | tojson if r.score is not none and r.total_points else '"—"' }},
+      status: {% if r.status == 'terminated' %}"Terminated"{% elif r.status == 'ongoing' %}"Ongoing"{% elif pct >= pass_pct %}"Passed"{% else %}"Failed"{% endif %},
+      submitted: {{ (r.submitted_at | string) | tojson if r.submitted_at else '"—"' }}
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ];
+
+  const csvHeader = ['Student', 'Score', 'Percentage', 'Status', 'Submitted'];
+  const csvRows = rows.map(r => [
+    `"${r.student}"`,
+    `"${r.score}"`,
+    `"${r.percentage}"`,
+    `"${r.status}"`,
+    `"${r.submitted}"`
+  ].join(','));
+  const csvContent = [csvHeader.join(','), ...csvRows].join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${examTitle.replace(/\s+/g,'_')}_Results.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+{% endblock %}

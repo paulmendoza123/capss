@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block title %}My Classes{% endblock %}
+{% block topbar_title %}My Classes{% endblock %}
+{% block topbar_actions %}
+  <a href="{{ url_for('teacher_create_class') }}" class="btn btn-primary btn-sm">➕ Create Class</a>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">My Classes</div>
+    <div class="page-subtitle">Classes you are managing</div>
+  </div>
+</div>
+
+{% if classes %}
+<div class="cards-grid">
+  {% for cls in classes %}
+  <a href="{{ url_for('teacher_class_detail', class_id=cls.id) }}" class="class-card">
+    <div class="class-code">{{ cls.class_code }}</div>
+    <div class="class-name">{{ cls.subject_name }}</div>
+    <div class="class-meta">{{ cls.subject_code }} · {{ cls.block_name }} · {{ cls.year_level }}</div>
+    <div class="class-meta mt-1">👥 {{ cls.student_count }} student(s)</div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-icon">📚</div>
+  <div class="empty-state-title">No classes yet</div>
+  <div class="empty-state-text">Create your first class to get started.</div>
+  <a href="{{ url_for('teacher_create_class') }}" class="btn btn-primary mt-2">➕ Create Class</a>
+</div>
+{% endif %}
+{% endblock %}

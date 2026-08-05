@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+{% block title %}Exam Result{% endblock %}
+{% block head %}
+<style>
+  /* Hide sidebar same as during exam */
+  .sidebar { display: none !important; }
+  .main-content { margin-left: 0 !important; width: 100% !important; }
+  .page-body { max-width: 800px; margin: 0 auto; }
+
+  /* Hide hamburger menu button — no sidebar on result page */
+  .topbar-menu-btn { display: none !important; }
+
+  /* Anti-copy: block text selection on questions and choices */
+  .no-select,
+  .question-text-result,
+  .choices-list,
+  .choice-item {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+
+  /* Mobile result layout */
+  @media (max-width: 768px) {
+    .page-body { padding: 0.75rem; max-width: 100%; }
+
+    /* Page header stacks */
+    .page-header { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+    .page-header .btn { width: 100%; justify-content: center; }
+
+    /* Result score header */
+    .result-header { padding: 1.25rem 1rem; }
+    .result-score { font-size: 2.5rem; }
+
+    /* Card padding */
+    .card { padding: 1rem; }
+    .card-title { font-size: 1rem; }
+
+    /* Question review items */
+    .no-select[style*="padding:1rem 0"] {
+      padding: 0.85rem 0 !important;
+    }
+    .question-text-result { font-size: 0.92rem; line-height: 1.5; }
+
+    /* Choice items in review */
+    .choices-list .choice-item {
+      padding: 0.65rem 0.85rem;
+      gap: 0.5rem;
+      font-size: 0.88rem;
+      min-height: 44px;
+    }
+    .choice-label-badge { flex-shrink: 0; }
+
+    /* Correct/wrong labels */
+    .text-success.text-sm,
+    .text-danger.text-sm,
+    .text-sm[style*="color:#6495ed"] {
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+
+    /* Answer text for open-ended */
+    .text-sm.mt-1 { font-size: 0.88rem; }
+  }
+
+  @media (max-width: 480px) {
+    .result-score { font-size: 2rem; }
+    .page-title { font-size: 1.1rem; }
+    .choice-label-badge { width: 22px; height: 22px; font-size: 0.7rem; }
+  }
+</style>
+{% endblock %}
+{% block topbar_title %}Exam Result{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">{{ exam.title }}</div>
+    <div class="page-subtitle">Exam Result</div>
+  </div>
+  <a href="{{ url_for('student_class_detail', class_id=class_id) }}" class="btn btn-ghost">← Back to Class</a>
+</div>
+
+{% if exam_session.status == 'terminated' and not exam_closed %}
+<div class="result-header">
+  <div style="font-size:3rem;margin-bottom:0.75rem">🚫</div>
+  <div style="font-size:1.2rem;font-weight:700;margin-bottom:0.5rem;color:var(--danger)">Exam Terminated</div>
+  <div class="text-muted">Your exam was terminated. Your score is <strong>0</strong>.</div>
+</div>
+
+{% else %}
+{% set pass_pct = exam.passing_score if exam.passing_score is not none else 75 %}
+{% set pct = ((exam_session.score / exam_session.total_points) * 100)|int if exam_session.total_points else 0 %}
+
+<div class="result-header">
+  <div class="result-score {% if pct >= pass_pct %}pass{% else %}fail{% endif %}">
+    {{ exam_session.score|int }} / {{ exam_session.total_points }}
+  </div>
+  <div style="font-size:1.5rem;font-weight:700;margin-bottom:0.5rem">
+    {{ pct }}% — {% if pct >= pass_pct %}<span class="text-success">PASSED ✓</span>{% else %}<span class="text-danger">FAILED ✗</span>{% endif %}
+  </div>
+</div>
+
+{% if exam_closed and questions %}
+{# Exam has been closed by teacher — show full answer review #}
+<div class="card">
+  <div class="card-title mb-2">Answer Review</div>
+  {% for q in questions %}
+  <div class="no-select" style="padding:1rem 0; border-bottom:1px solid var(--border);">
+    <div class="text-xs text-muted font-mono mb-1">Question {{ q.original_number }} · {{ q.points }} pt(s)</div>
+    <div class="fw-600 mb-1 question-text-result">{{ q.question_text }}</div>
+
+    {% if q.question_type == 'multiple_choice' %}
+      <div class="choices-list" style="gap:0.35rem">
+        {% for choice in q.choices %}
+        <div class="choice-item" style="pointer-events:none;
+          {% if choice.choice_label == q.correct_answer and q.is_correct %}background:rgba(56,217,169,0.15);border-color:var(--accent2);border-width:2px
+          {% elif choice.choice_label == q.correct_answer and not q.is_correct %}background:rgba(100,149,237,0.12);border-color:#6495ed;border-width:2px{% endif %}
+          {% if choice.choice_label == q.student_answer and not q.is_correct %}background:rgba(247,95,95,0.08);border-color:var(--danger){% endif %}">
+          <span class="choice-label-badge">{{ choice.choice_label }}</span>
+          <span>{{ choice.choice_text }}</span>
+          {% if choice.choice_label == q.correct_answer and q.is_correct %}<span class="text-success text-sm">✓ Correct</span>
+          {% elif choice.choice_label == q.correct_answer %}<span class="text-sm" style="color:#6495ed">● Correct answer</span>{% endif %}
+          {% if choice.choice_label == q.student_answer and not q.is_correct %}<span class="text-danger text-sm">✗ Your answer</span>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-sm mt-1">
+        <span class="text-muted">Your answer:</span>
+        <span class="{% if q.is_correct %}text-success{% else %}text-danger{% endif %} fw-600">
+          {{ q.student_answer or '(no answer)' }}
+        </span>
+        {% if not q.is_correct %}
+        <br><span class="text-muted">Correct answer:</span>
+        <span class="text-success fw-600">{{ q.correct_answer }}</span>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
+
+<script>
+  // Anti-copy — mirrors protections used during the exam itself
+  document.addEventListener('contextmenu', e => e.preventDefault());
+  document.addEventListener('copy',        e => e.preventDefault());
+  document.addEventListener('cut',         e => e.preventDefault());
+  document.addEventListener('selectstart', e => {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    e.preventDefault();
+  });
+  document.addEventListener('keydown', e => {
+    const blocked = (
+      (e.ctrlKey || e.metaKey) && ['c', 'x', 'u', 's', 'p', 'a'].includes(e.key.toLowerCase())
+    ) || e.key === 'F12'
+      || (e.ctrlKey && e.shiftKey && ['i', 'j', 'c'].includes(e.key.toLowerCase()));
+    if (blocked) { e.preventDefault(); e.stopPropagation(); }
+  });
+</script>
+
+{% endblock %}

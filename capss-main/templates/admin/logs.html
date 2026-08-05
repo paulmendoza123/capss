@@ -1,0 +1,199 @@
+{% extends 'base.html' %}
+{% block title %}System Logs{% endblock %}
+{% block topbar_title %}System Logs{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">System Logs</div>
+    <div class="page-subtitle">Monitor login activity and suspicious events</div>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="login">🔐 Login History</button>
+  <button class="tab-btn" data-tab="suspicious">⚠️ Suspicious Activity</button>
+</div>
+
+<!-- LOGIN LOGS -->
+<div class="tab-content active" data-tab="login">
+  {% if login_logs %}
+  <!-- Login Filters -->
+  <div class="card mb-2">
+    <div class="flex gap-2" style="flex-wrap:wrap;align-items:center">
+      <input type="text" id="login-search" class="form-control" placeholder="Search by name or email…" style="flex:1;min-width:180px" />
+      <select id="login-result-filter" class="form-select" style="width:auto;min-width:120px">
+        <option value="">All Results</option>
+        <option value="success">Success</option>
+        <option value="failed">Failed</option>
+      </select>
+    </div>
+  </div>
+  <div class="flex gap-2 mb-2" style="flex-wrap:wrap">
+    <span class="badge badge-green" id="login-success-count">0 Successful</span>
+    <span class="badge badge-red" id="login-failed-count">0 Failed</span>
+    <span class="badge badge-gray" id="login-visible-count">Showing all</span>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table id="login-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Email</th>
+            <th>Result</th>
+                        <th>Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in login_logs %}
+          <tr data-name="{{ (log.full_name or '')|lower }}" data-email="{{ log.email|lower }}" data-result="{{ 'success' if log.success else 'failed' }}">
+            <td class="fw-600">{{ log.full_name or '—' }}</td>
+            <td class="font-mono text-sm">{{ log.email }}</td>
+            <td>
+              {% if log.success %}
+                <span class="badge badge-green">Success</span>
+              {% else %}
+                <span class="badge badge-red">Failed</span>
+              {% endif %}
+            </td>
+                        <td class="text-sm text-muted">{{ log.logged_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-state-icon">🔐</div>
+    <div class="empty-state-title">No login records yet</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- SUSPICIOUS ACTIVITY LOGS -->
+<div class="tab-content" data-tab="suspicious">
+  {% if suspicious %}
+  <!-- Suspicious Filters -->
+  <div class="card mb-2">
+    <div class="flex gap-2" style="flex-wrap:wrap;align-items:center">
+      <input type="text" id="sus-search" class="form-control" placeholder="Search by student or exam…" style="flex:1;min-width:180px" />
+      <select id="sus-event-filter" class="form-select" style="width:auto;min-width:140px">
+        <option value="">All Events</option>
+        <option value="tab_switch">Tab Switch</option>
+        <option value="lost_focus">Lost Focus</option>
+      </select>
+    </div>
+  </div>
+  <div class="flex gap-2 mb-2">
+    <span class="badge badge-gray" id="sus-visible-count">Showing all</span>
+  </div>
+  <div class="card">
+    <div class="table-wrap">
+      <table id="sus-table">
+        <thead>
+          <tr>
+            <th>Student</th>
+            <th>Exam</th>
+            <th>Event</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in suspicious %}
+          <tr data-name="{{ log.full_name|lower }}" data-exam="{{ log.exam_title|lower }}" data-event="{{ log.event_type }}">
+            <td class="fw-600">{{ log.full_name }}</td>
+            <td class="text-sm">{{ log.exam_title }}</td>
+            <td>
+              {% if log.event_type == 'tab_switch' %}
+                <span class="badge badge-yellow">Tab Switch</span>
+              {% elif log.event_type == 'lost_focus' or log.event_type == 'window_minimize' or log.event_type == 'window_blur' %}
+                <span class="badge badge-orange">Lost Focus</span>
+              {% else %}
+                <span class="badge badge-gray">{{ log.event_type }}</span>
+              {% endif %}
+            </td>
+            <td class="text-sm text-muted font-mono">{{ log.logged_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-state-icon">⚠️</div>
+    <div class="empty-state-title">No suspicious activity logged</div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+// ── Tab switching ──
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    this.classList.add('active');
+    document.querySelector('.tab-content[data-tab="' + this.dataset.tab + '"]').classList.add('active');
+  });
+});
+
+// ── Login log filters ──
+(function() {
+  const search = document.getElementById('login-search');
+  const resultFilter = document.getElementById('login-result-filter');
+  const rows = document.querySelectorAll('#login-table tbody tr');
+  if (!rows.length) return;
+
+  let sCount = 0, fCount = 0;
+  rows.forEach(r => { r.dataset.result === 'success' ? sCount++ : fCount++; });
+  document.getElementById('login-success-count').textContent = sCount + ' Successful';
+  document.getElementById('login-failed-count').textContent = fCount + ' Failed';
+
+  function filter() {
+    const q = search.value.toLowerCase();
+    const res = resultFilter.value;
+    let vis = 0;
+    rows.forEach(r => {
+      const matchQ = !q || r.dataset.name.includes(q) || r.dataset.email.includes(q);
+      const matchR = !res || r.dataset.result === res;
+      const show = matchQ && matchR;
+      r.style.display = show ? '' : 'none';
+      if (show) vis++;
+    });
+    document.getElementById('login-visible-count').textContent = 'Showing ' + vis + ' of ' + rows.length;
+  }
+  search.addEventListener('input', filter);
+  resultFilter.addEventListener('change', filter);
+  filter();
+})();
+
+// ── Suspicious log filters ──
+(function() {
+  const search = document.getElementById('sus-search');
+  const eventFilter = document.getElementById('sus-event-filter');
+  const rows = document.querySelectorAll('#sus-table tbody tr');
+  if (!rows.length) return;
+
+  function filter() {
+    const q = search.value.toLowerCase();
+    const ev = eventFilter.value;
+    let vis = 0;
+    rows.forEach(r => {
+      const matchQ = !q || r.dataset.name.includes(q) || r.dataset.exam.includes(q);
+      const matchE = !ev || r.dataset.event === ev;
+      const show = matchQ && matchE;
+      r.style.display = show ? '' : 'none';
+      if (show) vis++;
+    });
+    document.getElementById('sus-visible-count').textContent = 'Showing ' + vis + ' of ' + rows.length;
+  }
+  search.addEventListener('input', filter);
+  eventFilter.addEventListener('change', filter);
+  filter();
+})();
+</script>
+{% endblock %}

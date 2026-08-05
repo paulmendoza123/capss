@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}Create Class{% endblock %}
+{% block topbar_title %}Create Class{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-title">Create a New Class</div>
+  <a href="{{ url_for('teacher_home') }}" class="btn btn-ghost">← Back</a>
+</div>
+<div class="card" style="max-width:520px">
+  <form method="POST">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Subject Code</label>
+        <input type="text" name="subject_code" class="form-control" placeholder="e.g. CS101" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Block Name</label>
+        <input type="text" name="block_name" class="form-control" placeholder="e.g. A" required />
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Subject Name</label>
+      <input type="text" name="subject_name" class="form-control" placeholder="e.g. Introduction to Programming" required />
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Program</label>
+        <select name="program" class="form-select" required>
+          <option value="">Select Program</option>
+          {% for p in programs %}
+          <option value="{{ p.code }}">{{ p.code }} — {{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Year Level</label>
+        <select name="year_level" class="form-select" required>
+          <option value="">Select Year</option>
+          <option>1st Year</option>
+          <option>2nd Year</option>
+          <option>3rd Year</option>
+          <option>4th Year</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-hint mb-2">A unique class code will be auto-generated for students to join.</div>
+    <button type="submit" class="btn btn-primary btn-block">Create Class</button>
+  </form>
+</div>
+{% endblock %}

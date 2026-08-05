@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Sign Up as Teacher{% endblock %}
+{% block head %}
+<style>
+  html, html[data-theme="dark"] {
+    --bg: #f0f2f7; --bg2: #ffffff; --bg3: #e8ebf2;
+    --border: #d4d8e8; --border2: #b8bed4;
+    --accent: #3b7de8; --accent2: #1db885; --accent3: #e07c30;
+    --danger: #e04545; --warning: #d4a017;
+    --text: #1a1d2e; --text2: #4a5068; --text3: #8890aa;
+    --card: #ffffff; --card2: #f5f7fc;
+    --shadow: 0 4px 24px rgba(0,0,0,0.08);
+    --shadow-lg: 0 8px 48px rgba(0,0,0,0.14);
+  }
+  .theme-toggle-btn { display: none !important; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="auth-page">
+  <div class="auth-card" style="max-width:480px">
+    <div class="auth-logo">
+      <div class="auth-logo-icon">⚡</div>
+      <div>
+        <div class="auth-logo-text">SPARK</div>
+        <div class="text-xs text-muted font-mono" style="letter-spacing:0.12em">EXAM SYSTEM</div>
+      </div>
+    </div>
+
+    <div class="auth-title">Create a Teacher Account</div>
+    <div class="auth-sub">Register as a teacher to create classes and manage exams.</div>
+
+    <form method="POST">
+      <div class="form-group">
+        <label class="form-label">Full Name</label>
+        <input type="text" name="full_name" class="form-control" placeholder="Juan dela Cruz" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email Address</label>
+        <input type="email" name="email" class="form-control" placeholder="you@school.edu" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input type="password" name="password" class="form-control" placeholder="Minimum 6 characters" required minlength="6" />
+      </div>
+      <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top:0.5rem">
+        Create Teacher Account →
+      </button>
+    </form>
+
+    <div class="auth-footer">
+      Already have an account? <a href="{{ url_for('login') }}">Sign in</a><br>
+      Signing up as a student instead? <a href="{{ url_for('signup') }}">Student sign up</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

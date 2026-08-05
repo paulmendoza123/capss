@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block title %}Data Privacy Statement{% endblock %}
+{% block content %}
+<div style="max-width:760px;margin:0 auto;padding:0.5rem 0 3rem;">
+
+  <div class="mb-4">
+    <div class="fw-700" style="font-size:1.5rem">🔒 Data Privacy Statement</div>
+    <div class="text-muted text-sm mt-1">SPARK Exam Monitoring System</div>
+  </div>
+
+  <div class="card" style="padding:1.5rem;line-height:1.7">
+
+    <p class="text-sm text-muted mb-3">
+      This statement explains what SPARK monitors during an online exam, why it is collected,
+      how long it is kept, and the rights you have over that data. It applies to all students,
+      teachers, and administrators using the system.
+    </p>
+
+    <h3 class="fw-700 mt-3 mb-2">1. What is monitored during an exam</h3>
+    <p>While an exam session is <strong>ongoing</strong>, SPARK may record:</p>
+    <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
+      <li>Tab switches, window/app focus loss, and browser minimizing</li>
+      <li>Exiting fullscreen mode, if the teacher requires fullscreen for that exam</li>
+      <li>Screenshot or screen-recording attempts detected by the browser</li>
+      <li>Connection activity (online/offline heartbeat), so teachers know if you disconnected</li>
+      <li>Timestamps of when you started, answered questions, and submitted</li>
+    </ul>
+    <p>SPARK does <strong>not</strong> access your webcam, microphone, files outside the browser
+      tab, or any other application on your device.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">2. Why this data is collected</h3>
+    <p>This information exists solely to protect academic integrity — helping teachers identify
+      possible cheating during a timed, proctored exam — and to give you a fair, accurate record
+      if your session is ever disputed (e.g., a disconnect during submission).</p>
+
+    <h3 class="fw-700 mt-3 mb-2">3. Who can see it</h3>
+    <p>Monitoring logs for an exam are visible only to the teacher who owns that exam/class and
+      to system administrators. Other students never see your monitoring activity.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">4. How long it is kept</h3>
+    <p>Monitoring logs are retained for as long as the related exam record exists in the system,
+      so results and disputes can be reviewed for that term. Logs are permanently deleted when a
+      teacher or admin deletes the associated exam.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">5. Your consent</h3>
+    <p>Before any monitoring begins, you will be shown a consent screen at the start of each exam.
+      Monitoring does not start until you explicitly agree. If you do not agree, you will not be
+      able to begin that exam, since fair proctoring requires it to be active for all students.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">6. Questions or concerns</h3>
+    <p>If you have questions about how your data is used, please raise them with your teacher or
+      the system administrator before starting an exam.</p>
+
+    <p class="text-sm text-muted mt-4" style="border-top:1px solid rgba(128,128,128,0.2);padding-top:0.75rem">
+      Last updated: this statement is reviewed each academic term.
+    </p>
+  </div>
+
+  <div class="mt-3">
+    <a href="javascript:history.back()" class="btn btn-ghost">← Back</a>
+  </div>
+</div>
+{% endblock %}
