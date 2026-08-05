@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Join a Class{% endblock %}
+{% block topbar_title %}Join a Class{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">Join a Class</div>
+    <div class="page-subtitle">Enter the class code provided by your teacher</div>
+  </div>
+  <div class="page-actions">
+    <a href="{{ url_for('student_home') }}" class="btn btn-ghost">← Back</a>
+  </div>
+</div>
+
+<div class="card" style="max-width:440px">
+  <div class="card-title mb-2">Class Code</div>
+  <form method="POST">
+    <div class="form-group">
+      <label class="form-label">Enter Class Code</label>
+      <input type="text" name="class_code" class="form-control font-mono"
+             placeholder="e.g. CS101-AB123" style="font-size:1.1rem;letter-spacing:0.08em" required />
+      <div class="form-hint">Class codes are provided by your teacher. They are case-insensitive.</div>
+    </div>
+    <button type="submit" class="btn btn-primary btn-block">Join Class</button>
+  </form>
+</div>
+{% endblock %}

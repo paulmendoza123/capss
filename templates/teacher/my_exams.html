@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block title %}My Exams{% endblock %}
+{% block topbar_title %}My Exams{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">My Exams</div>
+    <div class="page-subtitle">All exams across your classes</div>
+  </div>
+</div>
+
+{% if exams %}
+{% set classes = [] %}
+{% for exam in exams %}
+  {% set class_key = exam.subject_name ~ ' · ' ~ exam.block_name %}
+  {% if class_key not in classes %}{% set _ = classes.append(class_key) %}{% endif %}
+{% endfor %}
+<div class="flex gap-1 mb-3" style="flex-wrap:wrap;align-items:center">
+  <input type="text" id="examSearch" class="form-control" placeholder="🔍 Search exams or class..." style="max-width:260px" oninput="filterExams()">
+  <select id="classFilter" class="form-select" style="max-width:200px" onchange="filterExams()">
+    <option value="all">All Classes</option>
+    {% for class_key in classes | sort %}
+    <option value="{{ class_key | lower }}">{{ class_key }}</option>
+    {% endfor %}
+  </select>
+  <select id="statusFilter" class="form-select" style="max-width:160px" onchange="filterExams()">
+    <option value="all">All Status</option>
+    <option value="upcoming">Upcoming</option>
+    <option value="active">Active</option>
+    <option value="completed">Completed</option>
+  </select>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Class</th>
+          <th>Duration</th>
+          <th>Status</th>
+          <th>Submissions</th>
+          <th>Scheduled</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="examTableBody">
+        {% for exam in exams %}
+        <tr class="exam-row"
+            data-title="{{ exam.title | lower }}"
+            data-class="{{ (exam.subject_name ~ ' ' ~ exam.block_name) | lower }}"
+            data-classkey="{{ (exam.subject_name ~ ' · ' ~ exam.block_name) | lower }}"
+            data-status="{{ exam.status }}">
+          <td class="fw-600">{{ exam.title }}</td>
+          <td class="text-sm">{{ exam.subject_name }} · {{ exam.block_name }}</td>
+          <td class="font-mono text-sm">{{ exam.duration_minutes }}m</td>
+          <td>
+            {% if exam.status == 'upcoming' %}<span class="badge badge-gray">Upcoming</span>
+            {% elif exam.status == 'active' %}<span class="badge badge-green">Active</span>
+            {% else %}<span class="badge badge-blue">Completed</span>{% endif %}
+          </td>
+          <td class="font-mono text-sm">{{ exam.session_count }}</td>
+          <td class="text-sm text-muted">{{ exam.scheduled_at or '—' }}</td>
+          <td>
+            <a href="{{ url_for('teacher_exam_detail', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">Open</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<div id="noResults" style="display:none" class="empty-state mt-2">
+  <div class="empty-state-icon">🔍</div>
+  <div class="empty-state-title">No exams found</div>
+  <div class="empty-state-text">Try a different search or filter.</div>
+</div>
+
+<script>
+function filterExams() {
+  const search = document.getElementById('examSearch').value.toLowerCase();
+  const status = document.getElementById('statusFilter').value;
+  const cls = document.getElementById('classFilter').value;
+  const rows = document.querySelectorAll('.exam-row');
+  let any = false;
+  rows.forEach(r => {
+    const matchSearch = !search || r.dataset.title.includes(search) || r.dataset.class.includes(search);
+    const matchStatus = status === 'all' || r.dataset.status === status;
+    const matchClass = cls === 'all' || r.dataset.classkey === cls;
+    const show = matchSearch && matchStatus && matchClass;
+    r.style.display = show ? '' : 'none';
+    if (show) any = true;
+  });
+  document.getElementById('noResults').style.display = any ? 'none' : 'block';
+}
+</script>
+
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-icon">📝</div>
+  <div class="empty-state-title">No exams yet</div>
+  <div class="empty-state-text">Create a class first, then add exams inside it.</div>
+  <a href="{{ url_for('teacher_home') }}" class="btn btn-primary mt-2">Go to Classes</a>
+</div>
+{% endif %}
+{% endblock %}

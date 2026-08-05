@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block title %}User Management{% endblock %}
+{% block topbar_title %}User Management{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">All Users</div>
+    <div class="page-subtitle">{{ users|length }} total accounts</div>
+  </div>
+  <a href="{{ url_for('admin_create_user') }}" class="btn btn-primary">➕ Create User</a>
+</div>
+
+<!-- Search & Filter Bar -->
+<div class="card mb-2">
+  <div class="flex gap-2" style="flex-wrap:wrap;align-items:center">
+    <input type="text" id="user-search" class="form-control" placeholder="Search by name or email…" style="flex:1;min-width:200px" />
+    <select id="role-filter" class="form-select" style="width:auto;min-width:140px">
+      <option value="">All Roles</option>
+      <option value="admin">Admin</option>
+      <option value="teacher">Teacher</option>
+      <option value="student">Student</option>
+    </select>
+    <select id="program-filter" class="form-select" style="width:auto;min-width:160px">
+      <option value="">All Programs</option>
+      {% for u in users %}
+        {% if u.program %}
+          <option value="{{ u.program }}">{{ u.program }}</option>
+        {% endif %}
+      {% endfor %}
+    </select>
+  </div>
+</div>
+
+<!-- Role Summary Badges -->
+<div class="flex gap-2 mb-2" style="flex-wrap:wrap">
+  <span class="badge badge-red" id="count-admin">0 Admins</span>
+  <span class="badge badge-orange" id="count-teacher">0 Teachers</span>
+  <span class="badge badge-blue" id="count-student">0 Students</span>
+  <span class="badge badge-gray" id="count-visible">Showing all</span>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table id="users-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Program</th>
+          <th>Year</th>
+          <th>Joined</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr data-name="{{ u.full_name|lower }}" data-email="{{ u.email|lower }}" data-role="{{ u.role }}" data-program="{{ u.program or '' }}">
+          <td class="fw-600">{{ u.full_name }}</td>
+          <td class="font-mono text-sm">{{ u.email }}</td>
+          <td>
+            {% if u.role == 'admin' %}<span class="badge badge-red">Admin</span>
+            {% elif u.role == 'teacher' %}<span class="badge badge-orange">Teacher</span>
+            {% else %}<span class="badge badge-blue">Student</span>{% endif %}
+          </td>
+          <td class="text-sm">{{ u.program or '—' }}</td>
+          <td class="text-sm">{{ u.year_level or '—' }}</td>
+          <td class="text-sm text-muted">{{ u.created_at[:10] if u.created_at else '—' }}</td>
+          <td>
+            <div class="flex gap-1">
+              <a href="{{ url_for('admin_edit_user', user_id=u.id) }}" class="btn btn-ghost btn-sm">✏️ Edit</a>
+              {% if u.role != 'admin' %}
+              <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}"
+                    onsubmit="return confirm('Delete {{ u.full_name }}? This cannot be undone.')" style="margin:0">
+                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+              </form>
+              {% else %}
+              <span class="text-xs text-muted" style="padding:0.3rem">Protected</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const search = document.getElementById('user-search');
+  const roleFilter = document.getElementById('role-filter');
+  const programFilter = document.getElementById('program-filter');
+  const rows = document.querySelectorAll('#users-table tbody tr');
+  const seen = new Set();
+  document.querySelectorAll('#program-filter option').forEach(opt => {
+    if (opt.value && seen.has(opt.value)) opt.remove();
+    else seen.add(opt.value);
+  });
+  let counts = {admin:0, teacher:0, student:0};
+  rows.forEach(r => { const role = r.dataset.role; if (counts[role] !== undefined) counts[role]++; });
+  document.getElementById('count-admin').textContent = counts.admin + ' Admin' + (counts.admin !== 1 ? 's' : '');
+  document.getElementById('count-teacher').textContent = counts.teacher + ' Teacher' + (counts.teacher !== 1 ? 's' : '');
+  document.getElementById('count-student').textContent = counts.student + ' Student' + (counts.student !== 1 ? 's' : '');
+  function filterTable() {
+    const q = search.value.toLowerCase();
+    const role = roleFilter.value;
+    const prog = programFilter.value;
+    let visible = 0;
+    rows.forEach(r => {
+      const matchSearch = !q || r.dataset.name.includes(q) || r.dataset.email.includes(q);
+      const matchRole = !role || r.dataset.role === role;
+      const matchProg = !prog || r.dataset.program === prog;
+      const show = matchSearch && matchRole && matchProg;
+      r.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    document.getElementById('count-visible').textContent = 'Showing ' + visible + ' of ' + rows.length;
+  }
+  search.addEventListener('input', filterTable);
+  roleFilter.addEventListener('change', filterTable);
+  programFilter.addEventListener('change', filterTable);
+  filterTable();
+})();
+</script>
+{% endblock %}

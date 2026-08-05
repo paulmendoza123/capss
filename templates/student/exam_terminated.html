@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}Exam Terminated{% endblock %}
+{% block head %}
+<style>
+  /* Hide sidebar same as during exam */
+  .sidebar { display: none !important; }
+  .main-content { margin-left: 0 !important; width: 100% !important; }
+  .page-body { max-width: 800px; margin: 0 auto; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="terminated-page">
+  <div class="terminated-card">
+    <div class="terminated-icon">🚫</div>
+    <div class="terminated-title">Your Exam Has Been Terminated</div>
+    <p class="text-muted" style="margin-bottom:1.5rem">
+      Your exam session for <strong>{{ exam.title }}</strong> was terminated due to too many tab switches. You cannot retake this exam.
+    </p>
+    <a href="{{ url_for('student_exams') }}" class="btn btn-ghost">← Back to Exams</a>
+  </div>
+</div>
+{% endblock %}

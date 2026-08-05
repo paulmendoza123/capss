@@ -1,0 +1,189 @@
+{% extends 'base.html' %}
+{% block title %}Exam Analytics{% endblock %}
+{% block topbar_title %}Exam Analytics{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">{{ exam.title }}</div>
+    <div class="page-subtitle">{{ class_info.subject_name }} · {{ class_info.block_name }} · {{ teacher_name }}</div>
+  </div>
+  <a href="{{ url_for('admin_exam_overview') }}" class="btn btn-ghost">← Back to Exams</a>
+</div>
+
+<!-- Exam Stats -->
+<div class="stat-cards mb-3">
+  <div class="stat-card">
+    <div class="stat-label">Total Sessions</div>
+    <div class="stat-value blue">{{ stats.total_sessions }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Submitted</div>
+    <div class="stat-value green">{{ stats.submitted }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Terminated</div>
+    <div class="stat-value red">{{ stats.terminated }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Avg Score</div>
+    <div class="stat-value orange">{{ stats.avg_score }}%</div>
+  </div>
+</div>
+
+<div class="cards-grid">
+  <!-- Score Distribution -->
+  <div class="card">
+    <div class="card-title mb-2">Score Distribution</div>
+    {% if stats.score_ranges %}
+      {% for label, count in stats.score_ranges.items() %}
+      <div class="flex items-center justify-between" style="padding:0.4rem 0;border-bottom:1px solid var(--border)">
+        <span class="text-sm">{{ label }}</span>
+        <span class="fw-600 font-mono">{{ count }} student{{ 's' if count != 1 else '' }}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="text-muted text-sm">No scores available yet.</div>
+    {% endif %}
+  </div>
+
+  <!-- Exam Info -->
+  <div class="card">
+    <div class="card-title mb-2">Exam Details</div>
+    <div class="form-group">
+      <div class="form-label">Duration</div>
+      <div class="font-mono">{{ exam.duration_minutes }} minutes</div>
+    </div>
+    <div class="form-group">
+      <div class="form-label">Status</div>
+      {% if exam.status == 'upcoming' %}<span class="badge badge-gray">Upcoming</span>
+      {% elif exam.status == 'active' %}<span class="badge badge-green">Active</span>
+      {% else %}<span class="badge badge-blue">Completed</span>{% endif %}
+    </div>
+    <div class="form-group">
+      <div class="form-label">Total Questions</div>
+      <div class="font-mono">{{ stats.total_questions }}</div>
+    </div>
+    <div class="form-group">
+      <div class="form-label">Tab Switch Limit</div>
+      <div class="font-mono">{{ exam.tab_switch_limit }}</div>
+    </div>
+    <div class="form-group">
+      <div class="form-label">Scheduled</div>
+      <div class="text-sm text-muted">{{ exam.scheduled_at or 'Not scheduled' }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- Hardest Questions -->
+{% if hard_questions %}
+<div class="card mt-3">
+  <div class="card-title mb-2">Hardest Questions (Lowest Correct Rate)</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Question</th>
+          <th>Type</th>
+          <th>Correct</th>
+          <th>Total Answers</th>
+          <th>Rate</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for q in hard_questions %}
+        <tr>
+          <td class="font-mono text-sm">{{ loop.index }}</td>
+          <td class="text-sm">{{ q.question_text[:80] }}{{ '…' if q.question_text|length > 80 else '' }}</td>
+          <td><span class="badge badge-gray">{{ q.question_type }}</span></td>
+          <td class="font-mono text-sm">{{ q.correct_count }}</td>
+          <td class="font-mono text-sm">{{ q.total_answers }}</td>
+          <td>
+            {% if q.rate < 40 %}<span class="badge badge-red">{{ q.rate }}%</span>
+            {% elif q.rate < 70 %}<span class="badge badge-yellow">{{ q.rate }}%</span>
+            {% else %}<span class="badge badge-green">{{ q.rate }}%</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Student Results -->
+{% if sessions %}
+<div class="card mt-3">
+  <div class="card-title mb-2">Student Results</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Score</th>
+          <th>Status</th>
+          <th>Tab Switches</th>
+          <th>Started</th>
+          <th>Submitted</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sessions %}
+        <tr>
+          <td class="fw-600">{{ s.full_name }}</td>
+          <td class="font-mono">
+            {% if s.score is not none and s.total_points %}
+              {{ s.score|round(1) }} / {{ s.total_points }}
+              <span class="text-xs text-muted">({{ ((s.score / s.total_points) * 100)|round(1) }}%)</span>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if s.status == 'submitted' %}<span class="badge badge-green">Submitted</span>
+            {% elif s.status == 'ongoing' %}<span class="badge badge-yellow">Ongoing</span>
+            {% else %}<span class="badge badge-red">Terminated</span>{% endif %}
+          </td>
+          <td class="font-mono text-sm">{{ s.tab_switch_count }}</td>
+          <td class="text-sm text-muted">{{ s.started_at }}</td>
+          <td class="text-sm text-muted">{{ s.submitted_at or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Suspicious Activity for this Exam -->
+{% if suspicious %}
+<div class="card mt-3">
+  <div class="card-title mb-2">Suspicious Activity</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Event</th>
+          <th>Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in suspicious[:20] %}
+        <tr>
+          <td class="fw-600">{{ log.full_name }}</td>
+          <td>
+            {% if log.event_type == 'tab_switch' %}<span class="badge badge-yellow">Tab Switch</span>
+            {% elif log.event_type == 'lost_focus' or log.event_type == 'window_minimize' or log.event_type == 'window_blur' %}<span class="badge badge-orange">Lost Focus</span>
+            {% else %}<span class="badge badge-gray">{{ log.event_type }}</span>{% endif %}
+          </td>
+          <td class="text-sm text-muted font-mono">{{ log.logged_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

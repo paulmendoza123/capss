@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+{% block title %}{{ cls.subject_name }}{% endblock %}
+{% block topbar_title %}{{ cls.subject_name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">{{ cls.subject_name }}</div>
+    <div class="page-subtitle">{{ cls.subject_code }} · {{ cls.block_name }} · {{ cls.year_level }} · 👤 {{ cls.teacher_name }}</div>
+  </div>
+  <div class="page-actions">
+    <a href="{{ url_for('student_home') }}" class="btn btn-ghost">← Back</a>
+    <form method="POST" action="{{ url_for('student_leave_class', class_id=cls.id) }}" style="display:inline;" onsubmit="return confirm('Are you sure you want to leave this class?');">
+      <button type="submit" class="btn btn-sm" style="background:#e74c3c;color:#fff;">🚪 Leave Class</button>
+    </form>
+  </div>
+</div>
+
+<div class="tabs" id="class-tabs">
+  <button class="tab-btn active" data-tab="exams">📝 Exams</button>
+</div>
+
+<!-- EXAMS TAB -->
+<div class="tab-content active" data-tab="exams">
+  {#
+    Student-first bucketing:
+    - If session_status is submitted or terminated → always show in MY COMPLETED (regardless of exam status)
+    - Else bucket by exam.status: active → Active Now, upcoming → Upcoming, completed → Closed
+  #}
+  {% set my_done    = exams | selectattr('session_status', 'in', ['submitted', 'terminated']) | list %}
+  {% set active_exams = exams | rejectattr('session_status', 'in', ['submitted', 'terminated'])
+                               | selectattr('status', 'eq', 'active') | list %}
+  {% set upcoming   = exams | rejectattr('session_status', 'in', ['submitted', 'terminated'])
+                             | selectattr('status', 'eq', 'upcoming') | list %}
+  {% set closed     = exams | rejectattr('session_status', 'in', ['submitted', 'terminated'])
+                             | selectattr('status', 'eq', 'completed') | list %}
+
+  <!-- Active exams the student hasn't taken yet -->
+  {% if active_exams %}
+  <div class="mb-2">
+    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em">🟢 Active Now</div>
+    {% for exam in active_exams %}
+    <div class="exam-card mb-1">
+      <div class="exam-card-title">{{ exam.title }}</div>
+      <div class="exam-card-meta">
+        <span class="exam-meta-item">⏱ {{ exam.duration_minutes }} min</span>
+        {% if exam.scheduled_at %}<span class="exam-meta-item">📅 {{ exam.scheduled_at }}</span>{% endif %}
+      </div>
+      {% if exam.session_status == 'ongoing' %}
+      <a href="{{ url_for('student_take_exam', exam_id=exam.id) }}" class="btn btn-success btn-sm">Continue →</a>
+      {% else %}
+      <button type="button" class="btn btn-success btn-sm" onclick="promptCode({{ exam.id }}, '{{ url_for('student_take_exam', exam_id=exam.id) }}')">Take Exam →</button>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Upcoming exams the student hasn't taken yet -->
+  {% if upcoming %}
+  <div class="mb-2">
+    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em">🕐 Upcoming</div>
+    {% for exam in upcoming %}
+    <div class="exam-card mb-1">
+      <div class="exam-card-title">{{ exam.title }}</div>
+      <div class="exam-card-meta">
+        <span class="exam-meta-item">⏱ {{ exam.duration_minutes }} min</span>
+        {% if exam.scheduled_at %}<span class="exam-meta-item">📅 {{ exam.scheduled_at }}</span>{% endif %}
+      </div>
+      <span class="badge badge-gray">Not yet open</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Exams the student has finished (submitted or terminated) — always here regardless of exam status -->
+  {% if my_done %}
+  <div class="mb-2">
+    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em">✅ Completed</div>
+    {% for exam in my_done %}
+    <div class="exam-card mb-1">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="exam-card-title">{{ exam.title }}</div>
+          <div class="exam-card-meta">
+            <span class="exam-meta-item">⏱ {{ exam.duration_minutes }} min</span>
+            {% if exam.score is not none and exam.total_points %}
+            {% set ep = exam.passing_score if exam.passing_score is not none else 75 %}
+            <span class="exam-meta-item fw-600 {% if (exam.score / exam.total_points * 100) >= ep %}text-success{% else %}text-danger{% endif %}">
+              {{ exam.score|int }}/{{ exam.total_points }} ({{ ((exam.score / exam.total_points) * 100)|int }}%)
+            </span>
+            {% elif exam.session_status == 'terminated' and exam.total_points %}
+            <span class="exam-meta-item fw-600 text-danger">0/{{ exam.total_points }} (0%)</span>
+            {% endif %}
+          </div>
+        </div>
+        <div>
+          {% if exam.session_status == 'terminated' %}
+            <span class="badge badge-red">Terminated</span>
+          {% else %}
+            <div class="flex gap-1 items-center">
+              <span class="badge badge-green">Submitted</span>
+              {% if exam.show_results %}
+              <a href="{{ url_for('student_exam_result', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">View Result →</a>
+              {% endif %}
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Exams closed by teacher that the student never took -->
+  {% if closed %}
+  <div class="mb-2">
+    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em">🔒 Closed</div>
+    {% for exam in closed %}
+    <div class="exam-card mb-1">
+      <div class="exam-card-title">{{ exam.title }}</div>
+      <div class="exam-card-meta">
+        <span class="exam-meta-item">⏱ {{ exam.duration_minutes }} min</span>
+        {% if exam.scheduled_at %}<span class="exam-meta-item">📅 {{ exam.scheduled_at }}</span>{% endif %}
+      </div>
+      <span class="badge badge-gray">Closed</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if not exams %}
+  <div class="empty-state">
+    <div class="empty-state-icon">📝</div>
+    <div class="empty-state-title">No exams yet</div>
+    <div class="empty-state-text">Your teacher hasn't created any exams for this class.</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

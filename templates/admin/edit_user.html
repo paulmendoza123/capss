@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}Edit User{% endblock %}
+{% block topbar_title %}Edit User{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div class="page-title">Edit User</div>
+  <a href="{{ url_for('admin_users') }}" class="btn btn-ghost">← Back</a>
+</div>
+
+<div class="card" style="max-width:520px">
+  <form method="POST">
+    <div class="form-group">
+      <label class="form-label">Full Name</label>
+      <input type="text" name="full_name" class="form-control" value="{{ user.full_name }}" required />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Email Address</label>
+      <input type="email" name="email" class="form-control" value="{{ user.email }}" required />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Role</label>
+      <select name="role" class="form-select" id="role-select" required>
+        <option value="teacher" {% if user.role == 'teacher' %}selected{% endif %}>Teacher</option>
+        <option value="student" {% if user.role == 'student' %}selected{% endif %}>Student</option>
+        <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
+      </select>
+    </div>
+    <div id="student-fields" style="display:{{ 'block' if user.role == 'student' else 'none' }}">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Program</label>
+          <select name="program" class="form-select">
+            <option value="">Select Program</option>
+            {% for p in programs %}
+            <option value="{{ p.code }}" {% if user.program == p.code %}selected{% endif %}>{{ p.code }} — {{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Year Level</label>
+          <select name="year_level" class="form-select">
+            <option value="">Select Year</option>
+            <option {% if user.year_level == '1st Year' %}selected{% endif %}>1st Year</option>
+            <option {% if user.year_level == '2nd Year' %}selected{% endif %}>2nd Year</option>
+            <option {% if user.year_level == '3rd Year' %}selected{% endif %}>3rd Year</option>
+            <option {% if user.year_level == '4th Year' %}selected{% endif %}>4th Year</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary btn-block">Save Changes</button>
+  </form>
+
+  <!-- Password Reset Section — hidden when admin is editing their own account -->
+  {% if not is_self %}
+  <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border)">
+    <div class="card-title mb-1">Reset Password</div>
+    <form method="POST" action="{{ url_for('admin_reset_password', user_id=user.id) }}" onsubmit="return confirm('Reset password for {{ user.full_name }}? The new password will be shown once.')">
+      <div class="form-group">
+        <label class="form-label">New Password</label>
+        <input type="text" name="new_password" class="form-control font-mono" placeholder="Enter new password" required minlength="6" />
+      </div>
+      <button type="submit" class="btn btn-danger btn-sm">🔑 Save New Password</button>
+    </form>
+  </div>
+  {% else %}
+  <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border)">
+    <div class="card-title mb-1">Change Password</div>
+    <div class="text-sm text-muted">To change your own password, go to
+      <a href="{{ url_for('admin_profile') }}" style="color:var(--accent)">My Profile</a>.
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  document.getElementById('role-select').addEventListener('change', function () {
+    document.getElementById('student-fields').style.display =
+      this.value === 'student' ? 'block' : 'none';
+  });
+</script>
+{% endblock %}
