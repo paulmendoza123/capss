@@ -83,6 +83,43 @@
     </table>
   </div>
 </div>
+{% if section_stats and total_submitted > 0 %}
+<div class="card mt-3" style="padding:1.25rem">
+  <div class="card-title mb-1">Per-Section Analytics</div>
+  <div class="text-sm text-muted mb-2">Average correctness per exam section, based on {{ total_submitted }} submission(s).</div>
+  <div class="table-wrap">
+    <table style="min-width:420px">
+      <thead>
+        <tr>
+          <th>Section</th>
+          <th>Questions</th>
+          <th>Average Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ss in section_stats %}
+        <tr>
+          <td class="fw-600">{{ ss.section_title }}</td>
+          <td class="font-mono text-sm">{{ ss.question_count }}</td>
+          <td style="min-width:140px">
+            <div style="display:flex;align-items:center;gap:0.5rem">
+              <div style="flex:1;background:var(--border);border-radius:99px;height:8px;overflow:hidden">
+                <div style="height:100%;border-radius:99px;width:{{ ss.avg_pct }}%;
+                  background:{% if ss.avg_pct >= pass_pct %}var(--accent2){% elif ss.avg_pct >= 40 %}#f7c94f{% else %}var(--danger){% endif %}">
+                </div>
+              </div>
+              <span class="text-sm fw-600 {% if ss.avg_pct >= pass_pct %}text-success{% elif ss.avg_pct >= 40 %}text-accent{% else %}text-danger{% endif %}">
+                {{ ss.avg_pct }}%
+              </span>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 {% if question_stats and total_submitted > 0 %}
 <div class="card mt-3" style="padding:0;overflow:visible">
   <div style="padding:1.25rem 1.25rem 0.75rem">

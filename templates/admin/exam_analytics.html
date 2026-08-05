@@ -74,6 +74,37 @@
   </div>
 </div>
 
+<!-- Per-Section Analytics -->
+{% if section_stats %}
+<div class="card mt-3">
+  <div class="card-title mb-2">Per-Section Analytics</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Section</th>
+          <th>Questions</th>
+          <th>Average Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ss in section_stats %}
+        <tr>
+          <td class="fw-600 text-sm">{{ ss.section_title }}</td>
+          <td class="font-mono text-sm">{{ ss.question_count }}</td>
+          <td>
+            {% if ss.avg_pct < 40 %}<span class="badge badge-red">{{ ss.avg_pct }}%</span>
+            {% elif ss.avg_pct < 70 %}<span class="badge badge-yellow">{{ ss.avg_pct }}%</span>
+            {% else %}<span class="badge badge-green">{{ ss.avg_pct }}%</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <!-- Hardest Questions -->
 {% if hard_questions %}
 <div class="card mt-3">

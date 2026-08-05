@@ -64,7 +64,9 @@
           {% endfor %}
         </div>
         {% elif q.question_type == 'short_answer' %}
-        <div class="text-sm text-muted mt-1">Answer: <span class="text-success fw-600">{{ q.correct_answer }}</span></div>
+        <div class="text-sm text-muted mt-1">Answer: <span class="text-success fw-600">{{ q.correct_answer }}</span>
+          {% if q.case_sensitive %}<span class="badge badge-gray text-xs" style="margin-left:0.4rem" title="Exact case must match">Aa Case-sensitive</span>{% endif %}
+        </div>
         {% endif %}
 
         <div class="flex gap-1 mt-1">
@@ -113,6 +115,12 @@
               <div class="form-group">
                 <label class="form-label">Correct Answer</label>
                 <input type="text" name="correct_answer" class="form-control" value="{{ q.correct_answer }}" placeholder="Expected answer" />
+              </div>
+              <div class="form-group">
+                <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+                  <input type="checkbox" name="case_sensitive" value="1" {% if q.case_sensitive %}checked{% endif %} />
+                  Case-sensitive (exact case must match, e.g. "Manila" ≠ "manila")
+                </label>
               </div>
               {% endif %}
               <div class="modal-footer">
@@ -266,6 +274,12 @@
           <div class="form-group">
             <label class="form-label">Correct Answer</label>
             <input type="text" name="correct_answer" class="form-control" placeholder="Expected answer" />
+          </div>
+          <div class="form-group">
+            <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+              <input type="checkbox" name="case_sensitive" value="1" />
+              Case-sensitive (exact case must match, e.g. "Manila" ≠ "manila")
+            </label>
           </div>
           {% endif %}
           <button type="submit" class="btn btn-success btn-sm">+ Add Question</button>

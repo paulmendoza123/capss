@@ -9,6 +9,34 @@
   </div>
 </div>
 
+<!-- Separation of Results: filter which exams' results are shown, by program / year level / section -->
+<div class="card mb-2">
+  <div class="text-xs text-muted mb-1 fw-600">Filter Results</div>
+  <form method="GET" class="flex gap-2" style="flex-wrap:wrap;align-items:center">
+    <select name="program" class="form-select" style="width:auto;min-width:160px" onchange="this.form.submit()">
+      <option value="">All Programs</option>
+      {% for p in programs %}
+      <option value="{{ p }}" {% if f_program == p %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+    <select name="year_level" class="form-select" style="width:auto;min-width:160px" onchange="this.form.submit()">
+      <option value="">All Year Levels</option>
+      {% for y in year_levels %}
+      <option value="{{ y }}" {% if f_year_level == y %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+    <select name="section" class="form-select" style="width:auto;min-width:160px" onchange="this.form.submit()">
+      <option value="">All Sections</option>
+      {% for s in sections %}
+      <option value="{{ s }}" {% if f_section == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+    {% if f_program or f_year_level or f_section %}
+    <a href="{{ url_for('admin_exam_overview') }}" class="btn btn-ghost btn-sm">✕ Clear Filters</a>
+    {% endif %}
+  </form>
+</div>
+
 {% if exams %}
 <div class="card mb-2">
   <div class="flex gap-2" style="flex-wrap:wrap;align-items:center">
@@ -35,6 +63,8 @@
           <th>Title</th>
           <th>Teacher</th>
           <th>Class</th>
+          <th>Program</th>
+          <th>Year Level</th>
           <th>Duration</th>
           <th>Status</th>
           <th>Sessions</th>
@@ -48,6 +78,8 @@
           <td class="fw-600">{{ exam.title }}</td>
           <td class="text-sm">{{ exam.teacher_name }}</td>
           <td class="text-sm">{{ exam.subject_name }} · {{ exam.block_name }}</td>
+          <td class="text-sm text-muted">{{ exam.program }}</td>
+          <td class="text-sm text-muted">{{ exam.year_level }}</td>
           <td class="font-mono text-sm">{{ exam.duration_minutes }}m</td>
           <td>
             {% if exam.status == 'upcoming' %}<span class="badge badge-gray">Upcoming</span>
@@ -97,8 +129,13 @@
 {% else %}
 <div class="empty-state">
   <div class="empty-state-icon">📝</div>
+  {% if f_program or f_year_level or f_section %}
+  <div class="empty-state-title">No exams match this filter</div>
+  <div class="empty-state-text">Try a different program, year level, or section — or clear the filter above.</div>
+  {% else %}
   <div class="empty-state-title">No exams yet</div>
   <div class="empty-state-text">Exams created by teachers will appear here.</div>
+  {% endif %}
 </div>
 {% endif %}
 {% endblock %}

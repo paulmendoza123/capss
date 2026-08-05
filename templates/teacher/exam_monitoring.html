@@ -127,6 +127,8 @@
       <option value="">All Events</option>
       <option value="tab_switch">Tab Switch</option>
       <option value="window_minimize">Lost Focus</option>
+      <option value="fullscreen_exit">Exited Fullscreen</option>
+      <option value="screenshot">Screenshot Attempt</option>
       <option value="connected">Connected</option>
       <option value="disconnected">Disconnected</option>
     </select>
@@ -147,8 +149,11 @@
             <td>
               {% if log.event_type == 'tab_switch' %}<span class="badge badge-yellow">Tab Switch</span>
               {% elif log.event_type == 'window_minimize' %}<span class="badge badge-orange">Lost Focus</span>
+              {% elif log.event_type == 'fullscreen_exit' %}<span class="badge badge-red">🖥️ Exited Fullscreen</span>
+              {% elif log.event_type == 'screenshot' %}<span class="badge badge-red">📸 Screenshot Attempt</span>
               {% elif log.event_type == 'connected' %}<span class="badge badge-green">● Connected</span>
               {% elif log.event_type == 'disconnected' %}<span class="badge badge-red">● Disconnected</span>
+              {% elif log.event_type == 'consent_given' %}<span class="badge badge-green">✓ Consented to Monitoring</span>
               {% else %}<span class="badge badge-gray">{{ log.event_type }}</span>{% endif %}
             </td>
             <td class="text-sm text-muted font-mono">{{ log.logged_at }}</td>
@@ -450,10 +455,16 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
         badge = '<span class="badge badge-yellow">Tab Switch</span>';
       else if (log.event_type === 'window_minimize')
         badge = '<span class="badge badge-orange">Lost Focus</span>';
+      else if (log.event_type === 'fullscreen_exit')
+        badge = '<span class="badge badge-red">🖥️ Exited Fullscreen</span>';
+      else if (log.event_type === 'screenshot')
+        badge = '<span class="badge badge-red">📸 Screenshot Attempt</span>';
       else if (log.event_type === 'connected')
         badge = '<span class="badge badge-green">● Connected</span>';
       else if (log.event_type === 'disconnected')
         badge = '<span class="badge badge-red">● Disconnected</span>';
+      else if (log.event_type === 'consent_given')
+        badge = '<span class="badge badge-green">✓ Consented to Monitoring</span>';
       else
         badge = `<span class="badge badge-gray">${log.event_type}</span>`;
       const name = (log.full_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');

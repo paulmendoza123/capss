@@ -247,6 +247,13 @@ def init_db():
     except Exception:
         pass  # Column already exists
 
+    # Migration: add fullscreen_required for fullscreen-mode enforcement
+    try:
+        conn.execute('ALTER TABLE exams ADD COLUMN fullscreen_required INTEGER DEFAULT 0')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
     # Back-fill exam_code for any exams that don't have one yet
     try:
         import random, string
@@ -337,6 +344,25 @@ def init_db():
     # Migration: add last_seen to exam_sessions for connection tracking
     try:
         conn.execute('ALTER TABLE exam_sessions ADD COLUMN last_seen TIMESTAMP')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
+    # Migration: add consent tracking to exam_sessions (User Consent & Data Privacy)
+    try:
+        conn.execute('ALTER TABLE exam_sessions ADD COLUMN consent_given INTEGER DEFAULT 0')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+    try:
+        conn.execute('ALTER TABLE exam_sessions ADD COLUMN consent_at TIMESTAMP')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
+    # Migration: add case_sensitive toggle to questions (for short-answer grading)
+    try:
+        conn.execute('ALTER TABLE questions ADD COLUMN case_sensitive INTEGER DEFAULT 0')
         conn.commit()
     except Exception:
         pass  # Column already exists
@@ -802,7 +828,17 @@ def student_take_exam(exam_id):
                 if ans.upper() == (q['correct_answer'] or '').upper():
                     score += q['points']
             else:
-                if ans.lower() == (q['correct_answer'] or '').lower():
+                # Short answer: respect the per-question case-sensitivity toggle.
+                # Default (case_sensitive not set / 0) keeps the original case-insensitive
+                # comparison so existing questions/behavior are unaffected.
+                try:
+                    is_case_sensitive = bool(q['case_sensitive'])
+                except (IndexError, KeyError):
+                    is_case_sensitive = False
+                if is_case_sensitive:
+                    if ans.strip() == (q['correct_answer'] or '').strip():
+                        score += q['points']
+                elif ans.lower() == (q['correct_answer'] or '').lower():
                     score += q['points']
 
         conn.execute('''
@@ -1376,8 +1412,33 @@ def teacher_exam_results(exam_id):
     for i, qs in enumerate(question_stats, 1):
         qs['number'] = i
 
+    # Per-Section Analytics: aggregate the question stats above by exam section
+    # (e.g. "Section A: Multiple Choice"), so a teacher can see which section
+    # students struggled with overall, not just individual questions.
+    section_order = []
+    section_agg = {}
+    for q in questions_raw:
+        title = q['section_title'] or 'Untitled Section'
+        if title not in section_agg:
+            section_agg[title] = {'section_title': title, 'question_count': 0, 'pct_sum': 0}
+            section_order.append(title)
+        section_agg[title]['question_count'] += 1
+    for qs in question_stats:
+        title = qs['section_title'] or 'Untitled Section'
+        section_agg[title]['pct_sum'] += qs['pct']
+    section_stats = []
+    for title in section_order:
+        s = section_agg[title]
+        avg_pct = round(s['pct_sum'] / s['question_count']) if s['question_count'] else 0
+        section_stats.append({
+            'section_title': title,
+            'question_count': s['question_count'],
+            'avg_pct': avg_pct,
+        })
+
     return render_template('teacher/exam_results.html', exam=exam, results=results,
-                           question_stats=question_stats, total_submitted=total_submitted)
+                           question_stats=question_stats, total_submitted=total_submitted,
+                           section_stats=section_stats)
 
 @app.route('/teacher/exam/<int:exam_id>/toggle-status', methods=['POST'])
 @role_required('teacher')
@@ -1481,6 +1542,7 @@ def teacher_exam_settings(exam_id):
         randomize = 1 if request.form.get('randomize_questions') else 0
         tab_switch_enabled = 1 if request.form.get('tab_switch_enabled') else 0
         tab_limit = request.form.get('tab_switch_limit', 3, type=int) if tab_switch_enabled else 0
+        fullscreen_required = 1 if request.form.get('fullscreen_required') else 0
         passing_score = request.form.get('passing_score', 75, type=int)
         status = request.form.get('status', 'upcoming')
         # Track manually_closed so the auto-scheduler doesn't re-open a teacher-closed exam
@@ -1504,23 +1566,23 @@ def teacher_exam_settings(exam_id):
         if status == 'active' and existing_status != 'active':
             conn.execute('''
                 UPDATE exams SET title=?, duration_minutes=?, scheduled_at=?, show_results=?,
-                randomize_questions=?, tab_switch_limit=?, tab_switch_enabled=?, status=?, passing_score=?,
+                randomize_questions=?, tab_switch_limit=?, tab_switch_enabled=?, fullscreen_required=?, status=?, passing_score=?,
                 manually_closed=0, activated_at=strftime('%Y-%m-%d %H:%M:%S','now','localtime') WHERE id=?
-            ''', (title, duration, new_scheduled_at, show_results, randomize, tab_limit, tab_switch_enabled, status, passing_score, exam_id))
+            ''', (title, duration, new_scheduled_at, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, status, passing_score, exam_id))
         elif status == 'upcoming' and existing_status == 'active':
             # Clear activated_at on close so next open always gets a fresh timer
             conn.execute('''
                 UPDATE exams SET title=?, duration_minutes=?, scheduled_at=?, show_results=?,
-                randomize_questions=?, tab_switch_limit=?, tab_switch_enabled=?, status=?, passing_score=?,
+                randomize_questions=?, tab_switch_limit=?, tab_switch_enabled=?, fullscreen_required=?, status=?, passing_score=?,
                 manually_closed=1, activated_at=NULL WHERE id=?
-            ''', (title, duration, new_scheduled_at, show_results, randomize, tab_limit, tab_switch_enabled, status, passing_score, exam_id))
+            ''', (title, duration, new_scheduled_at, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, status, passing_score, exam_id))
         else:
             # Status unchanged — still save all fields including manually_closed reset if schedule cleared
             conn.execute('''
                 UPDATE exams SET title=?, duration_minutes=?, scheduled_at=?, show_results=?,
-                randomize_questions=?, tab_switch_limit=?, tab_switch_enabled=?, status=?, passing_score=?,
+                randomize_questions=?, tab_switch_limit=?, tab_switch_enabled=?, fullscreen_required=?, status=?, passing_score=?,
                 manually_closed=? WHERE id=?
-            ''', (title, duration, new_scheduled_at, show_results, randomize, tab_limit, tab_switch_enabled, status, passing_score, manually_closed_val, exam_id))
+            ''', (title, duration, new_scheduled_at, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, status, passing_score, manually_closed_val, exam_id))
         conn.commit()
         flash('Settings saved.', 'success')
         redirect_to = request.form.get('redirect_to')
@@ -1623,6 +1685,7 @@ def teacher_add_question(section_id):
     q_type = sec['section_type']
     points = request.form.get('points', 1, type=int)
     correct = request.form.get('correct_answer', '').strip()
+    case_sensitive = 1 if request.form.get('case_sensitive') else 0
     if q_text:
         count = conn.execute('SELECT COUNT(*) FROM questions WHERE section_id=?', (section_id,)).fetchone()[0]
         # Use form-provided group; if none, auto-assign the exam's own bank group
@@ -1641,9 +1704,9 @@ def teacher_add_question(section_id):
                 bank_group_id = grp_cur.lastrowid
                 conn.execute('UPDATE exams SET bank_group_id=? WHERE id=?', (bank_group_id, exam_id))
         cur = conn.execute('''
-            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, bank_group_id)
-            VALUES (?,?,?,?,?,?,?,?)
-        ''', (exam_id, section_id, q_text, q_type, points, correct, count, bank_group_id))
+            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, bank_group_id, case_sensitive)
+            VALUES (?,?,?,?,?,?,?,?,?)
+        ''', (exam_id, section_id, q_text, q_type, points, correct, count, bank_group_id, case_sensitive))
         q_id = cur.lastrowid
         if q_type == 'multiple_choice':
             for label in ['A', 'B', 'C', 'D']:
@@ -1699,8 +1762,9 @@ def teacher_edit_question(question_id):
     correct = request.form.get('correct_answer', '').strip()
     points = request.form.get('points', 1, type=int)
     bank_group_id = request.form.get('bank_group_id') or None
-    conn.execute('UPDATE questions SET question_text=?, correct_answer=?, points=?, bank_group_id=? WHERE id=?',
-                 (q_text, correct, points, bank_group_id, question_id))
+    case_sensitive = 1 if request.form.get('case_sensitive') else 0
+    conn.execute('UPDATE questions SET question_text=?, correct_answer=?, points=?, bank_group_id=?, case_sensitive=? WHERE id=?',
+                 (q_text, correct, points, bank_group_id, case_sensitive, question_id))
     if q['question_type'] == 'multiple_choice':
         conn.execute('DELETE FROM choices WHERE question_id=?', (question_id,))
         for label in ['A', 'B', 'C', 'D']:
@@ -2251,17 +2315,45 @@ def admin_programs():
 @role_required('admin')
 def admin_exam_overview():
     conn = get_db()
-    exams = conn.execute('''
-        SELECT e.*, c.subject_name, c.block_name, u.full_name as teacher_name,
+    # Separation of Results: optional filters by program, year level, and section
+    # (block). Defaults are empty, so with no query params the result set is
+    # identical to the original unfiltered list.
+    f_program = request.args.get('program', '').strip()
+    f_year_level = request.args.get('year_level', '').strip()
+    f_section = request.args.get('section', '').strip()
+
+    query = '''
+        SELECT e.*, c.subject_name, c.block_name, c.program, c.year_level, u.full_name as teacher_name,
                COUNT(DISTINCT es.id) as session_count
         FROM exams e
         JOIN classes c ON e.class_id = c.id
         JOIN users u ON c.teacher_id = u.id
         LEFT JOIN exam_sessions es ON e.id = es.exam_id
-        GROUP BY e.id
-        ORDER BY e.created_at DESC
-    ''').fetchall()
-    return render_template('admin/exam_overview.html', exams=exams)
+        WHERE 1=1
+    '''
+    params = []
+    if f_program:
+        query += ' AND c.program = ?'
+        params.append(f_program)
+    if f_year_level:
+        query += ' AND c.year_level = ?'
+        params.append(f_year_level)
+    if f_section:
+        query += ' AND c.block_name = ?'
+        params.append(f_section)
+    query += ' GROUP BY e.id ORDER BY e.created_at DESC'
+
+    exams = conn.execute(query, params).fetchall()
+
+    # Distinct filter options, pulled from classes so the dropdowns only ever
+    # show values that actually exist in the system.
+    programs = [r['program'] for r in conn.execute('SELECT DISTINCT program FROM classes ORDER BY program').fetchall()]
+    year_levels = [r['year_level'] for r in conn.execute('SELECT DISTINCT year_level FROM classes ORDER BY year_level').fetchall()]
+    sections = [r['block_name'] for r in conn.execute('SELECT DISTINCT block_name FROM classes ORDER BY block_name').fetchall()]
+
+    return render_template('admin/exam_overview.html', exams=exams,
+                           programs=programs, year_levels=year_levels, sections=sections,
+                           f_program=f_program, f_year_level=f_year_level, f_section=f_section)
 
 @app.route('/admin/logs')
 @role_required('admin')
@@ -2597,9 +2689,41 @@ def admin_exam_analytics(exam_id):
         SELECT sl.*, u.full_name FROM suspicious_logs sl
         JOIN users u ON sl.student_id = u.id WHERE sl.exam_id=? ORDER BY sl.logged_at DESC
     """, (exam_id,)).fetchall()
+
+    # Per-Section Analytics: same idea as the teacher-facing results page —
+    # average correctness grouped by exam section, for a quick "which part of
+    # the exam was hardest overall" view.
+    section_rows = conn.execute("""
+        SELECT q.id, s.title as section_title, s.order_index as sec_order, q.correct_answer,
+               COUNT(a.id) as total_answers,
+               SUM(CASE WHEN LOWER(TRIM(a.answer_text)) = LOWER(TRIM(q.correct_answer)) THEN 1 ELSE 0 END) as correct_count
+        FROM questions q
+        LEFT JOIN sections s ON q.section_id = s.id
+        LEFT JOIN answers a ON q.id = a.question_id
+        WHERE q.exam_id=?
+        GROUP BY q.id
+        ORDER BY s.order_index
+    """, (exam_id,)).fetchall()
+    section_order = []
+    section_agg = {}
+    for r in section_rows:
+        title = r['section_title'] or 'Untitled Section'
+        if title not in section_agg:
+            section_agg[title] = {'section_title': title, 'question_count': 0, 'pct_sum': 0}
+            section_order.append(title)
+        pct = round((r['correct_count'] / r['total_answers']) * 100) if r['total_answers'] else 0
+        section_agg[title]['question_count'] += 1
+        section_agg[title]['pct_sum'] += pct
+    section_stats = []
+    for title in section_order:
+        s = section_agg[title]
+        avg_pct = round(s['pct_sum'] / s['question_count']) if s['question_count'] else 0
+        section_stats.append({'section_title': title, 'question_count': s['question_count'], 'avg_pct': avg_pct})
+
     return render_template('admin/exam_analytics.html',
         exam=exam, class_info=class_info, teacher_name=teacher_name,
-        stats=stats, sessions=sessions, hard_questions=hard_questions_list, suspicious=suspicious)
+        stats=stats, sessions=sessions, hard_questions=hard_questions_list, suspicious=suspicious,
+        section_stats=section_stats)
 
 # ── Class Management ──
 @app.route('/admin/classes')
@@ -2691,6 +2815,41 @@ def log_suspicious():
             terminated = True
         return jsonify({'status': 'logged', 'count': new_count, 'terminated': terminated})
     return jsonify({'status': 'error'})
+
+@app.route('/api/exam-consent', methods=['POST'])
+@login_required
+def api_exam_consent():
+    """Records explicit student consent to monitoring + the data privacy statement.
+    Must be called (and succeed) before any monitoring/logging is allowed to start
+    on the client — see exam.js, which gates fullscreen/tab/blur tracking on this."""
+    data = request.get_json(force=True, silent=True) or {}
+    session_id = data.get('session_id')
+    conn = get_db()
+    sess = conn.execute('SELECT * FROM exam_sessions WHERE id=?', (session_id,)).fetchone()
+    if not sess or sess['student_id'] != session['user_id']:
+        return jsonify({'status': 'error', 'message': 'Invalid session.'}), 403
+    if sess['status'] != 'ongoing':
+        return jsonify({'status': 'error', 'message': 'Exam session is not active.'}), 400
+
+    conn.execute(
+        "UPDATE exam_sessions SET consent_given=1, consent_at=CURRENT_TIMESTAMP WHERE id=?",
+        (session_id,)
+    )
+    # Audit trail: consent is itself a suspicious_logs-style event so teachers/admins
+    # can see exactly when each student agreed, alongside the rest of the session log.
+    conn.execute('''
+        INSERT INTO suspicious_logs (session_id, student_id, exam_id, event_type)
+        VALUES (?, ?, ?, ?)
+    ''', (session_id, sess['student_id'], sess['exam_id'], 'consent_given'))
+    conn.commit()
+    return jsonify({'status': 'ok'})
+
+@app.route('/privacy-policy')
+def privacy_policy():
+    """Public data privacy statement. Linked from the exam consent modal and
+    can also be linked from signup/footer. No login required so students can
+    review it even before creating an account."""
+    return render_template('privacy_policy.html')
 
 @app.route('/api/exam-status/<int:exam_id>')
 @login_required

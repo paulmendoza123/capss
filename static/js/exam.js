@@ -6,15 +6,19 @@
   const DURATION_SECONDS = parseInt(document.getElementById('exam-duration')?.value) * 60;
   const TAB_LIMIT = parseInt(document.getElementById('tab-limit')?.value);
   const TAB_SWITCH_ENABLED = document.getElementById('tab-switch-enabled')?.value === '1';
+  const FULLSCREEN_REQUIRED = document.getElementById('fullscreen-required')?.value === '1';
+  let CONSENT_GIVEN = document.getElementById('consent-given')?.value === '1';
 
   let tabSwitchCount = 0;
   let terminated = false;
+  let fullscreenIntentional = false; // true only right after we submit the exam ourselves
+  let monitoringStarted = false;
 
   // Use server-calculated remaining time so timer persists across page reloads/re-entries
   const remainingEl = document.getElementById('time-remaining');
   let timerSeconds = remainingEl ? parseInt(remainingEl.value) : DURATION_SECONDS;
 
-  // ── ANTI-COPY / ANTI-CHEAT ──
+  // ── ANTI-COPY / ANTI-CHEAT (UI restriction only, no data logged — active immediately) ──
   document.addEventListener('contextmenu', e => e.preventDefault());
   document.addEventListener('copy', e => e.preventDefault());
   document.addEventListener('cut', e => e.preventDefault());
@@ -30,7 +34,7 @@
     if (blocked) { e.preventDefault(); e.stopPropagation(); }
   });
 
-  // ── BLUR OVERLAY ──
+  // ── BLUR OVERLAY (shared utility — element/helpers only, no listeners attached yet) ──
   const blurOverlay = document.getElementById('blur-overlay');
   let blurShown = false;
 
@@ -47,6 +51,115 @@
     blurOverlay.style.display = 'none';
   }
 
+  // ── CONSENT GATE ──
+  // Nothing below this point (fullscreen enforcement, blur/tab-switch logging,
+  // heartbeat, status polling) may run until the student has explicitly agreed
+  // to the monitoring + data privacy statement.
+  const consentModal = document.getElementById('consent-modal');
+  const agreeBtn = document.getElementById('consent-agree-btn');
+  const declineBtn = document.getElementById('consent-decline-btn');
+  const consentErrorEl = document.getElementById('consent-error');
+
+  function goToExamsList() {
+    window.location.href = CLASS_ID ? `/student/class/${CLASS_ID}` : '/student';
+  }
+
+  if (!CONSENT_GIVEN) {
+    if (consentModal) consentModal.style.display = 'flex';
+  }
+
+  agreeBtn?.addEventListener('click', async () => {
+    agreeBtn.disabled = true;
+    agreeBtn.textContent = 'Please wait…';
+    try {
+      const res = await fetch('/api/exam-consent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: SESSION_ID })
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'ok') {
+        CONSENT_GIVEN = true;
+        if (consentModal) consentModal.style.display = 'none';
+        startMonitoring();
+      } else {
+        throw new Error(data.message || 'Could not record consent.');
+      }
+    } catch (e) {
+      if (consentErrorEl) {
+        consentErrorEl.textContent = 'Something went wrong recording your consent. Please try again.';
+        consentErrorEl.style.display = 'block';
+      }
+      agreeBtn.disabled = false;
+      agreeBtn.textContent = 'I Understand & Agree';
+    }
+  });
+
+  declineBtn?.addEventListener('click', () => {
+    goToExamsList();
+  });
+
+  // Entry point for everything monitoring-related — called immediately if consent
+  // was already recorded (e.g. page refresh mid-exam), or after the Agree click.
+  function startMonitoring() {
+    if (monitoringStarted) return;
+    monitoringStarted = true;
+    initFullscreenEnforcement();
+    initBlurAndTabTracking();
+    initStatusPolling();
+    initHeartbeat();
+  }
+
+  // ── FULLSCREEN MODE ENFORCEMENT ──
+  function initFullscreenEnforcement() {
+  const fsGate = document.getElementById('fullscreen-gate');
+  const enterFsBtn = document.getElementById('enter-fullscreen-btn');
+
+  function isFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+  }
+
+  function requestFullscreen() {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+    if (req) req.call(el).catch(() => {});
+  }
+
+  if (FULLSCREEN_REQUIRED) {
+    if (!isFullscreen()) {
+      // Block the exam behind a gate until the student clicks to enter fullscreen
+      // (browsers require a user gesture to trigger the Fullscreen API).
+      if (fsGate) fsGate.style.display = 'flex';
+    }
+    enterFsBtn?.addEventListener('click', () => {
+      requestFullscreen();
+      if (fsGate) fsGate.style.display = 'none';
+    });
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('msfullscreenchange', handleFullscreenChange);
+  }
+
+  function handleFullscreenChange() {
+    if (terminated || fullscreenIntentional) return;
+    if (!isFullscreen()) {
+      // Re-show the gate so the student must deliberately re-enter fullscreen
+      if (fsGate) fsGate.style.display = 'flex';
+      showBlur('You exited fullscreen mode. This has been logged as a violation.');
+      logEvent('fullscreen_exit');
+    } else {
+      if (fsGate) fsGate.style.display = 'none';
+      hideBlur();
+    }
+  }
+
+  window._examIsFullscreen = isFullscreen;
+  window._examRequestFullscreen = requestFullscreen;
+  }
+
+  // ── BLUR OVERLAY + visibility/focus tracking ──
+  function initBlurAndTabTracking() {
   // visibilitychange — tab switch, new tab, navigate away
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
@@ -77,10 +190,50 @@
   }, 500);
 
   blurOverlay?.addEventListener('click', () => {
+    if (FULLSCREEN_REQUIRED && !window._examIsFullscreen?.()) {
+      window._examRequestFullscreen?.();
+      return; // fullscreenchange handler will hide the blur once fullscreen is restored
+    }
     if (document.hasFocus()) hideBlur();
   });
+  }
 
-  // ── EVENT LOGGING (tab_switch + window_minimize) ──
+  // ── STATUS CHECK every 5s — also syncs the shared exam timer ──
+  function initStatusPolling() {
+  setInterval(async () => {
+    if (terminated) return;
+    try {
+      const res = await fetch(`/api/exam-status/${EXAM_ID}`);
+      const data = await res.json();
+      if (data.session_status === 'terminated') handleTerminated();
+      // Sync timer with server's authoritative remaining time (shared exam clock)
+      if (typeof data.time_remaining_seconds === 'number' && data.time_remaining_seconds >= 0) {
+        // Only sync if drift is more than 3 seconds to avoid jitter
+        if (Math.abs(timerSeconds - data.time_remaining_seconds) > 3) {
+          timerSeconds = data.time_remaining_seconds;
+        }
+      }
+    } catch (e) {}
+  }, 5000);
+  }
+
+  // ── HEARTBEAT every 4s — lets teacher see connected vs disconnected ──
+  function initHeartbeat() {
+  async function sendHeartbeat() {
+    if (terminated) return;
+    try {
+      await fetch('/api/heartbeat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: SESSION_ID })
+      });
+    } catch (e) {}
+  }
+  sendHeartbeat(); // send immediately on load (logs "connected" on reconnect)
+  setInterval(sendHeartbeat, 4000);
+  }
+
+  if (CONSENT_GIVEN) startMonitoring();
   let eventDebounce = {};
 
   function logEvent(eventType) {
@@ -118,37 +271,6 @@
       window.location.href = CLASS_ID ? `/student/class/${CLASS_ID}` : '/student';
     }, 2500);
   }
-
-  // ── STATUS CHECK every 5s — also syncs the shared exam timer ──
-  setInterval(async () => {
-    if (terminated) return;
-    try {
-      const res = await fetch(`/api/exam-status/${EXAM_ID}`);
-      const data = await res.json();
-      if (data.session_status === 'terminated') handleTerminated();
-      // Sync timer with server's authoritative remaining time (shared exam clock)
-      if (typeof data.time_remaining_seconds === 'number' && data.time_remaining_seconds >= 0) {
-        // Only sync if drift is more than 3 seconds to avoid jitter
-        if (Math.abs(timerSeconds - data.time_remaining_seconds) > 3) {
-          timerSeconds = data.time_remaining_seconds;
-        }
-      }
-    } catch (e) {}
-  }, 5000);
-
-  // ── HEARTBEAT every 4s — lets teacher see connected vs disconnected ──
-  async function sendHeartbeat() {
-    if (terminated) return;
-    try {
-      await fetch('/api/heartbeat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: SESSION_ID })
-      });
-    } catch (e) {}
-  }
-  sendHeartbeat(); // send immediately on load (logs "connected" on reconnect)
-  setInterval(sendHeartbeat, 4000);
 
   // ── AUTO SAVE ──
   // localStorage key for this session's answers (backup against fast refresh)
@@ -265,6 +387,7 @@
   // ── SUBMIT ──
   function submitExam() {
     if (terminated) return;
+    fullscreenIntentional = true;
     // Clear local backups on submit
     try {
       localStorage.removeItem('exam_section_' + SESSION_ID);

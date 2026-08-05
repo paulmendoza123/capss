@@ -68,6 +68,71 @@
 {% block topbar_title %}Taking Exam{% endblock %}
 {% block content %}
 
+<!-- Consent Modal — must be accepted before ANY monitoring starts (tab/blur/fullscreen tracking) -->
+<div id="consent-modal" style="
+  display:none;
+  position:fixed;inset:0;z-index:10001;
+  background:rgba(10,10,14,0.97);
+  align-items:center;justify-content:center;
+  padding:1.25rem;
+">
+  <div style="
+    background:var(--card-bg, #16161c);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:14px;
+    max-width:480px;width:100%;
+    padding:1.75rem;
+    max-height:88vh;overflow-y:auto;
+  ">
+    <div style="font-size:2.25rem;text-align:center;margin-bottom:0.5rem">🔒</div>
+    <div style="color:#fff;font-size:1.2rem;font-weight:700;text-align:center;margin-bottom:0.75rem">
+      Consent to Exam Monitoring
+    </div>
+    <div style="color:rgba(255,255,255,0.7);font-size:0.875rem;line-height:1.6;margin-bottom:1rem">
+      Before you begin, please note that this exam is proctored. While your exam is in progress,
+      SPARK will monitor and log:
+    </div>
+    <ul style="color:rgba(255,255,255,0.7);font-size:0.85rem;line-height:1.7;margin:0 0 1rem 1.1rem;padding:0">
+      <li>Tab switches, lost window focus, or minimizing the browser</li>
+      <li>Exiting fullscreen mode (if required for this exam)</li>
+      <li>Screenshot or screen-recording attempts</li>
+      <li>Connection activity (so your teacher knows if you disconnect)</li>
+    </ul>
+    <div style="color:rgba(255,255,255,0.55);font-size:0.8rem;line-height:1.6;margin-bottom:1.25rem">
+      This is used only for academic-integrity purposes and is visible only to your teacher and
+      system administrators. Read the full
+      <a href="{{ url_for('privacy_policy') }}" target="_blank" rel="noopener" style="color:#8ab4ff">Data Privacy Statement</a>
+      for details on retention and your rights.
+    </div>
+    <div style="color:rgba(255,255,255,0.55);font-size:0.78rem;margin-bottom:1.25rem">
+      Monitoring will not start until you agree below. If you do not agree, you won't be able to
+      begin this exam.
+    </div>
+    <div id="consent-error" style="display:none;color:#f75f5f;font-size:0.8rem;margin-bottom:0.75rem"></div>
+    <div style="display:flex;gap:0.6rem">
+      <button type="button" id="consent-decline-btn" class="btn btn-ghost" style="flex:1">I Do Not Agree</button>
+      <button type="button" id="consent-agree-btn" class="btn btn-primary" style="flex:1.4">I Understand & Agree</button>
+    </div>
+  </div>
+</div>
+
+<!-- Fullscreen Gate (shown before exam starts, if fullscreen is required) -->
+<div id="fullscreen-gate" style="
+  display:none;
+  position:fixed;inset:0;z-index:10000;
+  background:rgba(10,10,14,0.97);
+  align-items:center;justify-content:center;
+  flex-direction:column;gap:1rem;
+  text-align:center;padding:1.5rem;
+">
+  <div style="font-size:3rem">🖥️</div>
+  <div style="color:#fff;font-size:1.3rem;font-weight:700">Fullscreen Mode Required</div>
+  <div style="color:rgba(255,255,255,0.65);font-size:0.9rem;max-width:360px">
+    This exam requires fullscreen mode. Click below to enter fullscreen and begin. Exiting fullscreen during the exam will be logged as a violation.
+  </div>
+  <button type="button" id="enter-fullscreen-btn" class="btn btn-primary btn-lg">Enter Fullscreen & Begin</button>
+</div>
+
 <!-- Blur Overlay (shown when student leaves/minimizes window) -->
 <div id="blur-overlay" style="
   display:none;
@@ -98,6 +163,8 @@
 <input type="hidden" id="time-remaining" value="{{ time_remaining_seconds }}" />
 <input type="hidden" id="tab-limit" value="{{ exam.tab_switch_limit }}" />
 <input type="hidden" id="tab-switch-enabled" value="{{ '1' if exam.tab_switch_enabled else '0' }}" />
+<input type="hidden" id="fullscreen-required" value="{{ '1' if exam.fullscreen_required else '0' }}" />
+<input type="hidden" id="consent-given" value="{{ '1' if exam_session.consent_given else '0' }}" />
 
 <!-- Tab Warning Banner -->
 <div id="tab-warning-banner" style="display:none; padding:0.75rem 1rem; margin-bottom:1rem;
