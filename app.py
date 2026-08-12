@@ -367,6 +367,13 @@ def init_db():
     except Exception:
         pass  # Column already exists
 
+    # Migration: add description to sections (sections no longer have a fixed question type)
+    try:
+        conn.execute('ALTER TABLE sections ADD COLUMN description TEXT')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
     # Migration: ensure answers table has UNIQUE(session_id, question_id)
     # SQLite doesn't support ADD CONSTRAINT, so we recreate the table if needed.
     try:
@@ -1204,9 +1211,10 @@ def teacher_copy_class(class_id):
         sections = conn.execute('SELECT * FROM sections WHERE exam_id=?', (exam['id'],)).fetchall()
         for sec in sections:
             scur = conn.execute('''
-                INSERT INTO sections (exam_id, title, section_type, order_index)
-                VALUES (?, ?, ?, ?)
-            ''', (new_exam_id, sec['title'], sec['section_type'], sec['order_index']))
+                INSERT INTO sections (exam_id, title, description, section_type, order_index)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (new_exam_id, sec['title'], sec['description'] if 'description' in sec.keys() else None,
+                  sec['section_type'], sec['order_index']))
             section_id_map[sec['id']] = scur.lastrowid
 
         questions = conn.execute('SELECT * FROM questions WHERE exam_id=?', (exam['id'],)).fetchall()
@@ -1662,19 +1670,70 @@ def teacher_exam_settings(exam_id):
         ''', (exam_id,)).fetchone()
     return render_template('teacher/exam_settings.html', exam=exam)
 
+def _wants_json():
+    return request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
 @app.route('/teacher/exam/<int:exam_id>/section/add', methods=['POST'])
 @role_required('teacher')
 def teacher_add_section(exam_id):
     title = request.form.get('title', '').strip()
-    section_type = request.form.get('section_type', 'multiple_choice')
-    if title:
-        conn = get_db()
-        count = conn.execute('SELECT COUNT(*) FROM sections WHERE exam_id=?', (exam_id,)).fetchone()[0]
-        conn.execute('INSERT INTO sections (exam_id, title, section_type, order_index) VALUES (?,?,?,?)',
-                     (exam_id, title, section_type, count))
-        conn.commit()
-        flash('Section added.', 'success')
-    return redirect(url_for('teacher_exam_detail', exam_id=exam_id) + '#questions')
+    description = request.form.get('description', '').strip()
+    # section_type is a legacy column kept for schema compatibility only —
+    # sections no longer restrict their questions to a single type.
+    if not title:
+        if _wants_json():
+            return jsonify({'ok': False, 'error': 'Section title is required.'}), 400
+        return redirect(url_for('teacher_exam_detail', exam_id=exam_id) + '#add-section-card')
+    conn = get_db()
+    count = conn.execute('SELECT COUNT(*) FROM sections WHERE exam_id=?', (exam_id,)).fetchone()[0]
+    cur = conn.execute('INSERT INTO sections (exam_id, title, description, section_type, order_index) VALUES (?,?,?,?,?)',
+                 (exam_id, title, description or None, 'multiple_choice', count))
+    conn.commit()
+    section_id = cur.lastrowid
+    if _wants_json():
+        return jsonify({'ok': True, 'section': {
+            'id': section_id,
+            'title': title,
+            'description': description or '',
+            'order_index': count,
+            'position': count + 1
+        }})
+    flash('Section added.', 'success')
+    return redirect(url_for('teacher_exam_detail', exam_id=exam_id) + '#add-section-card')
+
+@app.route('/teacher/section/<int:section_id>/edit', methods=['POST'])
+@role_required('teacher')
+def teacher_edit_section(section_id):
+    conn = get_db()
+    sec = conn.execute('''
+        SELECT s.*, e.id as exam_id FROM sections s
+        JOIN exams e ON s.exam_id = e.id
+        JOIN classes c ON e.class_id = c.id
+        WHERE s.id=? AND c.teacher_id=?
+    ''', (section_id, session['user_id'])).fetchone()
+    if not sec:
+        if _wants_json():
+            return jsonify({'ok': False, 'error': 'Section not found.'}), 404
+        return redirect(url_for('teacher_home'))
+    exam_id = sec['exam_id']
+    title = request.form.get('title', '').strip()
+    description = request.form.get('description', '').strip()
+    if not title:
+        if _wants_json():
+            return jsonify({'ok': False, 'error': 'Section title is required.'}), 400
+        flash('Section title is required.', 'error')
+        return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
+    conn.execute('UPDATE sections SET title=?, description=? WHERE id=?',
+                 (title, description or None, section_id))
+    conn.commit()
+    if _wants_json():
+        return jsonify({'ok': True, 'section': {
+            'id': section_id,
+            'title': title,
+            'description': description or ''
+        }})
+    flash('Section updated.', 'success')
+    return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
 
 @app.route('/teacher/section/<int:section_id>/delete', methods=['POST'])
 @role_required('teacher')
@@ -1696,6 +1755,8 @@ def teacher_import_from_bank(section_id):
     conn = get_db()
     sec = conn.execute('SELECT * FROM sections WHERE id=?', (section_id,)).fetchone()
     if not sec:
+        if _wants_json():
+            return jsonify({'ok': False, 'error': 'Section not found.'}), 404
         return redirect(url_for('teacher_home'))
     exam_id = sec['exam_id']
     question_ids = request.form.getlist('question_ids')
@@ -1740,6 +1801,8 @@ def teacher_import_from_bank(section_id):
     if skipped:
         msg += f' {skipped} duplicate(s) skipped.'
     flash(msg, 'success')
+    if _wants_json():
+        return jsonify({'ok': True, 'imported': imported, 'skipped': skipped, 'section_id': section_id})
     return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
 
 @app.route('/teacher/section/<int:section_id>/question/add', methods=['POST'])
@@ -1748,13 +1811,23 @@ def teacher_add_question(section_id):
     conn = get_db()
     sec = conn.execute('SELECT * FROM sections WHERE id=?', (section_id,)).fetchone()
     if not sec:
+        if _wants_json():
+            return jsonify({'ok': False, 'error': 'Section not found.'}), 404
         return redirect(url_for('teacher_home'))
     exam_id = sec['exam_id']
     q_text = request.form.get('question_text', '').strip()
-    q_type = sec['section_type']
+    q_type = request.form.get('question_type', '').strip()
+    if q_type not in ('multiple_choice', 'short_answer'):
+        q_type = sec['section_type']
     points = request.form.get('points', 1, type=int)
-    correct = request.form.get('correct_answer', '').strip()
+    if q_type == 'multiple_choice':
+        correct = request.form.get('correct_answer_mc', '').strip()
+    else:
+        correct = request.form.get('correct_answer_sa', '').strip()
     case_sensitive = 1 if request.form.get('case_sensitive') else 0
+    if not q_text:
+        if _wants_json():
+            return jsonify({'ok': False, 'error': 'Question text is required.'}), 400
     if q_text:
         count = conn.execute('SELECT COUNT(*) FROM questions WHERE section_id=?', (section_id,)).fetchone()[0]
         # Use form-provided group; if none, auto-assign the exam's own bank group
@@ -1785,10 +1858,45 @@ def teacher_add_question(section_id):
                                  (q_id, label, ct))
         conn.commit()
         flash('Question added.', 'success')
+        if _wants_json():
+            return jsonify({'ok': True, 'question': {'id': q_id, 'section_id': section_id}})
     redirect_to = request.args.get('redirect_to') or request.form.get('redirect_to', '')
     if redirect_to == 'bank':
         return redirect(url_for('teacher_question_bank'))
     return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
+
+@app.route('/teacher/questions/reorder', methods=['POST'])
+@role_required('teacher')
+def teacher_reorder_questions():
+    """Persist drag-and-drop moves of questions — within a section (reorder)
+    or across sections (move). Expects JSON: {"sections": {section_id: [question_id, ...], ...}}
+    covering every section currently rendered on the exam page."""
+    conn = get_db()
+    data = request.get_json(silent=True) or {}
+    sections = data.get('sections', {})
+    if not isinstance(sections, dict) or not sections:
+        return jsonify({'ok': False, 'error': 'No data provided.'}), 400
+    try:
+        for section_id, qids in sections.items():
+            sec = conn.execute('''
+                SELECT s.*, e.id as exam_id FROM sections s
+                JOIN exams e ON s.exam_id = e.id
+                JOIN classes c ON e.class_id = c.id
+                WHERE s.id=? AND c.teacher_id=?
+            ''', (section_id, session['user_id'])).fetchone()
+            if not sec:
+                continue  # skip sections that don't belong to this teacher
+            if not isinstance(qids, list):
+                continue
+            for idx, qid in enumerate(qids):
+                conn.execute(
+                    'UPDATE questions SET section_id=?, order_index=? WHERE id=? AND exam_id=?',
+                    (sec['id'], idx, qid, sec['exam_id'])
+                )
+        conn.commit()
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 400
 
 @app.route('/teacher/question/<int:question_id>/delete', methods=['POST'])
 @role_required('teacher')
@@ -2005,7 +2113,7 @@ def teacher_bank_add_question():
 @app.route('/teacher/question-bank/import', methods=['POST'])
 @role_required('teacher')
 def teacher_bank_import_file():
-    """Parse an uploaded .json file and bulk-add questions to the bank."""
+    """Parse an uploaded .txt or .docx file and bulk-add questions to the bank."""
     import re as _re
     conn = get_db()
     uploaded = request.files.get('import_file')
@@ -2013,17 +2121,28 @@ def teacher_bank_import_file():
         flash('No file selected.', 'error')
         return redirect(url_for('teacher_question_bank'))
 
-    # Derive group name from filename (strip extension)
     raw_name = uploaded.filename
+    ext = raw_name.rsplit('.', 1)[-1].lower() if '.' in raw_name else ''
+
+    if ext not in ('txt', 'docx'):
+        flash('Unsupported file type. Please upload a .txt or .docx file.', 'error')
+        return redirect(url_for('teacher_question_bank'))
+
+    # Derive group name from filename (strip extension)
     group_name = _re.sub(r'\.[^.]+$', '', raw_name).strip()
     # Replace underscores/dashes with spaces for readability
     group_name = _re.sub(r'[_\-]+', ' ', group_name).strip() or 'Imported Questions'
 
-    # Read file content
+    # ── Extract raw text depending on file type ─────────────────────────────
     try:
-        content = uploaded.read().decode('utf-8', errors='replace')
+        if ext == 'txt':
+            content = uploaded.read().decode('utf-8', errors='replace')
+        elif ext == 'docx':
+            import docx
+            document = docx.Document(uploaded)
+            content = '\n'.join(p.text for p in document.paragraphs)
     except Exception:
-        flash('Could not read file. Make sure it is a valid (.json) file.', 'error')
+        flash('Could not read file. Make sure it is a valid (.txt or .docx) file.', 'error')
         return redirect(url_for('teacher_question_bank'))
 
     # ── Parse questions ──────────────────────────────────────────────────────
@@ -2042,6 +2161,11 @@ def teacher_bank_import_file():
     #   Answer: CPU
     # ─────────────────────────────────────────────────────────────────────────
     lines = [l.rstrip() for l in content.splitlines()]
+
+    # Drop section header lines (e.g. "Multiple Choice:", "Short Answer:") so
+    # they don't get mistaken for a stray question with no answer.
+    _HEADER_RE = _re.compile(r'^(multiple\s*choice|short\s*answer)\s*:?\s*$', _re.IGNORECASE)
+    lines = [l for l in lines if not _HEADER_RE.match(l.strip())]
 
     # ── Clean parser: split file into question blocks first, then parse each ──
     # A new block starts whenever we see a numbered line: "1.", "2.", "3)" etc.

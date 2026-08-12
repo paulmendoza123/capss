@@ -20,130 +20,162 @@
 </div>
 
 <!-- QUESTIONS TAB -->
-<div class="tab-content active" data-tab="questions">
-  <!-- Add Section Form -->
-  <div class="card mb-2">
-    <div class="card-title mb-2">Add New Section</div>
-    <form method="POST" action="{{ url_for('teacher_add_section', exam_id=exam.id) }}" class="flex gap-1 items-center" style="flex-wrap:wrap">
-      <input type="text" name="title" class="form-control" placeholder="Section Title" style="max-width:220px" required />
-      <select name="section_type" class="form-select" style="max-width:180px">
-        <option value="multiple_choice">Multiple Choice</option>
-        <option value="short_answer">Short Answer</option>
-      </select>
-      <button type="submit" class="btn btn-primary btn-sm">Add Section</button>
+<div class="tab-content active" data-tab="questions" id="questionsTabContent">
+  <!-- Add Section Panel (hidden until opened from the floating toolbar) — always appears above the sections -->
+  <div class="card mb-2" id="add-section-card" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+      <div class="card-title" style="margin:0">Add New Section</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeAddSectionPanel()" title="Close">✕</button>
+    </div>
+    <form id="add-section-form" method="POST" action="{{ url_for('teacher_add_section', exam_id=exam.id) }}"
+          class="flex flex-col gap-1" style="flex-wrap:wrap" onsubmit="return submitAddSection(event)">
+      <input type="text" name="title" id="add-section-title" class="form-control" placeholder="Section Title" required />
+      <textarea name="description" class="form-control" rows="2" placeholder="Description (optional)"></textarea>
+      <button type="submit" class="btn btn-primary btn-sm" style="align-self:flex-start">Add Section</button>
     </form>
   </div>
 
   {% if section_data %}
     {% for sd in section_data %}
-    <div class="card mb-2">
-      <div class="card-header">
-        <div>
-          <div class="card-title">{{ sd.section.title }}</div>
-          <div class="text-xs text-muted font-mono">{{ sd.section.section_type | replace('_', ' ') | upper }}</div>
-        </div>
-        <form method="POST" action="{{ url_for('teacher_delete_section', section_id=sd.section.id) }}"
-              onsubmit="return confirm('Delete this section and all its questions?')">
-          <button type="submit" class="btn btn-danger btn-sm">Delete Section</button>
-        </form>
-      </div>
-
-      <!-- Questions in section -->
-      {% for q in sd.questions %}
-      <div class="question-block mb-1" style="margin-bottom:0.75rem">
-        <div class="question-num">Q{{ loop.index }} · {{ q.points }} pt(s) · {{ q.question_type | replace('_',' ') }}</div>
-        <div class="question-text">{{ q.question_text }}</div>
-        {% if q.question_type == 'multiple_choice' and q.choices %}
-        <div class="choices-list" style="pointer-events:none;gap:0.3rem">
-          {% for c in q.choices %}
-          <div class="choice-item {% if c.choice_label == q.correct_answer %}selected{% endif %}" style="padding:0.4rem 0.75rem">
-            <span class="choice-label-badge">{{ c.choice_label }}</span>
-            <span class="text-sm">{{ c.choice_text }}</span>
-            {% if c.choice_label == q.correct_answer %}<span class="text-success text-xs">✓</span>{% endif %}
+    <div class="section-group mb-3" id="section-{{ sd.section.id }}" data-section-id="{{ sd.section.id }}">
+      <div class="section-tag">Section {{ loop.index }} of {{ section_data|length }}</div>
+      <div class="card mb-1 section-header-card" id="sheader-{{ sd.section.id }}">
+        <div class="card-header" id="sview-{{ sd.section.id }}">
+          <div>
+            <div class="card-title">{{ sd.section.title }}</div>
+            {% if sd.section.description %}
+            <div class="text-sm text-muted mt-1 section-desc">{{ sd.section.description }}</div>
+            {% endif %}
           </div>
-          {% endfor %}
-        </div>
-        {% elif q.question_type == 'short_answer' %}
-        <div class="text-sm text-muted mt-1">Answer: <span class="text-success fw-600">{{ q.correct_answer }}</span>
-          {% if q.case_sensitive %}<span class="badge badge-gray text-xs" style="margin-left:0.4rem" title="Exact case must match">Aa Case-sensitive</span>{% endif %}
-        </div>
-        {% endif %}
-
-        <div class="flex gap-1 mt-1">
-          <button class="btn btn-ghost btn-sm" onclick="openModal('edit-q-{{ q.id }}')">Edit</button>
-          <form method="POST" action="{{ url_for('teacher_delete_question', question_id=q.id) }}"
-                onsubmit="return confirm('Delete this question?')" style="display:inline">
-            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-          </form>
-        </div>
-
-        <!-- Edit Modal -->
-        <div class="modal-overlay" id="edit-q-{{ q.id }}">
-          <div class="modal" style="max-width:580px">
-            <div class="modal-title">Edit Question</div>
-            <form method="POST" action="{{ url_for('teacher_edit_question', question_id=q.id) }}">
-              <input type="hidden" name="redirect_to" value="exam_detail">
-              <div class="form-group">
-                <label class="form-label">Question Text</label>
-                <textarea name="question_text" class="form-control" rows="3" required>{{ q.question_text }}</textarea>
-              </div>
-              <div class="form-group" style="max-width:120px">
-                <label class="form-label">Points</label>
-                <input type="number" name="points" class="form-control" value="{{ q.points }}" min="1" />
-              </div>
-              {% if q.question_type == 'multiple_choice' %}
-              <div class="form-row" style="grid-template-columns:1fr 1fr">
-                {% for lbl in ['A','B','C','D'] %}
-                {% set choice = q.choices | selectattr('choice_label','eq',lbl) | first | default(None) %}
-                <div class="form-group">
-                  <label class="form-label">Choice {{ lbl }}</label>
-                  <input type="text" name="choice_{{ lbl }}" class="form-control"
-                         value="{{ choice.choice_text if choice else '' }}"
-                         placeholder="Option {{ lbl }}" />
-                </div>
-                {% endfor %}
-              </div>
-              <div class="form-group" style="max-width:200px">
-                <label class="form-label">Correct Answer</label>
-                <select name="correct_answer" class="form-select">
-                  {% for lbl in ['A','B','C','D'] %}
-                  <option value="{{ lbl }}" {% if q.correct_answer == lbl %}selected{% endif %}>{{ lbl }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              {% else %}
-              <div class="form-group">
-                <label class="form-label">Correct Answer</label>
-                <input type="text" name="correct_answer" class="form-control" value="{{ q.correct_answer }}" placeholder="Expected answer" />
-              </div>
-              <div class="form-group">
-                <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
-                  <input type="checkbox" name="case_sensitive" value="1" {% if q.case_sensitive %}checked{% endif %} />
-                  Case-sensitive (exact case must match, e.g. "Manila" ≠ "manila")
-                </label>
-              </div>
-              {% endif %}
-              <div class="modal-footer">
-                <button type="button" class="btn btn-ghost" onclick="closeModal('edit-q-{{ q.id }}')">Cancel</button>
-                <button type="submit" class="btn btn-primary">Save Changes</button>
-              </div>
+          <div class="flex gap-1">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="openSectionEdit('{{ sd.section.id }}')">Edit</button>
+            <form method="POST" action="{{ url_for('teacher_delete_section', section_id=sd.section.id) }}"
+                  onsubmit="return confirm('Delete this section and all its questions?')">
+              <button type="submit" class="btn btn-danger btn-sm">Delete Section</button>
             </form>
           </div>
         </div>
+        <div class="section-edit" id="sedit-{{ sd.section.id }}" style="display:none">
+          <form class="flex flex-col gap-1" onsubmit="return submitSectionEdit(event, '{{ sd.section.id }}')">
+            <div class="form-group">
+              <label class="form-label">Section Title</label>
+              <input type="text" name="title" class="form-control" value="{{ sd.section.title }}" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Description</label>
+              <textarea name="description" class="form-control" rows="2" placeholder="Description (optional)">{{ sd.section.description or '' }}</textarea>
+            </div>
+            <div class="flex gap-1 mt-1" style="justify-content:flex-end">
+              <button type="button" class="btn btn-ghost btn-sm" onclick="closeSectionEdit('{{ sd.section.id }}')">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Questions in section (drag questions here, or between sections, to reorder/move them) -->
+      <div class="questions-list" id="qlist-{{ sd.section.id }}" data-section-id="{{ sd.section.id }}">
+      {% for q in sd.questions %}
+      <div class="card mb-1 question-block" id="qblock-{{ q.id }}" data-question-id="{{ q.id }}">
+        <!-- View mode -->
+        <div class="question-view" id="qview-{{ q.id }}">
+          <div class="question-num">
+            <span class="drag-handle" draggable="true" title="Drag to reorder or move to another section">⠿</span>
+            <span class="q-index-label">Q{{ loop.index }}</span> · {{ q.points }} pt(s) · {{ q.question_type | replace('_',' ') }}
+          </div>
+          <div class="question-text">{{ q.question_text }}</div>
+          {% if q.question_type == 'multiple_choice' and q.choices %}
+          <div class="choices-list" style="pointer-events:none;gap:0.3rem">
+            {% for c in q.choices %}
+            <div class="choice-item {% if c.choice_label == q.correct_answer %}selected{% endif %}" style="padding:0.4rem 0.75rem">
+              <span class="choice-label-badge">{{ c.choice_label }}</span>
+              <span class="text-sm">{{ c.choice_text }}</span>
+              {% if c.choice_label == q.correct_answer %}<span class="text-success text-xs">✓</span>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% elif q.question_type == 'short_answer' %}
+          <div class="text-sm text-muted mt-1">Answer: <span class="text-success fw-600">{{ q.correct_answer }}</span>
+            {% if q.case_sensitive %}<span class="badge badge-gray text-xs" style="margin-left:0.4rem" title="Exact case must match">Aa Case-sensitive</span>{% endif %}
+          </div>
+          {% endif %}
+
+          <div class="flex gap-1 mt-1">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="openQuestionEdit('{{ q.id }}')">Edit</button>
+            <form method="POST" action="{{ url_for('teacher_delete_question', question_id=q.id) }}"
+                  onsubmit="return confirm('Delete this question?')" style="display:inline">
+              <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Edit mode (inline, expands in place — no popup) -->
+        <div class="question-edit" id="qedit-{{ q.id }}" style="display:none">
+          <form method="POST" action="{{ url_for('teacher_edit_question', question_id=q.id) }}">
+            <input type="hidden" name="redirect_to" value="exam_detail">
+            <div class="form-group">
+              <label class="form-label">Question Text</label>
+              <textarea name="question_text" class="form-control" rows="3" required>{{ q.question_text }}</textarea>
+            </div>
+            <div class="form-group" style="max-width:120px">
+              <label class="form-label">Points</label>
+              <input type="number" name="points" class="form-control" value="{{ q.points }}" min="1" />
+            </div>
+            {% if q.question_type == 'multiple_choice' %}
+            <div class="form-row" style="grid-template-columns:1fr 1fr">
+              {% for lbl in ['A','B','C','D'] %}
+              {% set choice = q.choices | selectattr('choice_label','eq',lbl) | first | default(None) %}
+              <div class="form-group">
+                <label class="form-label">Choice {{ lbl }}</label>
+                <input type="text" name="choice_{{ lbl }}" class="form-control"
+                       value="{{ choice.choice_text if choice else '' }}"
+                       placeholder="Option {{ lbl }}" />
+              </div>
+              {% endfor %}
+            </div>
+            <div class="form-group" style="max-width:200px">
+              <label class="form-label">Correct Answer</label>
+              <select name="correct_answer" class="form-select">
+                {% for lbl in ['A','B','C','D'] %}
+                <option value="{{ lbl }}" {% if q.correct_answer == lbl %}selected{% endif %}>{{ lbl }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            {% else %}
+            <div class="form-group">
+              <label class="form-label">Correct Answer</label>
+              <input type="text" name="correct_answer" class="form-control" value="{{ q.correct_answer }}" placeholder="Expected answer" />
+            </div>
+            <div class="form-group">
+              <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+                <input type="checkbox" name="case_sensitive" value="1" {% if q.case_sensitive %}checked{% endif %} />
+                Case-sensitive (exact case must match, e.g. "Manila" ≠ "manila")
+              </label>
+            </div>
+            {% endif %}
+            <div class="flex gap-1 mt-1" style="justify-content:flex-end">
+              <button type="button" class="btn btn-ghost btn-sm" onclick="closeQuestionEdit('{{ q.id }}')">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
+            </div>
+          </form>
+        </div>
       </div>
       {% endfor %}
+      <div class="drop-empty-hint" style="{% if sd.questions %}display:none;{% endif %}padding:0.6rem;border:1px dashed var(--border);border-radius:8px"></div>
+      </div>
 
-      <!-- Import from Question Bank -->
+      <!-- Import from Question Bank (opened via the floating toolbar) -->
       {% if bank_questions %}
-      {% set compatible = bank_questions | selectattr('question_type', 'equalto', sd.section.section_type) | list %}
+      {% set compatible = bank_questions %}
       {% if compatible %}
-      <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
-        <button class="btn btn-ghost btn-sm mb-1" type="button"
-          onclick="toggleImportPanel(this)">
-          🗄️ Import from Question Bank ▼
-        </button>
-        <div class="import-panel" style="display:none">
-          <form method="POST" action="{{ url_for('teacher_import_from_bank', section_id=sd.section.id) }}">
+      <div class="import-bank-toggle-wrap" id="import-wrap-{{ sd.section.id }}">
+        <div class="import-panel card mb-1" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+            <div class="card-title" style="margin:0">🗄️ Import from Question Bank</div>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('.import-panel').style.display='none'" title="Close">✕</button>
+          </div>
+          <form method="POST" action="{{ url_for('teacher_import_from_bank', section_id=sd.section.id) }}"
+                onsubmit="return submitImportFromBank(event)">
 
             {# Group questions first by bank group, then by exam #}
             {% set ns = namespace(current_group='', group_idx=0) %}
@@ -241,59 +273,92 @@
       {% endif %}
       {% endif %}
 
-      <!-- Add Question Form -->
-      <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
-        <div class="text-xs text-muted mb-1">Add Question to "{{ sd.section.title }}"</div>
-        <form method="POST" action="{{ url_for('teacher_add_question', section_id=sd.section.id) }}">
+      <!-- Add Question (opened via the floating toolbar) -->
+      <div class="add-question-toggle-wrap" id="add-question-wrap-{{ sd.section.id }}">
+        <div class="add-question-form-wrap card mb-1" id="add-question-{{ sd.section.id }}" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+          <div class="text-xs text-muted">Add Question to "{{ sd.section.title }}"</div>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('.add-question-form-wrap').style.display='none'" title="Close">✕</button>
+        </div>
+        <form method="POST" action="{{ url_for('teacher_add_question', section_id=sd.section.id) }}"
+              class="add-question-form" onsubmit="return submitAddQuestion(event)">
+          <div class="form-group" style="max-width:220px">
+            <label class="form-label">Question Type</label>
+            <select name="question_type" class="form-select qtype-select" onchange="toggleQtypeFields(this)">
+              <option value="multiple_choice" selected>Multiple Choice</option>
+              <option value="short_answer">Short Answer</option>
+            </select>
+          </div>
           <div class="form-group">
             <label class="form-label">Question Text</label>
-            <textarea name="question_text" class="form-control" rows="2" placeholder="Type question here..." required></textarea>
+            <textarea name="question_text" class="form-control add-question-textarea" rows="2" placeholder="Type question here..." required></textarea>
           </div>
           <div class="form-group">
             <label class="form-label">Points</label>
             <input type="number" name="points" class="form-control" value="1" min="1" style="max-width:100px" />
           </div>
-          {% if sd.section.section_type == 'multiple_choice' %}
-          <div class="form-row">
-            {% for lbl in ['A','B','C','D'] %}
-            <div class="form-group">
-              <label class="form-label">Choice {{ lbl }}</label>
-              <input type="text" name="choice_{{ lbl }}" class="form-control" placeholder="Option {{ lbl }}" />
-            </div>
-            {% endfor %}
-          </div>
-          <div class="form-group">
-            <label class="form-label">Correct Answer</label>
-            <select name="correct_answer" class="form-select">
+
+          <div class="qtype-fields qtype-fields-mc">
+            <div class="form-row">
               {% for lbl in ['A','B','C','D'] %}
-              <option value="{{ lbl }}">{{ lbl }}</option>
+              <div class="form-group">
+                <label class="form-label">Choice {{ lbl }}</label>
+                <input type="text" name="choice_{{ lbl }}" class="form-control" placeholder="Option {{ lbl }}" />
+              </div>
               {% endfor %}
-            </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Correct Answer</label>
+              <select name="correct_answer_mc" class="form-select">
+                {% for lbl in ['A','B','C','D'] %}
+                <option value="{{ lbl }}">{{ lbl }}</option>
+                {% endfor %}
+              </select>
+            </div>
           </div>
-          {% else %}
-          <div class="form-group">
-            <label class="form-label">Correct Answer</label>
-            <input type="text" name="correct_answer" class="form-control" placeholder="Expected answer" />
+
+          <div class="qtype-fields qtype-fields-sa" style="display:none">
+            <div class="form-group">
+              <label class="form-label">Correct Answer</label>
+              <input type="text" name="correct_answer_sa" class="form-control" placeholder="Expected answer" />
+            </div>
+            <div class="form-group">
+              <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+                <input type="checkbox" name="case_sensitive" value="1" />
+                Case-sensitive (exact case must match, e.g. "Manila" ≠ "manila")
+              </label>
+            </div>
           </div>
-          <div class="form-group">
-            <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
-              <input type="checkbox" name="case_sensitive" value="1" />
-              Case-sensitive (exact case must match, e.g. "Manila" ≠ "manila")
-            </label>
+
+          <div class="flex gap-1 mt-1">
+            <button type="submit" class="btn btn-success btn-sm">+ Add Question</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('.add-question-form-wrap').style.display='none'">Cancel</button>
           </div>
-          {% endif %}
-          <button type="submit" class="btn btn-success btn-sm">+ Add Question</button>
         </form>
+        </div>
       </div>
     </div>
     {% endfor %}
   {% else %}
-  <div class="empty-state">
+  <div class="empty-state" id="empty-sections-state">
     <div class="empty-state-icon">📝</div>
     <div class="empty-state-title">No sections yet</div>
-    <div class="empty-state-text">Add a section above to start adding questions.</div>
+    <div class="empty-state-text">Use the ➕ button on the right to add your first section.</div>
   </div>
   {% endif %}
+</div>
+
+<!-- Floating Toolbar (Google Forms style) — only relevant on the Questions tab -->
+<div class="floating-toolbar" id="floatingToolbar">
+  <button type="button" class="ftb-btn" data-tip="Add Section" onclick="ftbAddSection()">
+    <span class="ftb-icon">➕</span>
+  </button>
+  <button type="button" class="ftb-btn" data-tip="Add Question" onclick="ftbAddQuestion()">
+    <span class="ftb-icon">📝</span>
+  </button>
+  <button type="button" class="ftb-btn" data-tip="Import from Bank" onclick="ftbImportFromBank()">
+    <span class="ftb-icon">🗄️</span>
+  </button>
 </div>
 
 <!-- MONITORING TAB -->
@@ -389,6 +454,127 @@
 }
 input:checked + .toggle-slider { background:var(--primary,#6c63ff); }
 input:checked + .toggle-slider:before { transform:translateX(20px); }
+
+/* ── Inline question edit (fade in place — no zoom/scale, no overlay) ── */
+.question-edit {
+  margin-top:0.5rem;
+  padding-top:0.75rem;
+  border-top:1px dashed var(--border);
+  animation: qEditFadeIn 0.15s ease;
+}
+@keyframes qEditFadeIn { from { opacity:0; } to { opacity:1; } }
+
+/* ── Drag-and-drop for questions (reorder within / move across sections) ── */
+.drag-handle {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  cursor:grab;
+  padding:0 0.35rem;
+  margin-right:0.3rem;
+  border-radius:4px;
+  color:var(--text3);
+  font-size:1rem;
+  line-height:1;
+  vertical-align:middle;
+  touch-action:none;
+}
+.drag-handle:hover { background:var(--bg3); color:var(--text); }
+.question-block.dragging { opacity:0.4; }
+.question-block.drag-over-target { box-shadow:0 0 0 2px var(--primary,#6c63ff) inset; border-radius:8px; }
+.questions-list { min-height:4px; }
+.questions-list.drop-target-active { background:var(--bg2); border-radius:8px; }
+
+/* ── Google-Forms-style section layout ── */
+.section-group { position:relative; }
+.section-tag {
+  display:inline-block;
+  background:var(--primary,#6c63ff);
+  color:#fff;
+  font-size:0.72rem;
+  font-weight:700;
+  letter-spacing:0.02em;
+  padding:0.3rem 0.75rem;
+  border-radius:6px 6px 0 0;
+  margin-bottom:-1px;
+  position:relative;
+  z-index:1;
+}
+.section-header-card { border-top-left-radius:0; }
+
+/* ── Floating toolbar (Google-Forms-style) ── */
+.floating-toolbar {
+  position: fixed;
+  right: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 0.5rem;
+  box-shadow: var(--shadow-lg);
+}
+.ftb-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.ftb-btn:hover {
+  background: var(--bg3);
+  border-color: var(--accent);
+  transform: translateY(-1px) scale(1.05);
+}
+.ftb-btn::after {
+  content: attr(data-tip);
+  position: absolute;
+  right: 54px;
+  top: 50%;
+  transform: translateY(-50%) translateX(4px);
+  background: var(--text);
+  color: var(--bg2);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.ftb-btn:hover::after { opacity: 1; transform: translateY(-50%) translateX(0); }
+
+/* Briefly highlight a target when the toolbar scrolls to it */
+.ftb-highlight { animation: ftbPulse 1.1s ease; }
+@keyframes ftbPulse {
+  0% { box-shadow: 0 0 0 0 rgba(59,125,232,0.45); }
+  70% { box-shadow: 0 0 0 10px rgba(59,125,232,0); }
+  100% { box-shadow: 0 0 0 0 rgba(59,125,232,0); }
+}
+
+@media (max-width: 720px) {
+  .floating-toolbar {
+    right: 50%;
+    top: auto;
+    bottom: 16px;
+    transform: translateX(50%);
+    flex-direction: row;
+  }
+  .ftb-btn::after { display: none; }
+}
 </style>
 
 <script>
@@ -404,11 +590,372 @@ function toggleTabLimit(cb) {
   }
 }
 
-function toggleImportPanel(btn) {
-  const panel = btn.nextElementSibling;
-  const open = panel.style.display !== 'none';
-  panel.style.display = open ? 'none' : 'block';
-  btn.textContent = open ? '🗄️ Import from Question Bank ▼' : '🗄️ Import from Question Bank ▲';
+/* Switch the Add Question form between Multiple Choice and Short Answer fields */
+function toggleQtypeFields(select) {
+  const form = select.closest('form');
+  if (!form) return;
+  const mc = form.querySelector('.qtype-fields-mc');
+  const sa = form.querySelector('.qtype-fields-sa');
+  if (select.value === 'multiple_choice') {
+    if (mc) mc.style.display = 'block';
+    if (sa) sa.style.display = 'none';
+  } else {
+    if (mc) mc.style.display = 'none';
+    if (sa) sa.style.display = 'block';
+  }
 }
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.qtype-select').forEach(toggleQtypeFields);
+});
+
+/* Inline question edit (no popup) */
+function openQuestionEdit(id) {
+  const view = document.getElementById('qview-' + id);
+  const edit = document.getElementById('qedit-' + id);
+  if (view) view.style.display = 'none';
+  if (edit) {
+    edit.style.display = 'block';
+    const ta = edit.querySelector('textarea[name="question_text"]');
+    if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }
+}
+function closeQuestionEdit(id) {
+  const view = document.getElementById('qview-' + id);
+  const edit = document.getElementById('qedit-' + id);
+  if (edit) edit.style.display = 'none';
+  if (view) view.style.display = 'block';
+}
+
+/* Inline section edit (no popup) */
+function openSectionEdit(id) {
+  const view = document.getElementById('sview-' + id);
+  const edit = document.getElementById('sedit-' + id);
+  if (view) view.style.display = 'none';
+  if (edit) {
+    edit.style.display = 'block';
+    const input = edit.querySelector('input[name="title"]');
+    if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+  }
+}
+function closeSectionEdit(id) {
+  const view = document.getElementById('sview-' + id);
+  const edit = document.getElementById('sedit-' + id);
+  if (edit) edit.style.display = 'none';
+  if (view) view.style.display = 'flex';
+}
+function submitSectionEdit(e, id) {
+  e.preventDefault();
+  const form = e.target;
+  const data = new FormData(form);
+  fetch('/teacher/section/' + id + '/edit', {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    body: data
+  }).then(r => r.json()).then(res => {
+    if (res && res.ok) {
+      const viewBlock = document.getElementById('sview-' + id);
+      if (viewBlock) {
+        const titleEl = viewBlock.querySelector('.card-title');
+        if (titleEl) titleEl.textContent = res.section.title;
+        let descEl = viewBlock.querySelector('.section-desc');
+        if (res.section.description) {
+          if (!descEl && titleEl) {
+            descEl = document.createElement('div');
+            descEl.className = 'text-sm text-muted mt-1 section-desc';
+            titleEl.insertAdjacentElement('afterend', descEl);
+          }
+          if (descEl) descEl.textContent = res.section.description;
+        } else if (descEl) {
+          descEl.remove();
+        }
+      }
+      closeSectionEdit(id);
+    } else {
+      alert((res && res.error) || 'Failed to update section.');
+    }
+  }).catch(() => alert('Failed to update section.'));
+  return false;
+}
+
+/* Add Section — submits without a full page reload/scroll-to-top,
+   then refreshes just the questions tab content in place. */
+function submitAddSection(e) {
+  e.preventDefault();
+  const form = e.target;
+  const data = new FormData(form);
+  const submitBtn = form.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+  fetch(form.action, {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    body: data
+  }).then(r => r.json()).then(res => {
+    if (res && res.ok) {
+      form.reset();
+      refreshQuestionsTab(res.section && res.section.id);
+    } else {
+      alert((res && res.error) || 'Failed to add section.');
+    }
+  }).catch(() => alert('Failed to add section.'))
+    .finally(() => { if (submitBtn) submitBtn.disabled = false; });
+  return false;
+}
+
+/* Import from Question Bank — same AJAX pattern as submitAddQuestion, so
+   importing doesn't reload the page or jump back to the top. */
+function submitImportFromBank(e) {
+  e.preventDefault();
+  const form = e.target;
+  const checked = form.querySelectorAll('input[name="question_ids"]:checked');
+  if (!checked.length) {
+    alert('Select at least one question to import.');
+    return false;
+  }
+  const data = new FormData(form);
+  const submitBtn = form.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+  fetch(form.action, {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    body: data
+  }).then(r => r.json()).then(res => {
+    if (res && res.ok) {
+      refreshQuestionsTab(res.section_id);
+    } else {
+      alert((res && res.error) || 'Failed to import questions.');
+    }
+  }).catch(() => alert('Failed to import questions.'))
+    .finally(() => { if (submitBtn) submitBtn.disabled = false; });
+  return false;
+}
+
+/* Add Question — same pattern as submitAddSection: submit via fetch so the
+   page doesn't do a full reload/jump to the top, then refresh just the
+   questions tab content in place. */
+function submitAddQuestion(e) {
+  e.preventDefault();
+  const form = e.target;
+  const data = new FormData(form);
+  const submitBtn = form.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+  fetch(form.action, {
+    method: 'POST',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    body: data
+  }).then(r => r.json()).then(res => {
+    if (res && res.ok) {
+      const sectionId = res.question && res.question.section_id;
+      refreshQuestionsTab(sectionId, sectionId);
+    } else {
+      alert((res && res.error) || 'Failed to add question.');
+    }
+  }).catch(() => alert('Failed to add question.'))
+    .finally(() => { if (submitBtn) submitBtn.disabled = false; });
+  return false;
+}
+
+/* Refetches the questions tab HTML and swaps it in place, preserving scroll
+   position (instead of the full-page reload that used to jump to the top). */
+function refreshQuestionsTab(focusSectionId, reopenAddQuestionSectionId) {
+  const scrollY = window.scrollY;
+  fetch(window.location.pathname, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(r => r.text())
+    .then(html => {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const newContent = doc.getElementById('questionsTabContent');
+      const oldContent = document.getElementById('questionsTabContent');
+      if (newContent && oldContent) {
+        oldContent.innerHTML = newContent.innerHTML;
+        initDragAndDrop();
+        document.querySelectorAll('.qtype-select').forEach(toggleQtypeFields);
+      }
+      // Keep the "Add Question" panel open for the section just added to,
+      // so the teacher can keep adding questions without re-clicking it.
+      if (reopenAddQuestionSectionId) {
+        const panel = document.getElementById('add-question-' + reopenAddQuestionSectionId);
+        if (panel) {
+          panel.style.display = 'block';
+          const ta = panel.querySelector('.add-question-textarea');
+          if (ta) setTimeout(() => ta.focus(), 0);
+        }
+      }
+      window.scrollTo(0, scrollY);
+      if (focusSectionId) {
+        const el = document.getElementById('section-' + focusSectionId);
+        // 'nearest' only scrolls if the section isn't already fully visible —
+        // it won't yank a short page (e.g. the very first section) down to
+        // center itself with empty space above it.
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    })
+    .catch(() => {});
+}
+
+/* ── Floating toolbar actions ── */
+function ftbHighlight(el) {
+  if (!el) return;
+  el.classList.remove('ftb-highlight');
+  // Force reflow so the animation can re-trigger if clicked repeatedly
+  void el.offsetWidth;
+  el.classList.add('ftb-highlight');
+}
+
+function ftbAddSection() {
+  const card = document.getElementById('add-section-card');
+  if (!card) return;
+  const isOpen = card.style.display !== 'none';
+  if (isOpen) {
+    closeAddSectionPanel();
+    return;
+  }
+  card.style.display = 'block';
+  const emptyState = document.getElementById('empty-sections-state');
+  if (emptyState) emptyState.style.display = 'none';
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  ftbHighlight(card);
+  const input = document.getElementById('add-section-title');
+  if (input) setTimeout(() => input.focus(), 300);
+}
+
+function closeAddSectionPanel() {
+  const card = document.getElementById('add-section-card');
+  if (card) card.style.display = 'none';
+  const emptyState = document.getElementById('empty-sections-state');
+  if (emptyState) emptyState.style.display = '';
+}
+
+function ftbAddQuestion() {
+  const panels = document.querySelectorAll('.add-question-form-wrap');
+  if (!panels.length) { ftbAddSection(); return; }
+  const target = panels[panels.length - 1]; // most recently added section
+  target.style.display = 'block';
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  ftbHighlight(target);
+  const ta = target.querySelector('.add-question-textarea');
+  if (ta) setTimeout(() => ta.focus(), 300);
+}
+
+function ftbImportFromBank() {
+  const panels = document.querySelectorAll('.import-panel');
+  if (!panels.length) {
+    alert('Add some questions to your Question Bank first, then you can import them here.');
+    return;
+  }
+  const panel = panels[panels.length - 1];
+  panel.style.display = 'block';
+  panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  ftbHighlight(panel);
+}
+
+/* ── Drag-and-drop: move/reorder questions within or across sections ── */
+let dragBlock = null;
+
+function getDragAfterElement(container, y) {
+  const els = [...container.querySelectorAll('.question-block:not(.dragging)')];
+  return els.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset, element: child };
+    }
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+}
+
+function refreshEmptyHints() {
+  document.querySelectorAll('.questions-list').forEach(list => {
+    const hint = list.parentElement.querySelector(':scope > .drop-empty-hint');
+    if (hint) hint.style.display = list.querySelector('.question-block') ? 'none' : '';
+  });
+}
+
+function renumberQuestions() {
+  document.querySelectorAll('.questions-list').forEach(list => {
+    list.querySelectorAll('.question-block').forEach((block, i) => {
+      const label = block.querySelector('.q-index-label');
+      if (label) label.textContent = 'Q' + (i + 1);
+    });
+  });
+}
+
+function persistQuestionOrder() {
+  const payload = {};
+  document.querySelectorAll('.questions-list').forEach(list => {
+    const sid = list.dataset.sectionId;
+    payload[sid] = [...list.querySelectorAll('.question-block')].map(b => b.dataset.questionId);
+  });
+  refreshEmptyHints();
+  renumberQuestions();
+  fetch('{{ url_for("teacher_reorder_questions") }}', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sections: payload })
+  }).then(r => r.json()).then(data => {
+    if (!data || !data.ok) location.reload();
+  }).catch(() => location.reload());
+}
+
+/* Per-list handlers need re-attaching whenever .questions-list elements are
+   replaced (e.g. after refreshQuestionsTab), so this is a callable init. The
+   document-level dragstart/dragend listeners are delegated and only need
+   registering once. */
+function initDragAndDrop() {
+  document.querySelectorAll('.questions-list').forEach(function(list) {
+    if (list.dataset.dndBound) return;
+    list.dataset.dndBound = '1';
+    list.addEventListener('dragover', function(e) {
+      if (!dragBlock) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      list.classList.add('drop-target-active');
+      const after = getDragAfterElement(list, e.clientY);
+      if (after == null) {
+        list.appendChild(dragBlock);
+      } else {
+        list.insertBefore(dragBlock, after);
+      }
+    });
+    list.addEventListener('dragleave', function(e) {
+      if (e.target === list) list.classList.remove('drop-target-active');
+    });
+    list.addEventListener('drop', function(e) {
+      e.preventDefault();
+      list.classList.remove('drop-target-active');
+      persistQuestionOrder();
+    });
+  });
+}
+
+document.addEventListener('dragstart', function(e) {
+  const handle = e.target.closest('.drag-handle');
+  if (!handle) return;
+  dragBlock = handle.closest('.question-block');
+  if (!dragBlock) return;
+  e.dataTransfer.effectAllowed = 'move';
+  try { e.dataTransfer.setData('text/plain', dragBlock.id); } catch (err) {}
+  setTimeout(() => dragBlock.classList.add('dragging'), 0);
+});
+
+document.addEventListener('dragend', function() {
+  if (dragBlock) dragBlock.classList.remove('dragging');
+  document.querySelectorAll('.questions-list').forEach(l => l.classList.remove('drop-target-active'));
+  dragBlock = null;
+  refreshEmptyHints();
+});
+
+initDragAndDrop();
+
+/* Only show the floating toolbar while the Questions tab is active */
+(function() {
+  const toolbar = document.getElementById('floatingToolbar');
+  if (!toolbar) return;
+  const tabBtns = document.querySelectorAll('.tabs .tab-btn');
+  function syncToolbar() {
+    const active = document.querySelector('.tabs .tab-btn.active');
+    toolbar.style.display = (active && active.dataset.tab === 'questions') ? 'flex' : 'none';
+  }
+  tabBtns.forEach(btn => btn.addEventListener('click', () => setTimeout(syncToolbar, 0)));
+  syncToolbar();
+})();
 </script>
 {% endblock %}
