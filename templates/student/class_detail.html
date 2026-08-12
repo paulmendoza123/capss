@@ -9,9 +9,6 @@
   </div>
   <div class="page-actions">
     <a href="{{ url_for('student_home') }}" class="btn btn-ghost">← Back</a>
-    <form method="POST" action="{{ url_for('student_leave_class', class_id=cls.id) }}" style="display:inline;" onsubmit="return confirm('Are you sure you want to leave this class?');">
-      <button type="submit" class="btn btn-sm" style="background:#e74c3c;color:#fff;">🚪 Leave Class</button>
-    </form>
   </div>
 </div>
 

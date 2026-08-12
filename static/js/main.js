@@ -2,6 +2,24 @@
 
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Card kebab menus (class cards, etc.)
+  document.querySelectorAll('.card-menu-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const dropdown = btn.nextElementSibling;
+      const isOpen = dropdown.classList.contains('open');
+      document.querySelectorAll('.card-menu-dropdown.open').forEach(d => d.classList.remove('open'));
+      if (!isOpen) dropdown.classList.add('open');
+    });
+  });
+  document.querySelectorAll('.card-menu-dropdown').forEach(dropdown => {
+    dropdown.addEventListener('click', (e) => e.stopPropagation());
+  });
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.card-menu-dropdown.open').forEach(d => d.classList.remove('open'));
+  });
+
   // Auto-dismiss alerts after 4s
   document.querySelectorAll('.alert').forEach(alert => {
     setTimeout(() => {

@@ -1161,6 +1161,75 @@ def teacher_delete_class(class_id):
     flash(f'Class "{cls["subject_name"]}" has been deleted.', 'success')
     return redirect(url_for('teacher_home'))
 
+@app.route('/teacher/class/<int:class_id>/copy', methods=['POST'])
+@role_required('teacher')
+def teacher_copy_class(class_id):
+    conn = get_db()
+    cls = conn.execute(
+        'SELECT * FROM classes WHERE id = ? AND teacher_id = ?',
+        (class_id, session['user_id'])
+    ).fetchone()
+    if not cls:
+        flash('Class not found.', 'error')
+        return redirect(url_for('teacher_home'))
+
+    # Generate a fresh, unique class code for the copy
+    new_code = f"{cls['subject_code']}-{''.join(random.choices(string.ascii_uppercase + string.digits, k=5))}"
+    new_name = f"{cls['subject_name']} (Copy)"
+
+    cur = conn.execute('''
+        INSERT INTO classes (class_code, subject_code, subject_name, block_name, program, year_level, teacher_id, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (new_code, cls['subject_code'], new_name, cls['block_name'], cls['program'], cls['year_level'],
+          session['user_id'], cls['is_active']))
+    new_class_id = cur.lastrowid
+
+    # Duplicate every exam that belongs to the class, along with its sections,
+    # questions and choices. Student-specific data (enrollments, exam sessions,
+    # answers, logs) is intentionally NOT copied — the new class starts fresh.
+    exams = conn.execute('SELECT * FROM exams WHERE class_id=?', (class_id,)).fetchall()
+    for exam in exams:
+        new_exam_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        ecur = conn.execute('''
+            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, activated_at, status,
+                                show_results, randomize_questions, tab_switch_limit, tab_switch_enabled,
+                                manually_closed, passing_score, exam_code, fullscreen_required)
+            VALUES (?, ?, ?, NULL, NULL, 'upcoming', ?, ?, ?, ?, 0, ?, ?, ?)
+        ''', (exam['title'], new_class_id, exam['duration_minutes'],
+              exam['show_results'], exam['randomize_questions'], exam['tab_switch_limit'], exam['tab_switch_enabled'],
+              exam['passing_score'], new_exam_code, exam['fullscreen_required']))
+        new_exam_id = ecur.lastrowid
+
+        section_id_map = {}
+        sections = conn.execute('SELECT * FROM sections WHERE exam_id=?', (exam['id'],)).fetchall()
+        for sec in sections:
+            scur = conn.execute('''
+                INSERT INTO sections (exam_id, title, section_type, order_index)
+                VALUES (?, ?, ?, ?)
+            ''', (new_exam_id, sec['title'], sec['section_type'], sec['order_index']))
+            section_id_map[sec['id']] = scur.lastrowid
+
+        questions = conn.execute('SELECT * FROM questions WHERE exam_id=?', (exam['id'],)).fetchall()
+        for q in questions:
+            new_section_id = section_id_map.get(q['section_id']) if q['section_id'] else None
+            qcur = conn.execute('''
+                INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (new_exam_id, new_section_id, q['question_text'], q['question_type'], q['points'],
+                  q['correct_answer'], q['order_index']))
+            new_question_id = qcur.lastrowid
+
+            choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (q['id'],)).fetchall()
+            for c in choices:
+                conn.execute('''
+                    INSERT INTO choices (question_id, choice_label, choice_text)
+                    VALUES (?, ?, ?)
+                ''', (new_question_id, c['choice_label'], c['choice_text']))
+
+    conn.commit()
+    flash(f'"{cls["subject_name"]}" has been copied as "{new_name}" (code: {new_code}).', 'success')
+    return redirect(url_for('teacher_home'))
+
 @app.route('/teacher/class/<int:class_id>/create-exam', methods=['GET', 'POST'])
 @role_required('teacher')
 def teacher_create_exam(class_id):

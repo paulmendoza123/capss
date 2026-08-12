@@ -15,14 +15,23 @@
 {% if classes %}
 <div class="cards-grid">
   {% for cls in classes %}
-  <a href="{{ url_for('student_class_detail', class_id=cls.id) }}" class="class-card">
+  <div class="class-card">
+    <a href="{{ url_for('student_class_detail', class_id=cls.id) }}" class="class-card-link" aria-label="Open {{ cls.subject_name }}"></a>
+    <div class="card-menu">
+      <button type="button" class="card-menu-btn" aria-label="Class options">⋮</button>
+      <div class="card-menu-dropdown">
+        <form method="POST" action="{{ url_for('student_leave_class', class_id=cls.id) }}" onsubmit="return confirm('Leave \'{{ cls.subject_name }}\'? You will need the class code to rejoin.');">
+          <button type="submit" class="card-menu-item danger">🚪 Leave Class</button>
+        </form>
+      </div>
+    </div>
     <div class="class-code">{{ cls.class_code }}</div>
     <div class="class-name">{{ cls.subject_name }}</div>
     <div class="class-meta">
       {{ cls.subject_code }} · {{ cls.block_name }} · {{ cls.year_level }}
     </div>
     <div class="class-meta mt-1">👤 {{ cls.teacher_name }}</div>
-  </a>
+  </div>
   {% endfor %}
 </div>
 {% else %}
@@ -30,7 +39,6 @@
   <div class="empty-state-icon">📚</div>
   <div class="empty-state-title">No classes yet</div>
   <div class="empty-state-text">Ask your teacher for a class code, then join a class.</div>
-  <a href="{{ url_for('student_join_class') }}" class="btn btn-primary mt-2">➕ Join a Class</a>
 </div>
 {% endif %}
 {% endblock %}

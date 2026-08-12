@@ -503,6 +503,71 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .class-name { font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem; color: var(--text); }
 .class-meta { font-size: 0.8rem; color: var(--text2); }
 
+/* ── CARD KEBAB MENU ── */
+.card-menu {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  z-index: 5;
+}
+.card-menu-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text2);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.card-menu-btn:hover { background: var(--bg3); color: var(--text); }
+.card-menu-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  min-width: 180px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 0.35rem;
+  z-index: 10;
+}
+.card-menu-dropdown.open { display: block; }
+.card-menu-dropdown form { display: block; }
+.card-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: 'Sora', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 0.55rem 0.65rem;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: var(--transition);
+}
+.card-menu-item:hover { background: var(--bg3); }
+.card-menu-item.danger { color: var(--danger); }
+.card-menu-item.danger:hover { background: rgba(224,69,69,0.1); }
+.class-card-link {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
 /* ── PROGRESS ── */
 .progress-bar {
   height: 8px;

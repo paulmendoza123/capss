@@ -13,9 +13,6 @@
   <div class="page-actions">
     <a href="{{ url_for('teacher_home') }}" class="btn btn-ghost">← Back</a>
     <a href="{{ url_for('teacher_create_exam', class_id=cls.id) }}" class="btn btn-primary">➕ Create Exam</a>
-    <form method="POST" action="{{ url_for('teacher_delete_class', class_id=cls.id) }}" style="display:inline;" onsubmit="return confirm('Delete this class and all its exams? This cannot be undone.');">
-      <button type="submit" class="btn btn-sm" style="background:#e74c3c;color:#fff;">🗑️ Delete Class</button>
-    </form>
   </div>
 </div>
 
