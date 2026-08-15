@@ -1066,7 +1066,35 @@ def teacher_home():
         WHERE c.teacher_id = ?
         GROUP BY c.id
     ''', (session['user_id'],)).fetchall()
-    return render_template('teacher/classes.html', classes=classes)
+    programs = conn.execute('SELECT * FROM programs ORDER BY code').fetchall()
+    return render_template('teacher/classes.html', classes=classes, programs=programs)
+
+@app.route('/teacher/class/<int:class_id>/edit', methods=['POST'])
+@role_required('teacher')
+def teacher_edit_class(class_id):
+    conn = get_db()
+    cls = conn.execute(
+        'SELECT * FROM classes WHERE id = ? AND teacher_id = ?',
+        (class_id, session['user_id'])
+    ).fetchone()
+    if not cls:
+        flash('Class not found.', 'error')
+        return redirect(url_for('teacher_home'))
+    subject_code = request.form.get('subject_code', '').strip().upper()
+    subject_name = request.form.get('subject_name', '').strip()
+    block_name   = request.form.get('block_name', '').strip().upper()
+    program      = request.form.get('program', '').strip()
+    year_level   = request.form.get('year_level', '').strip()
+    if not all([subject_code, subject_name, block_name, program, year_level]):
+        flash('Please fill in all fields.', 'error')
+        return redirect(url_for('teacher_home'))
+    conn.execute('''
+        UPDATE classes SET subject_code=?, subject_name=?, block_name=?, program=?, year_level=?
+        WHERE id=?
+    ''', (subject_code, subject_name, block_name, program, year_level, class_id))
+    conn.commit()
+    flash(f'"{subject_name}" has been updated.', 'success')
+    return redirect(url_for('teacher_home'))
 
 @app.route('/teacher/class/create', methods=['GET', 'POST'])
 @role_required('teacher')
@@ -1270,15 +1298,6 @@ def teacher_create_exam(class_id):
         ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, passing_score, exam_code))
         exam_id = cur.lastrowid
 
-        # Auto-create a question bank group named after this exam so questions
-        # added via the exam page are automatically organised by exam/class.
-        grp_cur = conn.execute(
-            'INSERT INTO question_bank_groups (teacher_id, name, description, class_id) VALUES (?,?,?,?)',
-            (session['user_id'], title, f'Auto-created group for exam: {title}', class_id)
-        )
-        group_id = grp_cur.lastrowid
-        conn.execute('UPDATE exams SET bank_group_id=? WHERE id=?', (group_id, exam_id))
-
         conn.commit()
         flash('Exam created!', 'success')
         return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
@@ -1324,18 +1343,10 @@ def teacher_exam_detail(exam_id):
         LEFT JOIN sections s ON q.section_id = s.id
         LEFT JOIN question_bank_groups g ON q.bank_group_id = g.id
         LEFT JOIN classes gc ON g.class_id = gc.id
-        WHERE (q.is_bank_only = 1 AND q.teacher_id = ?)
-           OR ((q.is_bank_only IS NULL OR q.is_bank_only = 0) AND c.teacher_id = ? AND q.exam_id != ?)
+        WHERE q.is_bank_only = 1 AND q.teacher_id = ?
         ORDER BY q.bank_group_id IS NULL ASC, COALESCE(g.name,''), COALESCE(c.subject_name,''), COALESCE(c.block_name,''), e.title
-    ''', (session['user_id'], session['user_id'], exam_id)).fetchall()
-    # Deduplicate: keep only the first occurrence of each (question_text, question_type) pair
-    seen_bank = set()
-    bank_questions = []
-    for bq in raw_bank:
-        key = (bq['question_text'].strip().lower(), bq['question_type'])
-        if key not in seen_bank:
-            seen_bank.add(key)
-            bank_questions.append(dict(bq))
+    ''', (session['user_id'],)).fetchall()
+    bank_questions = [dict(bq) for bq in raw_bank]
     # Get teacher's bank groups for the import filter (with class info)
     exam_bank_groups = [dict(g) for g in conn.execute('''
         SELECT g.*, c.subject_name, c.block_name
@@ -1760,16 +1771,6 @@ def teacher_import_from_bank(section_id):
         return redirect(url_for('teacher_home'))
     exam_id = sec['exam_id']
     question_ids = request.form.getlist('question_ids')
-    # Get or create the exam's own bank group
-    exam_row = conn.execute('SELECT e.*, c.subject_name FROM exams e JOIN classes c ON e.class_id=c.id WHERE e.id=?', (exam_id,)).fetchone()
-    exam_bank_group_id = exam_row['bank_group_id'] if exam_row and exam_row['bank_group_id'] else None
-    if not exam_bank_group_id and exam_row:
-        grp_cur = conn.execute(
-            'INSERT INTO question_bank_groups (teacher_id, name, description, class_id) VALUES (?,?,?,?)',
-            (session['user_id'], exam_row['title'], f'Auto-created group for exam: {exam_row["title"]}', exam_row['class_id'])
-        )
-        exam_bank_group_id = grp_cur.lastrowid
-        conn.execute('UPDATE exams SET bank_group_id=? WHERE id=?', (exam_bank_group_id, exam_id))
     imported = 0
     skipped = 0
     for qid in question_ids:
@@ -1785,10 +1786,13 @@ def teacher_import_from_bank(section_id):
             skipped += 1
             continue
         count = conn.execute('SELECT COUNT(*) FROM questions WHERE section_id=?', (section_id,)).fetchone()[0]
+        # Imported copy becomes a regular exam question — it is NOT part of
+        # the bank (is_bank_only left at its default 0) and is not linked to
+        # any bank group. Only the Question Bank page can create groups.
         cur = conn.execute('''
-            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, bank_group_id)
-            VALUES (?,?,?,?,?,?,?,?)
-        ''', (exam_id, section_id, src['question_text'], src['question_type'], src['points'], src['correct_answer'], count, exam_bank_group_id or src['bank_group_id']))
+            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index)
+            VALUES (?,?,?,?,?,?,?)
+        ''', (exam_id, section_id, src['question_text'], src['question_type'], src['points'], src['correct_answer'], count))
         new_qid = cur.lastrowid
         if src['question_type'] == 'multiple_choice':
             choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (qid,)).fetchall()
@@ -1830,25 +1834,13 @@ def teacher_add_question(section_id):
             return jsonify({'ok': False, 'error': 'Question text is required.'}), 400
     if q_text:
         count = conn.execute('SELECT COUNT(*) FROM questions WHERE section_id=?', (section_id,)).fetchone()[0]
-        # Use form-provided group; if none, auto-assign the exam's own bank group
-        # so questions added via the exam page are always grouped by exam.
-        bank_group_id = request.form.get('bank_group_id') or None
-        if not bank_group_id:
-            exam_row = conn.execute('SELECT e.*, c.subject_name FROM exams e JOIN classes c ON e.class_id=c.id WHERE e.id=?', (exam_id,)).fetchone()
-            if exam_row and exam_row['bank_group_id']:
-                bank_group_id = exam_row['bank_group_id']
-            elif exam_row:
-                # Exam was created before auto-group migration — create one now
-                grp_cur = conn.execute(
-                    'INSERT INTO question_bank_groups (teacher_id, name, description, class_id) VALUES (?,?,?,?)',
-                    (session['user_id'], exam_row['title'], f'Auto-created group for exam: {exam_row["title"]}', exam_row['class_id'])
-                )
-                bank_group_id = grp_cur.lastrowid
-                conn.execute('UPDATE exams SET bank_group_id=? WHERE id=?', (bank_group_id, exam_id))
+        # Questions added directly to an exam section are NOT part of the
+        # question bank and are never linked to a bank group — only the
+        # Question Bank page can create/assign bank groups.
         cur = conn.execute('''
-            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, bank_group_id, case_sensitive)
-            VALUES (?,?,?,?,?,?,?,?,?)
-        ''', (exam_id, section_id, q_text, q_type, points, correct, count, bank_group_id, case_sensitive))
+            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive)
+            VALUES (?,?,?,?,?,?,?,?)
+        ''', (exam_id, section_id, q_text, q_type, points, correct, count, case_sensitive))
         q_id = cur.lastrowid
         if q_type == 'multiple_choice':
             for label in ['A', 'B', 'C', 'D']:
@@ -2263,10 +2255,10 @@ def teacher_bank_import_file():
 @role_required('teacher')
 def teacher_question_bank():
     conn = get_db()
-    # Fetch all questions owned by this teacher:
-    #   - bank-only questions (is_bank_only=1, teacher_id matches)
-    #   - exam questions (via exam -> class -> teacher)
-    # Grouped ones come first for dedup (richest info wins)
+    # Fetch only questions explicitly added to the bank (is_bank_only=1).
+    # Regular exam-section questions are NOT part of the bank and must not
+    # appear here — the bank only contains what the teacher added via
+    # "Add Question" / "Import File" on this page.
     raw = conn.execute('''
         SELECT q.id, q.question_text, q.question_type, q.points, q.correct_answer,
                q.bank_group_id, q.is_bank_only,
@@ -2281,34 +2273,17 @@ def teacher_question_bank():
         LEFT JOIN sections s ON q.section_id = s.id
         LEFT JOIN question_bank_groups g ON q.bank_group_id = g.id
         LEFT JOIN classes gc ON g.class_id = gc.id
-        WHERE (q.is_bank_only = 1 AND q.teacher_id = ?)
-           OR ((q.is_bank_only IS NULL OR q.is_bank_only = 0) AND c.teacher_id = ?)
+        WHERE q.is_bank_only = 1 AND q.teacher_id = ?
         ORDER BY q.bank_group_id IS NULL ASC, COALESCE(g.name,''), COALESCE(c.subject_name,''), e.title
-    ''', (session['user_id'], session['user_id'])).fetchall()
+    ''', (session['user_id'],)).fetchall()
     questions = []
-    seen_texts = set()
     for q in raw:
-        # Always keep bank-only questions (they were explicitly added to the bank)
-        # For exam questions, deduplicate by text to avoid showing the same question
-        # from multiple exams
-        if q['is_bank_only']:
-            qd = dict(q)
-            if q['question_type'] == 'multiple_choice':
-                qd['choices'] = [dict(c) for c in conn.execute('SELECT * FROM choices WHERE question_id=?', (q['id'],)).fetchall()]
-            else:
-                qd['choices'] = []
-            questions.append(qd)
+        qd = dict(q)
+        if q['question_type'] == 'multiple_choice':
+            qd['choices'] = [dict(c) for c in conn.execute('SELECT * FROM choices WHERE question_id=?', (q['id'],)).fetchall()]
         else:
-            key = (q['question_text'].strip().lower(), q['question_type'])
-            if key in seen_texts:
-                continue
-            seen_texts.add(key)
-            qd = dict(q)
-            if q['question_type'] == 'multiple_choice':
-                qd['choices'] = [dict(c) for c in conn.execute('SELECT * FROM choices WHERE question_id=?', (q['id'],)).fetchall()]
-            else:
-                qd['choices'] = []
-            questions.append(qd)
+            qd['choices'] = []
+        questions.append(qd)
     # Get all sections grouped by exam for the "Add Question" form
     sections_raw = conn.execute('''
         SELECT s.id as section_id, s.title as section_title, s.section_type,

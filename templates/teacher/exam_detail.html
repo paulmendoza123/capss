@@ -164,115 +164,6 @@
       <div class="drop-empty-hint" style="{% if sd.questions %}display:none;{% endif %}padding:0.6rem;border:1px dashed var(--border);border-radius:8px"></div>
       </div>
 
-      <!-- Import from Question Bank (opened via the floating toolbar) -->
-      {% if bank_questions %}
-      {% set compatible = bank_questions %}
-      {% if compatible %}
-      <div class="import-bank-toggle-wrap" id="import-wrap-{{ sd.section.id }}">
-        <div class="import-panel card mb-1" style="display:none">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
-            <div class="card-title" style="margin:0">🗄️ Import from Question Bank</div>
-            <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('.import-panel').style.display='none'" title="Close">✕</button>
-          </div>
-          <form method="POST" action="{{ url_for('teacher_import_from_bank', section_id=sd.section.id) }}"
-                onsubmit="return submitImportFromBank(event)">
-
-            {# Group questions first by bank group, then by exam #}
-            {% set ns = namespace(current_group='', group_idx=0) %}
-            <div style="max-height:400px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:0.4rem;margin-bottom:0.5rem">
-
-              {% for bq in compatible %}
-                {# Key: use bank_group_id if set, otherwise fall back to exam_title so each group/exam gets its own section #}
-                {% set group_key = ('grp:' ~ bq.bank_group_id) if bq.bank_group_id else ('exam:' ~ bq.exam_title) %}
-                {% if group_key != ns.current_group %}
-                  {# Close previous group div #}
-                  {% if ns.group_idx > 0 %}</div>{% endif %}
-                  {% set ns.current_group = group_key %}
-                  {% set ns.group_idx = ns.group_idx + 1 %}
-                  {% set gid = 'qgrp-' ~ sd.section.id ~ '-' ~ ns.group_idx %}
-
-                  {# Count questions in this sub-group — match by same group_key logic #}
-                  {% set grp_count = namespace(n=0) %}
-                  {% for cq in compatible %}
-                    {% if bq.bank_group_id %}
-                      {% if cq.bank_group_id == bq.bank_group_id %}{% set grp_count.n = grp_count.n + 1 %}{% endif %}
-                    {% else %}
-                      {% if cq.exam_title == bq.exam_title and not cq.bank_group_id %}{% set grp_count.n = grp_count.n + 1 %}{% endif %}
-                    {% endif %}
-                  {% endfor %}
-
-                  {# Group header #}
-                  <div style="margin-top:{% if ns.group_idx > 1 %}0.4rem{% else %}0{% endif %}">
-                    <button type="button"
-                      onclick="(function(btn){
-                        var grp=document.getElementById('{{ gid }}');
-                        var open=grp.style.display!=='none';
-                        grp.style.display=open?'none':'block';
-                        btn.querySelector('.arrow').textContent=open?'▶':'▼';
-                      })(this)"
-                      style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:0.45rem 0.65rem;background:var(--bg2);border:1px solid var(--border);border-radius:7px;cursor:pointer;text-align:left;color:inherit">
-                      <span style="display:flex;flex-direction:column;gap:0.1rem">
-                        {% if bq.group_name %}
-                        <span style="font-size:0.85rem;font-weight:700">🗂️ {{ bq.group_name }}</span>
-                        {% if bq.exam_title or bq.group_subject or bq.subject_name %}
-                        <span style="font-size:0.75rem;color:var(--text2)">
-                          {%- if bq.exam_title %}{{ bq.exam_title }}{% endif %}
-                          {%- if bq.exam_title and (bq.group_subject or bq.subject_name) %} · {% endif %}
-                          {%- if bq.group_subject %}{{ bq.group_subject }} — {{ bq.group_block }}{% elif bq.subject_name %}{{ bq.subject_name }} — {{ bq.block_name }}{% endif %}
-                        </span>
-                        {% endif %}
-                        {% elif bq.exam_title %}
-                        <span style="font-size:0.85rem;font-weight:700">{{ bq.exam_title }}</span>
-                        <span style="font-size:0.75rem;color:var(--text2)">{{ bq.subject_name }} — {{ bq.block_name }} · Ungrouped</span>
-                        {% else %}
-                        <span style="font-size:0.85rem;font-weight:700">📁 Question Bank</span>
-                        <span style="font-size:0.75rem;color:var(--text2)">Ungrouped</span>
-                        {% endif %}
-                      </span>
-                      <span style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
-                        <span style="font-size:0.72rem;color:var(--text2)">{{ grp_count.n }} question{{ 's' if grp_count.n != 1 else '' }}</span>
-                        <span class="arrow" style="font-size:0.75rem;color:var(--text3)">▶</span>
-                      </span>
-                    </button>
-                  </div>
-
-                  {# Question list — hidden by default #}
-                  <div id="{{ gid }}" style="display:none;border:1px solid var(--border);border-top:none;border-radius:0 0 7px 7px;padding:0.2rem 0.2rem 0.35rem">
-                    <div style="display:flex;justify-content:flex-end;padding:0.25rem 0.4rem 0.1rem">
-                      <button type="button" class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 8px"
-                        onclick="(function(btn){
-                          var boxes=document.getElementById('{{ gid }}').querySelectorAll('input[type=checkbox]');
-                          var all=Array.from(boxes).every(b=>b.checked);
-                          boxes.forEach(b=>b.checked=!all);
-                          btn.textContent=all?'Select All':'Deselect All';
-                        })(this)">Select All</button>
-                    </div>
-                {% endif %}
-
-                {# Question row #}
-                <label style="display:flex;align-items:flex-start;gap:0.5rem;padding:0.35rem 0.5rem 0.35rem 0.75rem;cursor:pointer;border-radius:5px"
-                  onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
-                  <input type="checkbox" name="question_ids" value="{{ bq.id }}" style="margin-top:3px;flex-shrink:0">
-                  <div style="min-width:0">
-                    <div style="font-size:0.84rem;font-weight:600;line-height:1.3">{{ bq.question_text }}</div>
-                    <div style="font-size:0.72rem;color:var(--text2);margin-top:0.1rem">
-                      {{ bq.points }} pt{{ 's' if bq.points != 1 else '' }}
-                      {%- if bq.question_type == 'multiple_choice' %} · MC{%- else %} · SA{%- endif %}
-                    </div>
-                  </div>
-                </label>
-
-                {% if loop.last %}</div>{% endif %}
-              {% endfor %}
-
-            </div>
-            <button type="submit" class="btn btn-primary btn-sm">⬇ Import Selected</button>
-          </form>
-        </div>
-      </div>
-      {% endif %}
-      {% endif %}
-
       <!-- Add Question (opened via the floating toolbar) -->
       <div class="add-question-toggle-wrap" id="add-question-wrap-{{ sd.section.id }}">
         <div class="add-question-form-wrap card mb-1" id="add-question-{{ sd.section.id }}" style="display:none">
@@ -344,6 +235,137 @@
     <div class="empty-state-icon">📝</div>
     <div class="empty-state-title">No sections yet</div>
     <div class="empty-state-text">Use the ➕ button on the right to add your first section.</div>
+  </div>
+  {% endif %}
+
+  {# ══════════════════════════════════════════════════
+     IMPORT FROM QUESTION BANK MODAL (opened via the floating toolbar)
+  ══════════════════════════════════════════════════ #}
+  {% if bank_questions and section_data %}
+  <div class="modal-overlay" id="modal-import-bank">
+    <div class="modal" style="max-width:640px;width:95vw">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+        <div class="modal-title" style="margin-bottom:0">🗄️ Import from Question Bank</div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-import-bank')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
+      </div>
+
+      <form id="import-bank-form" onsubmit="return submitImportFromBank(event)">
+        <div class="form-group" style="margin-bottom:0.85rem">
+          <label class="form-label">Import Into Section</label>
+          <select id="importTargetSection" class="form-select" required>
+            {% for sd in section_data %}
+            <option value="{{ sd.section.id }}" {% if loop.last %}selected{% endif %}>Section {{ loop.index }}: {{ sd.section.title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.35rem">
+          <label class="form-label" style="margin:0">Select Questions</label>
+          <button type="button" class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 8px"
+            onclick="(function(btn){
+              var boxes=document.querySelectorAll('#import-bank-form input[name=question_ids]');
+              var all=Array.from(boxes).every(b=>b.checked);
+              boxes.forEach(b=>b.checked=!all);
+              btn.textContent=all?'Select All':'Deselect All';
+            })(this)">Select All</button>
+        </div>
+
+        {# Group questions first by bank group, then by exam #}
+        {% set ns = namespace(current_group='', group_idx=0) %}
+        <div style="max-height:400px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:0.4rem;margin-bottom:0.5rem">
+
+          {% for bq in bank_questions %}
+            {# Key: use bank_group_id if set, otherwise fall back to exam_title so each group/exam gets its own section #}
+            {% set group_key = ('grp:' ~ bq.bank_group_id) if bq.bank_group_id else ('exam:' ~ bq.exam_title) %}
+            {% if group_key != ns.current_group %}
+              {# Close previous group div #}
+              {% if ns.group_idx > 0 %}</div>{% endif %}
+              {% set ns.current_group = group_key %}
+              {% set ns.group_idx = ns.group_idx + 1 %}
+              {% set gid = 'mgrp-' ~ ns.group_idx %}
+
+              {# Count questions in this sub-group — match by same group_key logic #}
+              {% set grp_count = namespace(n=0) %}
+              {% for cq in bank_questions %}
+                {% if bq.bank_group_id %}
+                  {% if cq.bank_group_id == bq.bank_group_id %}{% set grp_count.n = grp_count.n + 1 %}{% endif %}
+                {% else %}
+                  {% if cq.exam_title == bq.exam_title and not cq.bank_group_id %}{% set grp_count.n = grp_count.n + 1 %}{% endif %}
+                {% endif %}
+              {% endfor %}
+
+              {# Group header #}
+              <div style="margin-top:{% if ns.group_idx > 1 %}0.4rem{% else %}0{% endif %}">
+                <button type="button"
+                  onclick="(function(btn){
+                    var grp=document.getElementById('{{ gid }}');
+                    var open=grp.style.display!=='none';
+                    grp.style.display=open?'none':'block';
+                    btn.querySelector('.arrow').textContent=open?'▶':'▼';
+                  })(this)"
+                  style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:0.45rem 0.65rem;background:var(--bg2);border:1px solid var(--border);border-radius:7px;cursor:pointer;text-align:left;color:inherit">
+                  <span style="display:flex;flex-direction:column;gap:0.1rem">
+                    {% if bq.group_name %}
+                    <span style="font-size:0.85rem;font-weight:700">🗂️ {{ bq.group_name }}</span>
+                    {% if bq.exam_title or bq.group_subject or bq.subject_name %}
+                    <span style="font-size:0.75rem;color:var(--text2)">
+                      {%- if bq.exam_title %}{{ bq.exam_title }}{% endif %}
+                      {%- if bq.exam_title and (bq.group_subject or bq.subject_name) %} · {% endif %}
+                      {%- if bq.group_subject %}{{ bq.group_subject }} — {{ bq.group_block }}{% elif bq.subject_name %}{{ bq.subject_name }} — {{ bq.block_name }}{% endif %}
+                    </span>
+                    {% endif %}
+                    {% elif bq.exam_title %}
+                    <span style="font-size:0.85rem;font-weight:700">{{ bq.exam_title }}</span>
+                    <span style="font-size:0.75rem;color:var(--text2)">{{ bq.subject_name }} — {{ bq.block_name }} · Ungrouped</span>
+                    {% else %}
+                    <span style="font-size:0.85rem;font-weight:700">📁 Question Bank</span>
+                    <span style="font-size:0.75rem;color:var(--text2)">Ungrouped</span>
+                    {% endif %}
+                  </span>
+                  <span style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
+                    <span style="font-size:0.72rem;color:var(--text2)">{{ grp_count.n }} question{{ 's' if grp_count.n != 1 else '' }}</span>
+                    <span class="arrow" style="font-size:0.75rem;color:var(--text3)">▶</span>
+                  </span>
+                </button>
+              </div>
+
+              {# Question list — hidden by default #}
+              <div id="{{ gid }}" style="display:none;border:1px solid var(--border);border-top:none;border-radius:0 0 7px 7px;padding:0.2rem 0.2rem 0.35rem">
+                <div style="display:flex;justify-content:flex-end;padding:0.25rem 0.4rem 0.1rem">
+                  <button type="button" class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 8px"
+                    onclick="(function(btn){
+                      var boxes=document.getElementById('{{ gid }}').querySelectorAll('input[type=checkbox]');
+                      var all=Array.from(boxes).every(b=>b.checked);
+                      boxes.forEach(b=>b.checked=!all);
+                      btn.textContent=all?'Select All':'Deselect All';
+                    })(this)">Select All</button>
+                </div>
+            {% endif %}
+
+            {# Question row #}
+            <label style="display:flex;align-items:flex-start;gap:0.5rem;padding:0.35rem 0.5rem 0.35rem 0.75rem;cursor:pointer;border-radius:5px"
+              onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+              <input type="checkbox" name="question_ids" value="{{ bq.id }}" style="margin-top:3px;flex-shrink:0">
+              <div style="min-width:0">
+                <div style="font-size:0.84rem;font-weight:600;line-height:1.3">{{ bq.question_text }}</div>
+                <div style="font-size:0.72rem;color:var(--text2);margin-top:0.1rem">
+                  {{ bq.points }} pt{{ 's' if bq.points != 1 else '' }}
+                  {%- if bq.question_type == 'multiple_choice' %} · MC{%- else %} · SA{%- endif %}
+                </div>
+              </div>
+            </label>
+
+            {% if loop.last %}</div>{% endif %}
+          {% endfor %}
+
+        </div>
+
+        <div class="modal-footer" style="padding-top:0.75rem;border-top:1px solid var(--border)">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('modal-import-bank')">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">⬇ Import Selected</button>
+        </div>
+      </form>
+    </div>
   </div>
   {% endif %}
 </div>
@@ -711,15 +733,23 @@ function submitImportFromBank(e) {
     alert('Select at least one question to import.');
     return false;
   }
-  const data = new FormData(form);
+  const select = document.getElementById('importTargetSection');
+  const sectionId = select && select.value;
+  if (!sectionId) {
+    alert('Choose a section to import into.');
+    return false;
+  }
+  const data = new FormData();
+  checked.forEach(cb => data.append('question_ids', cb.value));
   const submitBtn = form.querySelector('button[type="submit"]');
   if (submitBtn) submitBtn.disabled = true;
-  fetch(form.action, {
+  fetch('/teacher/section/' + sectionId + '/import-from-bank', {
     method: 'POST',
     headers: { 'X-Requested-With': 'XMLHttpRequest' },
     body: data
   }).then(r => r.json()).then(res => {
     if (res && res.ok) {
+      closeModal('modal-import-bank');
       refreshQuestionsTab(res.section_id);
     } else {
       alert((res && res.error) || 'Failed to import questions.');
@@ -836,15 +866,17 @@ function ftbAddQuestion() {
 }
 
 function ftbImportFromBank() {
-  const panels = document.querySelectorAll('.import-panel');
-  if (!panels.length) {
+  const modal = document.getElementById('modal-import-bank');
+  if (!modal) {
     alert('Add some questions to your Question Bank first, then you can import them here.');
     return;
   }
-  const panel = panels[panels.length - 1];
-  panel.style.display = 'block';
-  panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  ftbHighlight(panel);
+  const select = document.getElementById('importTargetSection');
+  if (!select || !select.options.length) {
+    alert('Add a section first, then you can import questions into it.');
+    return;
+  }
+  openModal('modal-import-bank');
 }
 
 /* ── Drag-and-drop: move/reorder questions within or across sections ── */

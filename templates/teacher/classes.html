@@ -20,6 +20,7 @@
     <div class="card-menu">
       <button type="button" class="card-menu-btn" aria-label="Class options">⋮</button>
       <div class="card-menu-dropdown">
+        <button type="button" class="card-menu-item" onclick="openModal('modal-edit-class-{{ cls.id }}')">✏️ Edit Class</button>
         <form method="POST" action="{{ url_for('teacher_copy_class', class_id=cls.id) }}" onsubmit="return confirm('Copy \'{{ cls.subject_name }}\'? This will duplicate the class and all its exams.');">
           <button type="submit" class="card-menu-item">📄 Copy Class</button>
         </form>
@@ -32,6 +33,59 @@
     <div class="class-name">{{ cls.subject_name }}</div>
     <div class="class-meta">{{ cls.subject_code }} · {{ cls.block_name }} · {{ cls.year_level }}</div>
     <div class="class-meta mt-1">👥 {{ cls.student_count }} student(s)</div>
+  </div>
+
+  {# ══════════════════════════════════════════════════
+     EDIT CLASS MODAL
+  ══════════════════════════════════════════════════ #}
+  <div class="modal-overlay" id="modal-edit-class-{{ cls.id }}">
+    <div class="modal" style="max-width:520px;width:95vw">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+        <div class="modal-title" style="margin-bottom:0">✏️ Edit Class</div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-edit-class-{{ cls.id }}')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
+      </div>
+      <form method="POST" action="{{ url_for('teacher_edit_class', class_id=cls.id) }}">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Subject Code</label>
+            <input type="text" name="subject_code" class="form-control" value="{{ cls.subject_code }}" placeholder="e.g. CS101" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Block Name</label>
+            <input type="text" name="block_name" class="form-control" value="{{ cls.block_name }}" placeholder="e.g. A" required />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Subject Name</label>
+          <input type="text" name="subject_name" class="form-control" value="{{ cls.subject_name }}" placeholder="e.g. Introduction to Programming" required />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Program</label>
+            <select name="program" class="form-select" required>
+              <option value="">Select Program</option>
+              {% for p in programs %}
+              <option value="{{ p.code }}" {% if p.code == cls.program %}selected{% endif %}>{{ p.code }} — {{ p.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Year Level</label>
+            <select name="year_level" class="form-select" required>
+              <option value="">Select Year</option>
+              {% for yl in ['1st Year', '2nd Year', '3rd Year', '4th Year'] %}
+              <option {% if yl == cls.year_level %}selected{% endif %}>{{ yl }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="form-hint mb-2">Class code <strong class="font-mono">{{ cls.class_code }}</strong> stays the same — students already using it won't be affected.</div>
+        <div class="modal-footer" style="padding-top:0.75rem;border-top:1px solid var(--border)">
+          <button type="button" class="btn btn-ghost" onclick="closeModal('modal-edit-class-{{ cls.id }}')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
   </div>
   {% endfor %}
 </div>
