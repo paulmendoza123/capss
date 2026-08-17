@@ -379,6 +379,21 @@
     ta.addEventListener('input', () => saveAnswer(ta.dataset.qid, ta.value));
   });
 
+  // Wire up fill-in-the-blank inputs: on every keystroke, join all blanks for
+  // that question (in order) with '|' into the hidden textarea, then save it
+  // through the same pipeline as short-answer questions.
+  document.querySelectorAll('.fib-blank-input').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const qid = inp.dataset.qid;
+      const blanks = Array.from(document.querySelectorAll(`.fib-blank-input[data-qid="${qid}"]`))
+        .sort((a, b) => parseInt(a.dataset.blankIndex) - parseInt(b.dataset.blankIndex));
+      const joined = blanks.map(b => b.value).join('|');
+      const hidden = document.querySelector(`.fib-hidden[data-qid="${qid}"]`);
+      if (hidden) hidden.value = joined;
+      saveAnswer(qid, joined);
+    });
+  });
+
   // Re-apply selected class to any radios already checked (from server or localStorage restore)
   document.querySelectorAll('.choice-item input[type=radio]:checked').forEach(radio => {
     applySelectedClass(radio);

@@ -214,9 +214,16 @@
         <div style="color:var(--accent2);font-weight:700;margin-bottom:0.35rem">Short Answer:</div>
         <div>1. What is the brain of the computer?</div>
         <div>Answer: CPU</div>
+        <div style="margin:0.6rem 0;border-top:1px dashed var(--border)"></div>
+        <div style="color:#c77dff;font-weight:700;margin-bottom:0.35rem">Fill in the Blank:</div>
+        <div>1. The ___ is the powerhouse of the cell, and water is H2O and ___.</div>
+        <div>Answer: mitochondria/mitochondrion | oxygen/O2</div>
       </div>
       <div style="font-size:0.75rem;color:var(--text3);margin-top:0.5rem">
         ℹ️ The group name will be taken from the filename automatically (e.g. <em>Chapter3.docx</em> → <strong>Chapter3</strong>).
+      </div>
+      <div style="font-size:0.75rem;color:var(--text3);margin-top:0.35rem">
+        ℹ️ For Fill in the Blank: use <strong>___</strong> (three underscores) to mark each blank in the question. In the answer line, separate answers for <strong>different blanks</strong> with <strong>|</strong>, and separate <strong>alternate acceptable answers</strong> for the same blank with <strong>/</strong>.
       </div>
     </div>
 
@@ -270,6 +277,9 @@ function updateImportPreview(input) {
           <div class="type-pill" id="pill-sa" onclick="selectType('short_answer')">
             ✏️ Short Answer
           </div>
+          <div class="type-pill" id="pill-fib" onclick="selectType('fill_blank')">
+            ▭ Fill in the Blank
+          </div>
         </div>
         <input type="hidden" name="question_type" id="bankQType">
       </div>
@@ -277,7 +287,7 @@ function updateImportPreview(input) {
       {# Question text #}
       <div class="form-group">
         <label class="form-label">Question</label>
-        <textarea name="question_text" class="form-control" rows="3"
+        <textarea name="question_text" class="form-control" id="bankQText" rows="3"
                   placeholder="Type your question here…" required></textarea>
       </div>
 
@@ -307,6 +317,23 @@ function updateImportPreview(input) {
           <label class="form-label">Expected Answer</label>
           <input type="text" name="correct_answer_sa" id="bankSaAnswer"
                  class="form-control" placeholder="The expected correct answer…">
+        </div>
+      </div>
+
+      {# Fill in the Blank answers #}
+      <div id="bqFib" style="display:none">
+        <div class="text-xs text-muted mb-1">Type <code>___</code> in the question above for each blank, then list the answers below in the same order, separated by <strong>|</strong>. Use <strong>/</strong> for alternate acceptable answers within one blank.</div>
+        <div class="form-group">
+          <label class="form-label">Blank Answers</label>
+          <input type="text" name="correct_answer_fib" id="bankFibAnswer"
+                 class="form-control" placeholder="ans1/alt1 | ans2 | ans3/alt2">
+          <div class="text-xs mt-1" id="bankFibHint"></div>
+        </div>
+        <div class="form-group">
+          <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+            <input type="checkbox" name="case_sensitive" value="1" />
+            Case-sensitive (exact case must match, e.g. "Manila" ≠ "manila")
+          </label>
         </div>
       </div>
 
@@ -353,8 +380,10 @@ function selectType(type) {
   document.getElementById('bankQType').value = type;
   document.getElementById('pill-mc').classList.toggle('active', type === 'multiple_choice');
   document.getElementById('pill-sa').classList.toggle('active', type === 'short_answer');
+  document.getElementById('pill-fib').classList.toggle('active', type === 'fill_blank');
   document.getElementById('bqChoices').style.display = type === 'multiple_choice' ? '' : 'none';
   document.getElementById('bqShort').style.display   = type === 'short_answer'   ? '' : 'none';
+  document.getElementById('bqFib').style.display     = type === 'fill_blank'     ? '' : 'none';
   document.getElementById('bankSubmitBtn').disabled = false;
   const qTypeFilter = document.getElementById('qTypeFilter');
   if (qTypeFilter) { qTypeFilter.value = type; filterQ(); }
@@ -362,14 +391,45 @@ function selectType(type) {
 
 /* ── Correct answer for MC ── */
 
+/* ── Live blank-count hint for Fill in the Blank ── */
+document.addEventListener('input', function(e) {
+  if (!e.target.matches('#bankQText, #bankFibAnswer')) return;
+  const ta = document.getElementById('bankQText');
+  const ans = document.getElementById('bankFibAnswer');
+  const hint = document.getElementById('bankFibHint');
+  if (!ta || !ans || !hint) return;
+  const blankCount = (ta.value.match(/___/g) || []).length;
+  const ansCount = ans.value.trim() ? ans.value.split('|').length : 0;
+  if (blankCount === 0) {
+    hint.textContent = '';
+  } else if (blankCount === ansCount) {
+    hint.textContent = `✓ ${blankCount} blank(s) matched.`;
+    hint.style.color = 'var(--accent2)';
+  } else {
+    hint.textContent = `⚠ ${blankCount} blank(s) in text, but ${ansCount} answer group(s) provided.`;
+    hint.style.color = 'var(--danger)';
+  }
+});
+
 /* ── Submit validation ── */
 function bankSubmitValidate(e) {
   const type = document.getElementById('bankQType').value;
   if (!type) { e.preventDefault(); alert('Please select a question type.'); return false; }
   const ca = document.getElementById('bankCorrectAnswer');
-  ca.value = type === 'multiple_choice'
-    ? document.getElementById('bankMcAnswer').value
-    : document.getElementById('bankSaAnswer').value;
+  if (type === 'multiple_choice') {
+    ca.value = document.getElementById('bankMcAnswer').value;
+  } else if (type === 'fill_blank') {
+    ca.value = document.getElementById('bankFibAnswer').value;
+    const blankCount = (document.getElementById('bankQText').value.match(/___/g) || []).length;
+    const ansCount = ca.value.trim() ? ca.value.split('|').length : 0;
+    if (blankCount === 0 || blankCount !== ansCount) {
+      e.preventDefault();
+      alert(`Fill in the Blank questions need one "___" per answer group. Found ${blankCount} blank(s) but ${ansCount} answer group(s).`);
+      return false;
+    }
+  } else {
+    ca.value = document.getElementById('bankSaAnswer').value;
+  }
   return true;
 }
 
@@ -424,6 +484,7 @@ function toggleGroupEdit(id) {
     <option value="all">All Types</option>
     <option value="multiple_choice">Multiple Choice</option>
     <option value="short_answer">Short Answer</option>
+    <option value="fill_blank">Fill in the Blank</option>
   </select>
   <select id="qGroupFilter" class="form-select" style="width:180px;flex-shrink:0" onchange="filterQ()">
     <option value="all">All Groups</option>
@@ -465,7 +526,7 @@ function toggleGroupEdit(id) {
                 data-group="g{{ q.bank_group_id }}">
               <td class="font-mono text-xs text-muted">{{ loop.index }}</td>
               <td style="min-width:160px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ q.question_text }}">{{ q.question_text }}</td>
-              <td>{% if q.question_type == 'multiple_choice' %}<span class="badge badge-blue">MC</span>{% else %}<span class="badge badge-orange">SA</span>{% endif %}</td>
+              <td>{% if q.question_type == 'multiple_choice' %}<span class="badge badge-blue">MC</span>{% elif q.question_type == 'fill_blank' %}<span class="badge badge-purple">FIB</span>{% else %}<span class="badge badge-orange">SA</span>{% endif %}</td>
               <td class="font-mono text-sm">{{ q.points }}</td>
               <td>
                 <div class="flex gap-1">
@@ -515,7 +576,7 @@ function toggleGroupEdit(id) {
             data-group="ungrouped">
           <td class="font-mono text-xs text-muted">{{ loop.index }}</td>
           <td style="min-width:160px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ q.question_text }}">{{ q.question_text }}</td>
-          <td>{% if q.question_type == 'multiple_choice' %}<span class="badge badge-blue">MC</span>{% else %}<span class="badge badge-orange">SA</span>{% endif %}</td>
+          <td>{% if q.question_type == 'multiple_choice' %}<span class="badge badge-blue">MC</span>{% elif q.question_type == 'fill_blank' %}<span class="badge badge-purple">FIB</span>{% else %}<span class="badge badge-orange">SA</span>{% endif %}</td>
           <td class="font-mono text-sm">{{ q.points }}</td>
           <td>
             <div class="flex gap-1">
@@ -592,10 +653,28 @@ function toggleGroupEdit(id) {
           {% endfor %}
         </select>
       </div>
+      {% elif q.question_type == 'fill_blank' %}
+      <div class="form-group">
+        <label class="form-label">Blank Answers</label>
+        <input type="text" name="correct_answer" class="form-control" value="{{ q.correct_answer }}" placeholder="ans1/alt1 | ans2 | ans3/alt2">
+        <div class="text-xs text-muted mt-1">One group per "___" in the text, separated by <strong>|</strong>. Use <strong>/</strong> for alternate acceptable answers within a blank.</div>
+      </div>
+      <div class="form-group">
+        <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+          <input type="checkbox" name="case_sensitive" value="1" {% if q.case_sensitive %}checked{% endif %} />
+          Case-sensitive (exact case must match, e.g. "Manila" ≠ "manila")
+        </label>
+      </div>
       {% else %}
       <div class="form-group">
         <label class="form-label">Expected Answer</label>
         <input type="text" name="correct_answer" class="form-control" value="{{ q.correct_answer }}" placeholder="Expected answer">
+      </div>
+      <div class="form-group">
+        <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+          <input type="checkbox" name="case_sensitive" value="1" {% if q.case_sensitive %}checked{% endif %} />
+          Case-sensitive (exact case must match, e.g. "Manila" ≠ "manila")
+        </label>
       </div>
       {% endif %}
       <div class="modal-footer" style="padding-top:0.75rem;border-top:1px solid var(--border)">

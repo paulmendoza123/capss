@@ -11,6 +11,50 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = 'spark_secret_key_2027'
 
+# ─── Fill in the Blank helpers ──────────────────────────────────────────────
+# Storage format for a fill_blank question's correct_answer column:
+#   "ans1a/ans1b | ans2a | ans3a/ans3b/ans3c"
+# '|' separates the blanks (in the order the '___' markers appear in the
+# question text), and '/' separates alternate acceptable answers for one blank.
+
+def fib_count_blanks(question_text):
+    """Number of '___' blank markers in a question's text."""
+    return (question_text or '').count('___')
+
+def fib_parse_answer(correct_answer):
+    """Parse a fill_blank correct_answer string into a list of blanks, each a
+    list of acceptable alternate answers, e.g.
+    'CPU/processor | RAM' -> [['CPU', 'processor'], ['RAM']]"""
+    if not correct_answer:
+        return []
+    blanks = []
+    for part in correct_answer.split('|'):
+        alts = [a.strip() for a in part.split('/') if a.strip()]
+        blanks.append(alts)
+    return blanks
+
+def fib_grade(student_answer, correct_answer, case_sensitive=False):
+    """Grade a fill_blank submission per blank.
+    student_answer: '|'-separated student inputs, one per blank, in order.
+    Returns (correct_blank_count, total_blank_count)."""
+    blanks = fib_parse_answer(correct_answer)
+    total = len(blanks)
+    if total == 0:
+        return 0, 0
+    student_parts = (student_answer or '').split('|')
+    correct_count = 0
+    for i, alts in enumerate(blanks):
+        given = student_parts[i].strip() if i < len(student_parts) else ''
+        if not given:
+            continue
+        if case_sensitive:
+            match = any(given == alt for alt in alts)
+        else:
+            match = any(given.lower() == alt.lower() for alt in alts)
+        if match:
+            correct_count += 1
+    return correct_count, total
+
 DB_PATH = os.path.join(os.path.dirname(__file__), 'instance', 'spark.db')
 
 # ─── Database ────────────────────────────────────────────────────────────────
@@ -96,7 +140,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             exam_id INTEGER NOT NULL,
             title TEXT NOT NULL,
-            section_type TEXT NOT NULL CHECK(section_type IN ('multiple_choice','short_answer')),
+            section_type TEXT NOT NULL CHECK(section_type IN ('multiple_choice','short_answer','fill_blank')),
             order_index INTEGER DEFAULT 0,
             FOREIGN KEY (exam_id) REFERENCES exams(id)
         );
@@ -106,7 +150,7 @@ def init_db():
             exam_id INTEGER NOT NULL,
             section_id INTEGER,
             question_text TEXT NOT NULL,
-            question_type TEXT NOT NULL CHECK(question_type IN ('multiple_choice','short_answer')),
+            question_type TEXT NOT NULL CHECK(question_type IN ('multiple_choice','short_answer','fill_blank')),
             points INTEGER DEFAULT 1,
             correct_answer TEXT,
             order_index INTEGER DEFAULT 0,
@@ -302,7 +346,7 @@ def init_db():
                     exam_id INTEGER,
                     section_id INTEGER,
                     question_text TEXT NOT NULL,
-                    question_type TEXT NOT NULL CHECK(question_type IN ('multiple_choice','short_answer')),
+                    question_type TEXT NOT NULL CHECK(question_type IN ('multiple_choice','short_answer','fill_blank')),
                     points INTEGER DEFAULT 1,
                     correct_answer TEXT,
                     order_index INTEGER DEFAULT 0,
@@ -366,6 +410,51 @@ def init_db():
         conn.commit()
     except Exception:
         pass  # Column already exists
+
+    # Migration: widen questions.question_type CHECK constraint to allow 'fill_blank'.
+    # SQLite can't ALTER a CHECK constraint in place, so recreate the table (same
+    # pattern used for the exam_id-nullable migration above) if the old constraint
+    # is still in effect.
+    try:
+        tbl_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='questions'"
+        ).fetchone()
+        if tbl_sql and 'fill_blank' not in (tbl_sql['sql'] or ''):
+            conn.execute('PRAGMA foreign_keys=OFF')
+            conn.execute('''
+                CREATE TABLE questions_fib_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    exam_id INTEGER,
+                    section_id INTEGER,
+                    question_text TEXT NOT NULL,
+                    question_type TEXT NOT NULL CHECK(question_type IN ('multiple_choice','short_answer','fill_blank')),
+                    points INTEGER DEFAULT 1,
+                    correct_answer TEXT,
+                    order_index INTEGER DEFAULT 0,
+                    bank_group_id INTEGER REFERENCES question_bank_groups(id),
+                    is_bank_only INTEGER DEFAULT 0,
+                    teacher_id INTEGER REFERENCES users(id),
+                    case_sensitive INTEGER DEFAULT 0,
+                    FOREIGN KEY (exam_id) REFERENCES exams(id),
+                    FOREIGN KEY (section_id) REFERENCES sections(id)
+                )
+            ''')
+            conn.execute('''
+                INSERT INTO questions_fib_new
+                    (id, exam_id, section_id, question_text, question_type, points,
+                     correct_answer, order_index, bank_group_id, is_bank_only, teacher_id, case_sensitive)
+                SELECT id, exam_id, section_id, question_text, question_type, points,
+                       correct_answer, order_index, bank_group_id,
+                       COALESCE(is_bank_only, 0), teacher_id, COALESCE(case_sensitive, 0)
+                FROM questions
+            ''')
+            conn.execute('DROP TABLE questions')
+            conn.execute('ALTER TABLE questions_fib_new RENAME TO questions')
+            conn.execute('PRAGMA foreign_keys=ON')
+            conn.commit()
+    except Exception:
+        conn.execute('PRAGMA foreign_keys=ON')
+        pass  # Already widened or migration failed gracefully
 
     # Migration: add description to sections (sections no longer have a fixed question type)
     try:
@@ -831,17 +920,23 @@ def student_take_exam(exam_id):
                 INSERT OR REPLACE INTO answers (session_id, question_id, answer_text)
                 VALUES (?, ?, ?)
             ''', (sess_id, q['id'], ans))
+            try:
+                is_case_sensitive = bool(q['case_sensitive'])
+            except (IndexError, KeyError):
+                is_case_sensitive = False
             if q['question_type'] == 'multiple_choice':
                 if ans.upper() == (q['correct_answer'] or '').upper():
                     score += q['points']
+            elif q['question_type'] == 'fill_blank':
+                # Partial credit: award points proportional to the number of
+                # blanks the student got right out of the total blanks.
+                correct_blanks, total_blanks = fib_grade(ans, q['correct_answer'], is_case_sensitive)
+                if total_blanks > 0:
+                    score += q['points'] * (correct_blanks / total_blanks)
             else:
                 # Short answer: respect the per-question case-sensitivity toggle.
                 # Default (case_sensitive not set / 0) keeps the original case-insensitive
                 # comparison so existing questions/behavior are unaffected.
-                try:
-                    is_case_sensitive = bool(q['case_sensitive'])
-                except (IndexError, KeyError):
-                    is_case_sensitive = False
                 if is_case_sensitive:
                     if ans.strip() == (q['correct_answer'] or '').strip():
                         score += q['points']
@@ -905,6 +1000,8 @@ def student_take_exam(exam_id):
                     q['choices'] = [dict(c) for c in choices]
                 else:
                     q['choices'] = []
+                if q['question_type'] == 'fill_blank':
+                    q['text_parts'] = (q['question_text'] or '').split('___')
                 all_questions.append(q)
             sections_data.append({'title': sec['title'], 'questions': q_list})
     else:
@@ -924,6 +1021,8 @@ def student_take_exam(exam_id):
                 q['choices'] = [dict(c) for c in choices]
             else:
                 q['choices'] = []
+            if q['question_type'] == 'fill_blank':
+                q['text_parts'] = (q['question_text'] or '').split('___')
             all_questions.append(q)
         sections_data.append({'title': None, 'questions': q_list})
 
@@ -1010,9 +1109,37 @@ def student_exam_result(exam_id):
                 qd['choices'] = [dict(c) for c in choices]
             else:
                 qd['choices'] = []
+            try:
+                is_case_sensitive = bool(q['case_sensitive'])
+            except (IndexError, KeyError):
+                is_case_sensitive = False
             is_correct = False
             if q['question_type'] == 'multiple_choice':
                 is_correct = (qd['student_answer'] or '').upper() == (q['correct_answer'] or '').upper()
+            elif q['question_type'] == 'fill_blank':
+                correct_blanks, total_blanks = fib_grade(qd['student_answer'], q['correct_answer'], is_case_sensitive)
+                is_correct = total_blanks > 0 and correct_blanks == total_blanks
+                qd['fib_correct_blanks'] = correct_blanks
+                qd['fib_total_blanks'] = total_blanks
+                qd['fib_points_earned'] = round(q['points'] * (correct_blanks / total_blanks), 2) if total_blanks else 0
+                # Per-blank breakdown for the review UI
+                blanks = fib_parse_answer(q['correct_answer'])
+                student_parts = (qd['student_answer'] or '').split('|')
+                blank_results = []
+                for i, alts in enumerate(blanks):
+                    given = student_parts[i].strip() if i < len(student_parts) else ''
+                    if is_case_sensitive:
+                        b_correct = any(given == alt for alt in alts) if given else False
+                    else:
+                        b_correct = any(given.lower() == alt.lower() for alt in alts) if given else False
+                    blank_results.append({
+                        'index': i + 1,
+                        'student': given,
+                        'accepted': ' / '.join(alts),
+                        'is_correct': b_correct,
+                    })
+                qd['fib_blanks'] = blank_results
+                qd['text_parts'] = (q['question_text'] or '').split('___')
             else:
                 is_correct = (qd['student_answer'] or '').lower() == (q['correct_answer'] or '').lower()
             qd['is_correct'] = is_correct
@@ -1821,17 +1948,28 @@ def teacher_add_question(section_id):
     exam_id = sec['exam_id']
     q_text = request.form.get('question_text', '').strip()
     q_type = request.form.get('question_type', '').strip()
-    if q_type not in ('multiple_choice', 'short_answer'):
+    if q_type not in ('multiple_choice', 'short_answer', 'fill_blank'):
         q_type = sec['section_type']
     points = request.form.get('points', 1, type=int)
     if q_type == 'multiple_choice':
         correct = request.form.get('correct_answer_mc', '').strip()
+    elif q_type == 'fill_blank':
+        correct = request.form.get('correct_answer_fib', '').strip()
     else:
         correct = request.form.get('correct_answer_sa', '').strip()
     case_sensitive = 1 if request.form.get('case_sensitive') else 0
     if not q_text:
         if _wants_json():
             return jsonify({'ok': False, 'error': 'Question text is required.'}), 400
+    if q_type == 'fill_blank' and q_text:
+        blank_count = fib_count_blanks(q_text)
+        answer_count = len(correct.split('|')) if correct else 0
+        if blank_count == 0 or blank_count != answer_count:
+            msg = f'Fill in the Blank questions need one "___" per answer. Found {blank_count} blank(s) but {answer_count} answer group(s).'
+            flash(msg, 'error')
+            if _wants_json():
+                return jsonify({'ok': False, 'error': msg}), 400
+            return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
     if q_text:
         count = conn.execute('SELECT COUNT(*) FROM questions WHERE section_id=?', (section_id,)).fetchone()[0]
         # Questions added directly to an exam section are NOT part of the
@@ -1932,6 +2070,15 @@ def teacher_edit_question(question_id):
     points = request.form.get('points', 1, type=int)
     bank_group_id = request.form.get('bank_group_id') or None
     case_sensitive = 1 if request.form.get('case_sensitive') else 0
+    if q['question_type'] == 'fill_blank':
+        blank_count = fib_count_blanks(q_text)
+        answer_count = len(correct.split('|')) if correct else 0
+        if blank_count == 0 or blank_count != answer_count:
+            flash(f'Fill in the Blank questions need one "___" per answer. Found {blank_count} blank(s) but {answer_count} answer group(s).', 'error')
+            redirect_to = request.form.get('redirect_to', '')
+            if redirect_to == 'bank' or not exam_id:
+                return redirect(url_for('teacher_question_bank'))
+            return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
     conn.execute('UPDATE questions SET question_text=?, correct_answer=?, points=?, bank_group_id=?, case_sensitive=? WHERE id=?',
                  (q_text, correct, points, bank_group_id, case_sensitive, question_id))
     if q['question_type'] == 'multiple_choice':
@@ -2069,10 +2216,18 @@ def teacher_bank_add_question():
     points = request.form.get('points', 1, type=int)
     correct = request.form.get('correct_answer', '').strip()
     bank_group_id = request.form.get('bank_group_id') or None
+    case_sensitive = 1 if request.form.get('case_sensitive') else 0
 
-    if not q_text or q_type not in ('multiple_choice', 'short_answer'):
+    if not q_text or q_type not in ('multiple_choice', 'short_answer', 'fill_blank'):
         flash('Question text and type are required.', 'error')
         return redirect(url_for('teacher_question_bank'))
+
+    if q_type == 'fill_blank':
+        blank_count = fib_count_blanks(q_text)
+        answer_count = len(correct.split('|')) if correct else 0
+        if blank_count == 0 or blank_count != answer_count:
+            flash(f'Fill in the Blank questions need one "___" per answer. Found {blank_count} blank(s) but {answer_count} answer group(s).', 'error')
+            return redirect(url_for('teacher_question_bank'))
 
     if bank_group_id:
         grp = conn.execute(
@@ -2085,9 +2240,9 @@ def teacher_bank_add_question():
     cur = conn.execute(
         '''INSERT INTO questions
            (exam_id, section_id, question_text, question_type, points, correct_answer,
-            order_index, bank_group_id, is_bank_only, teacher_id)
-           VALUES (NULL, NULL, ?, ?, ?, ?, 0, ?, 1, ?)''',
-        (q_text, q_type, points, correct, bank_group_id, session['user_id'])
+            order_index, bank_group_id, is_bank_only, teacher_id, case_sensitive)
+           VALUES (NULL, NULL, ?, ?, ?, ?, 0, ?, 1, ?, ?)''',
+        (q_text, q_type, points, correct, bank_group_id, session['user_id'], case_sensitive)
     )
     q_id = cur.lastrowid
     if q_type == 'multiple_choice':
@@ -2151,12 +2306,19 @@ def teacher_bank_import_file():
     # Short answer:
     #   1. What is the brain of the computer?
     #   Answer: CPU
+    #
+    # Fill in the Blank (use "___" to mark each blank; separate multiple
+    # blanks in the answer with "|", and alternate acceptable answers for
+    # the same blank with "/"):
+    #   1. The ___ is the powerhouse of the cell, and water is H2O and ___.
+    #   Answer: mitochondria/mitochondrion | oxygen/O2
     # ─────────────────────────────────────────────────────────────────────────
     lines = [l.rstrip() for l in content.splitlines()]
 
-    # Drop section header lines (e.g. "Multiple Choice:", "Short Answer:") so
-    # they don't get mistaken for a stray question with no answer.
-    _HEADER_RE = _re.compile(r'^(multiple\s*choice|short\s*answer)\s*:?\s*$', _re.IGNORECASE)
+    # Drop section header lines (e.g. "Multiple Choice:", "Short Answer:",
+    # "Fill in the Blank:") so they don't get mistaken for a stray question
+    # with no answer.
+    _HEADER_RE = _re.compile(r'^(multiple\s*choice|short\s*answer|fill\s*in\s*the\s*blank)\s*:?\s*$', _re.IGNORECASE)
     lines = [l for l in lines if not _HEADER_RE.match(l.strip())]
 
     # ── Clean parser: split file into question blocks first, then parse each ──
@@ -2200,6 +2362,19 @@ def teacher_bank_import_file():
                 'text': q_text,
                 'choices': choices,
                 'answer': ans_label,
+            })
+        elif '___' in q_text:
+            # Fill in the Blank: skip if the blank count doesn't match the
+            # number of '|'-separated answer groups, rather than importing
+            # a broken question.
+            blank_count = q_text.count('___')
+            answer_count = len([p for p in answer_raw.split('|')]) if answer_raw else 0
+            if blank_count == 0 or blank_count != answer_count:
+                continue
+            parsed.append({
+                'type': 'fill_blank',
+                'text': q_text,
+                'answer': answer_raw,
             })
         else:
             parsed.append({
