@@ -30,6 +30,10 @@
         <option value="admin">Admin</option>
       </select>
     </div>
+    <div id="admin-warning" class="alert alert-error" style="display:none;margin-bottom:1rem">
+      ⚠️ Admin accounts have full system access (manage users, exams, and system settings).
+      Only create this if the person genuinely needs administrative privileges.
+    </div>
     <div id="student-fields" style="display:none">
       <div class="form-row">
         <div class="form-group">
@@ -61,6 +65,17 @@
   document.getElementById('role-select').addEventListener('change', function () {
     document.getElementById('student-fields').style.display =
       this.value === 'student' ? 'block' : 'none';
+    document.getElementById('admin-warning').style.display =
+      this.value === 'admin' ? 'block' : 'none';
+  });
+
+  document.querySelector('form').addEventListener('submit', function (e) {
+    var role = document.getElementById('role-select').value;
+    if (role === 'admin') {
+      var name = document.querySelector('input[name="full_name"]').value || 'this person';
+      var ok = confirm('Grant full admin access to ' + name + '? This gives them control over all users, exams, and system settings.');
+      if (!ok) e.preventDefault();
+    }
   });
 </script>
 {% endblock %}

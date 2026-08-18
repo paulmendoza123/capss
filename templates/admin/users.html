@@ -50,6 +50,7 @@
           <th>Program</th>
           <th>Year</th>
           <th>Joined</th>
+          <th>Created By</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -66,16 +67,19 @@
           <td class="text-sm">{{ u.program or '—' }}</td>
           <td class="text-sm">{{ u.year_level or '—' }}</td>
           <td class="text-sm text-muted">{{ u.created_at[:10] if u.created_at else '—' }}</td>
+          <td class="text-sm text-muted">{{ u.created_by_name or 'Self-registered' }}</td>
           <td>
             <div class="flex gap-1">
               <a href="{{ url_for('admin_edit_user', user_id=u.id) }}" class="btn btn-ghost btn-sm">✏️ Edit</a>
-              {% if u.role != 'admin' %}
-              <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}"
-                    onsubmit="return confirm('Delete {{ u.full_name }}? This cannot be undone.')" style="margin:0">
-                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-              </form>
+              {% if u.id == session.user_id %}
+              <span class="text-xs text-muted" style="padding:0.3rem">This is you</span>
+              {% elif u.role == 'admin' and admin_count <= 1 %}
+              <span class="text-xs text-muted" style="padding:0.3rem" title="Cannot delete the last admin">Protected</span>
               {% else %}
-              <span class="text-xs text-muted" style="padding:0.3rem">Protected</span>
+              <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}"
+                    onsubmit="return confirm('{% if u.role == "admin" %}Revoke admin access for {{ u.full_name }}? They will lose all system access.{% else %}Delete {{ u.full_name }}? This cannot be undone.{% endif %}')" style="margin:0">
+                <button type="submit" class="btn btn-danger btn-sm">{% if u.role == 'admin' %}Revoke Admin{% else %}Delete{% endif %}</button>
+              </form>
               {% endif %}
             </div>
           </td>
