@@ -197,7 +197,9 @@
     {% for q in sd.questions %}
     <div class="question-block no-select">
       <div class="question-num">Question {{ loop.index }} · {{ q.points }} pt(s)</div>
+      {% if q.question_type != 'fill_blank' %}
       <div class="question-text">{{ q.question_text }}</div>
+      {% endif %}
 
       {% if q.question_type == 'multiple_choice' %}
       <div class="choices-list">
@@ -211,6 +213,16 @@
         </label>
         {% endfor %}
       </div>
+      {% elif q.question_type == 'fill_blank' %}
+      {% set saved_parts = (saved_map.get(q.id, '') or '').split('|') %}
+      <div class="question-text fib-text-line" data-qid="{{ q.id }}">
+        {% for part in q.text_parts %}{{ part }}{% if not loop.last %}<input
+               type="text" class="form-control fib-blank-input" style="display:inline-block;width:140px;margin:0 0.3rem"
+               data-qid="{{ q.id }}" data-blank-index="{{ loop.index0 }}"
+               value="{{ saved_parts[loop.index0] if saved_parts|length > loop.index0 else '' }}" />{% endif %}{% endfor %}
+      </div>
+      <textarea name="answer_{{ q.id }}" class="auto-save fib-hidden" data-qid="{{ q.id }}"
+                style="display:none">{{ saved_map.get(q.id, '') }}</textarea>
       {% else %}
       <textarea name="answer_{{ q.id }}" class="form-control auto-save"
                 data-qid="{{ q.id }}"
@@ -270,6 +282,18 @@ let currentSection = 0;
     document.querySelectorAll('textarea.auto-save').forEach(ta => {
       const saved = local[ta.dataset.qid];
       if (saved !== undefined) ta.value = saved;
+    });
+
+    // Restore fill-in-the-blank inputs (split the saved '|'-joined value back into each blank)
+    document.querySelectorAll('.fib-hidden').forEach(ta => {
+      const saved = local[ta.dataset.qid];
+      if (saved === undefined) return;
+      ta.value = saved;
+      const parts = saved.split('|');
+      document.querySelectorAll(`.fib-blank-input[data-qid="${ta.dataset.qid}"]`).forEach(inp => {
+        const idx = parseInt(inp.dataset.blankIndex);
+        if (parts[idx] !== undefined) inp.value = parts[idx];
+      });
     });
   } catch(e) {}
 })();

@@ -418,6 +418,8 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .badge-red { background: rgba(247,95,95,0.15); color: var(--danger); }
 .badge-yellow { background: rgba(247,201,79,0.15); color: var(--warning); }
 .badge-gray { background: rgba(139,145,168,0.15); color: var(--text2); }
+.badge-purple { background: rgba(199,125,255,0.15); color: #c77dff; }
+.badge-purple { background: rgba(199,125,255,0.15); color: #c77dff; }
 
 /* ── TABS ── */
 .tabs {

@@ -98,6 +98,14 @@
           <div class="text-sm text-muted mt-1">Answer: <span class="text-success fw-600">{{ q.correct_answer }}</span>
             {% if q.case_sensitive %}<span class="badge badge-gray text-xs" style="margin-left:0.4rem" title="Exact case must match">Aa Case-sensitive</span>{% endif %}
           </div>
+          {% elif q.question_type == 'fill_blank' %}
+          <div class="text-sm text-muted mt-1">
+            Blank answers:
+            {% for part in q.correct_answer.split('|') %}
+            <span class="badge badge-gray text-xs" style="margin:0 0.15rem">{{ loop.index }}: {{ part.strip() }}</span>
+            {% endfor %}
+            {% if q.case_sensitive %}<span class="badge badge-gray text-xs" style="margin-left:0.4rem" title="Exact case must match">Aa Case-sensitive</span>{% endif %}
+          </div>
           {% endif %}
 
           <div class="flex gap-1 mt-1">
@@ -141,6 +149,18 @@
                 {% endfor %}
               </select>
             </div>
+            {% elif q.question_type == 'fill_blank' %}
+            <div class="form-group">
+              <label class="form-label">Blank Answers</label>
+              <input type="text" name="correct_answer" class="form-control" value="{{ q.correct_answer }}" placeholder="ans1/alt1 | ans2 | ans3/alt2" />
+              <div class="text-xs text-muted mt-1">One group per "___" in the text, separated by <strong>|</strong>. Use <strong>/</strong> for alternate acceptable answers within a blank.</div>
+            </div>
+            <div class="form-group">
+              <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+                <input type="checkbox" name="case_sensitive" value="1" {% if q.case_sensitive %}checked{% endif %} />
+                Case-sensitive (exact case must match, e.g. "Manila" ≠ "manila")
+              </label>
+            </div>
             {% else %}
             <div class="form-group">
               <label class="form-label">Correct Answer</label>
@@ -178,6 +198,7 @@
             <select name="question_type" class="form-select qtype-select" onchange="toggleQtypeFields(this)">
               <option value="multiple_choice" selected>Multiple Choice</option>
               <option value="short_answer">Short Answer</option>
+              <option value="fill_blank">Fill in the Blank</option>
             </select>
           </div>
           <div class="form-group">
@@ -212,6 +233,21 @@
             <div class="form-group">
               <label class="form-label">Correct Answer</label>
               <input type="text" name="correct_answer_sa" class="form-control" placeholder="Expected answer" />
+            </div>
+            <div class="form-group">
+              <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+                <input type="checkbox" name="case_sensitive" value="1" />
+                Case-sensitive (exact case must match, e.g. "Manila" ≠ "manila")
+              </label>
+            </div>
+          </div>
+
+          <div class="qtype-fields qtype-fields-fib" style="display:none">
+            <div class="text-xs text-muted mb-1">Type <code>___</code> in the question text above for each blank. Then list the answers below in the same order, separated by <strong>|</strong>. Use <strong>/</strong> for alternate acceptable answers within one blank.</div>
+            <div class="form-group">
+              <label class="form-label">Blank Answers</label>
+              <input type="text" name="correct_answer_fib" class="form-control" placeholder="ans1/alt1 | ans2 | ans3/alt2" />
+              <div class="text-xs text-muted mt-1" id="fibHint-{{ sd.section.id }}"></div>
             </div>
             <div class="form-group">
               <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
@@ -612,22 +648,41 @@ function toggleTabLimit(cb) {
   }
 }
 
-/* Switch the Add Question form between Multiple Choice and Short Answer fields */
+/* Switch the Add Question form between Multiple Choice, Short Answer, and Fill in the Blank fields */
 function toggleQtypeFields(select) {
   const form = select.closest('form');
   if (!form) return;
   const mc = form.querySelector('.qtype-fields-mc');
   const sa = form.querySelector('.qtype-fields-sa');
-  if (select.value === 'multiple_choice') {
-    if (mc) mc.style.display = 'block';
-    if (sa) sa.style.display = 'none';
-  } else {
-    if (mc) mc.style.display = 'none';
-    if (sa) sa.style.display = 'block';
-  }
+  const fib = form.querySelector('.qtype-fields-fib');
+  if (mc) mc.style.display = select.value === 'multiple_choice' ? 'block' : 'none';
+  if (sa) sa.style.display = select.value === 'short_answer' ? 'block' : 'none';
+  if (fib) fib.style.display = select.value === 'fill_blank' ? 'block' : 'none';
 }
 document.addEventListener('DOMContentLoaded', function() {
   document.querySelectorAll('.qtype-select').forEach(toggleQtypeFields);
+});
+
+/* Live hint: count '___' blanks in the question text vs '|' answer groups typed */
+document.addEventListener('input', function(e) {
+  if (!e.target.matches('.add-question-textarea, input[name="correct_answer_fib"]')) return;
+  const form = e.target.closest('form');
+  if (!form) return;
+  const ta = form.querySelector('.add-question-textarea');
+  const ans = form.querySelector('input[name="correct_answer_fib"]');
+  const hint = form.querySelector('.qtype-fields-fib .text-xs.text-muted.mt-1');
+  if (!ta || !ans || !hint) return;
+  const blankCount = (ta.value.match(/___/g) || []).length;
+  const ansCount = ans.value.trim() ? ans.value.split('|').length : 0;
+  if (blankCount === 0) {
+    hint.textContent = '';
+  } else if (blankCount === ansCount) {
+    hint.textContent = `✓ ${blankCount} blank(s) matched.`;
+    hint.style.color = 'var(--accent2)';
+  } else {
+    hint.textContent = `⚠ ${blankCount} blank(s) in text, but ${ansCount} answer group(s) provided.`;
+    hint.style.color = 'var(--danger)';
+  }
 });
 
 /* Inline question edit (no popup) */

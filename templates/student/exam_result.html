@@ -108,7 +108,9 @@
   {% for q in questions %}
   <div class="no-select" style="padding:1rem 0; border-bottom:1px solid var(--border);">
     <div class="text-xs text-muted font-mono mb-1">Question {{ q.original_number }} · {{ q.points }} pt(s)</div>
+    {% if q.question_type != 'fill_blank' %}
     <div class="fw-600 mb-1 question-text-result">{{ q.question_text }}</div>
+    {% endif %}
 
     {% if q.question_type == 'multiple_choice' %}
       <div class="choices-list" style="gap:0.35rem">
@@ -124,6 +126,25 @@
           {% if choice.choice_label == q.student_answer and not q.is_correct %}<span class="text-danger text-sm">✗ Your answer</span>{% endif %}
         </div>
         {% endfor %}
+      </div>
+    {% elif q.question_type == 'fill_blank' %}
+      <div class="fw-600 mb-1 question-text-result">
+        {% for part in q.text_parts %}{{ part }}{% if not loop.last %}<span class="badge {% if q.fib_blanks[loop.index0].is_correct %}badge-blue{% else %}badge-gray{% endif %}" style="margin:0 0.2rem">___{{ loop.index }}___</span>{% endif %}{% endfor %}
+      </div>
+      <div class="text-sm mt-1" style="display:flex;flex-direction:column;gap:0.3rem">
+        {% for b in q.fib_blanks %}
+        <div>
+          <span class="text-muted">Blank {{ b.index }} — your answer:</span>
+          <span class="{% if b.is_correct %}text-success{% else %}text-danger{% endif %} fw-600">{{ b.student or '(no answer)' }}</span>
+          {% if not b.is_correct %}
+          <span class="text-muted">· accepted:</span>
+          <span class="text-success fw-600">{{ b.accepted }}</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+        <div class="text-xs text-muted mt-1">
+          {{ q.fib_correct_blanks }}/{{ q.fib_total_blanks }} blank(s) correct · {{ q.fib_points_earned }}/{{ q.points }} pt(s) earned
+        </div>
       </div>
     {% else %}
       <div class="text-sm mt-1">
