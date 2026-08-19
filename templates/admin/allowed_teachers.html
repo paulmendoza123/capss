@@ -10,18 +10,13 @@
   </div>
 </div>
 
-<!-- Add Emails (single or multiple) -->
+<!-- Upload a ready-made list (HR/Dean's office export) -->
 <div class="card" style="margin-bottom:1rem">
-  <div class="card-title mb-2">Add Emails</div>
-  <form method="POST" action="{{ url_for('admin_bulk_add_teacher_emails') }}">
-    <div class="form-group">
-      <label class="form-label">Enter one or more emails (comma, newline, or semicolon separated)</label>
-      <textarea name="emails_bulk" class="form-control" rows="3"
-                placeholder="prof1@school.edu, prof2@school.edu&#10;prof3@school.edu"
-                required
-                style="font-family:monospace;font-size:0.85rem;resize:vertical;text-transform:none !important"></textarea>
-    </div>
-    <button type="submit" class="btn btn-primary btn-sm">Add Emails</button>
+  <div class="card-title mb-2">Upload a File</div>
+  <div class="text-sm text-muted mb-2">Already have a list from HR or the Dean's office? Upload it directly — supports .csv, .xlsx, .docx, or .pdf. Every email found in the file will be added.</div>
+  <form method="POST" action="{{ url_for('admin_upload_teacher_emails') }}" enctype="multipart/form-data" class="flex gap-2" style="align-items:center;flex-wrap:wrap">
+    <input type="file" name="emails_file" accept=".csv,.xlsx,.docx,.pdf" required class="form-control" style="flex:1;min-width:220px" />
+    <button type="submit" class="btn btn-primary btn-sm">Upload File</button>
   </form>
 </div>
 

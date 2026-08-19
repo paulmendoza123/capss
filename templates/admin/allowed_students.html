@@ -10,18 +10,27 @@
   </div>
 </div>
 
-<!-- Add Emails (single or multiple) -->
+<!-- Upload a ready-made list (registrar export) -->
 <div class="card" style="margin-bottom:1rem">
-  <div class="card-title mb-2">Add Emails</div>
-  <form method="POST" action="{{ url_for('admin_bulk_add_student_emails') }}">
-    <div class="form-group">
-      <label class="form-label">Enter one or more emails (comma, newline, or semicolon separated)</label>
-      <textarea name="emails_bulk" class="form-control" rows="3"
-                placeholder="student1@school.edu, student2@school.edu&#10;student3@school.edu"
-                required
-                style="font-family:monospace;font-size:0.85rem;resize:vertical;text-transform:none !important"></textarea>
-    </div>
-    <button type="submit" class="btn btn-primary btn-sm">Add Emails</button>
+  <div class="card-title mb-2">Upload a File</div>
+  <div class="text-sm text-muted mb-2">Already have a list from the registrar? Upload it directly — supports .csv, .xlsx, .docx, or .pdf. Every email found in the file will be added.</div>
+  <form method="POST" action="{{ url_for('admin_upload_student_emails') }}" enctype="multipart/form-data" class="flex gap-2" style="align-items:center;flex-wrap:wrap">
+    <input type="file" name="emails_file" accept=".csv,.xlsx,.docx,.pdf" required class="form-control" style="flex:1;min-width:220px" />
+    <button type="submit" class="btn btn-primary btn-sm">Upload File</button>
+  </form>
+</div>
+
+<!-- COR auto-detect -->
+<div class="card" style="margin-bottom:1rem">
+  <div class="card-title mb-2">📄 Auto-Detect from COR</div>
+  <div class="text-sm text-muted mb-2">
+    No ready-made list yet? Upload each student's Certificate of Registration (PDF) and SPARK will read the
+    Student Number and generate their official email (<span style="font-family:monospace">studentnumber@psu.palawan.edu.ph</span>) automatically.
+    You'll get a chance to review before anything is added.
+  </div>
+  <form method="POST" action="{{ url_for('admin_cor_preview') }}" enctype="multipart/form-data" class="flex gap-2" style="align-items:center;flex-wrap:wrap">
+    <input type="file" name="cor_files" accept=".pdf" multiple required class="form-control" style="flex:1;min-width:220px" />
+    <button type="submit" class="btn btn-primary btn-sm">Scan COR File(s)</button>
   </form>
 </div>
 

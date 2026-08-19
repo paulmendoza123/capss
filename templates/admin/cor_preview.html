@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block title %}COR Preview{% endblock %}
+{% block topbar_title %}COR Preview{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <div class="page-title">Review Detected Students</div>
+    <div class="page-subtitle">Uncheck any rows that look wrong, then confirm to add them to the allowed student emails list.</div>
+  </div>
+  <a href="{{ url_for('admin_allowed_students') }}" class="btn btn-sm" style="border:1px solid var(--border)">← Back</a>
+</div>
+
+{% set ok_results = results|selectattr('ok')|list %}
+
+<form method="POST" action="{{ url_for('admin_cor_confirm') }}">
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40px"></th>
+            <th>File</th>
+            <th>Student No.</th>
+            <th>Name</th>
+            <th>Program</th>
+            <th>Year Level</th>
+            <th>Generated Email</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in results %}
+          <tr>
+            {% if r.ok %}
+            <td>
+              <input type="checkbox" name="confirm_email" value="{{ r.generated_email }}"
+                     {% if not r.already_allowed %}checked{% endif %} />
+            </td>
+            <td class="text-sm text-muted">{{ r.filename }}</td>
+            <td class="font-mono text-sm">{{ r.student_no }}</td>
+            <td class="fw-600 text-sm">{{ r.name }}</td>
+            <td class="text-sm text-muted">{{ r.program }}</td>
+            <td class="text-sm text-muted">{{ r.year_level }}</td>
+            <td style="font-family:monospace;font-size:0.85rem">
+              {{ r.generated_email }}
+              {% if r.already_allowed %}<span class="badge badge-gray text-xs" style="margin-left:0.4rem">Already added</span>{% endif %}
+            </td>
+            {% else %}
+            <td></td>
+            <td class="text-sm text-muted">{{ r.filename }}</td>
+            <td colspan="5" class="text-sm" style="color:var(--danger)">⚠️ Couldn't read this file — {{ r.reason }}</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if ok_results %}
+  <div class="mt-3">
+    <button type="submit" class="btn btn-primary">Confirm & Add Selected Emails</button>
+    <span class="text-sm text-muted" style="margin-left:0.5rem">{{ ok_results|length }} of {{ results|length }} file(s) parsed successfully.</span>
+  </div>
+  {% else %}
+  <div class="mt-3 text-sm text-muted">No files could be parsed. Try a different file, or use the manual "Add Emails" option instead.</div>
+  {% endif %}
+</form>
+
+{% endblock %}

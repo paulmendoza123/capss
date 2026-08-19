@@ -5,11 +5,114 @@ import os
 import random
 import string
 import json
+import re
+import csv
+import io
 from functools import wraps
 from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = 'spark_secret_key_2027'
+
+# ─── Enrollment Control: bulk email import + COR auto-detect helpers ───────
+
+EMAIL_RE = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+SCHOOL_EMAIL_DOMAIN = 'psu.palawan.edu.ph'
+
+def extract_emails_from_file(file_storage):
+    """Reads an uploaded .csv, .xlsx, .docx, or .pdf file and pulls out every
+    valid-looking email address found anywhere in it — works no matter how
+    the registrar/HR office formats their list (email-only column, or a full
+    roster with names/programs mixed in). Returns a lowercased, de-duplicated
+    list of emails, in first-seen order.
+    """
+    filename = (file_storage.filename or '').lower()
+    found = []
+    seen = set()
+
+    def add_candidate(cell):
+        if cell is None:
+            return
+        text = str(cell).strip().lower()
+        if EMAIL_RE.match(text) and text not in seen:
+            seen.add(text)
+            found.append(text)
+
+    if filename.endswith('.csv'):
+        raw = file_storage.read()
+        try:
+            text = raw.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            text = raw.decode('latin-1')
+        reader = csv.reader(io.StringIO(text))
+        for row in reader:
+            for cell in row:
+                add_candidate(cell)
+
+    elif filename.endswith('.xlsx') or filename.endswith('.xlsm'):
+        import openpyxl
+        wb = openpyxl.load_workbook(file_storage, read_only=True, data_only=True)
+        for ws in wb.worksheets:
+            for row in ws.iter_rows(values_only=True):
+                for cell in row:
+                    add_candidate(cell)
+
+    elif filename.endswith('.docx'):
+        import docx
+        document = docx.Document(file_storage)
+        for para in document.paragraphs:
+            for word in para.text.split():
+                add_candidate(word.strip(',;'))
+        for table in document.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    add_candidate(cell.text.strip())
+
+    elif filename.endswith('.pdf'):
+        import pdfplumber
+        with pdfplumber.open(file_storage) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text() or ''
+                for word in text.split():
+                    add_candidate(word.strip(',;'))
+
+    else:
+        raise ValueError('Unsupported file type. Please upload a .csv, .xlsx, .docx, or .pdf file.')
+
+    return found
+
+def parse_cor_pdf(file_storage):
+    """Reads a Certificate of Registration (COR) PDF — which does NOT print an
+    email address — and extracts the student's info from its known layout,
+    then generates the official school email from the student number using
+    the confirmed institutional pattern: digits-only(student no) + '@psu.palawan.edu.ph'.
+    Returns a dict, or None if the expected fields couldn't be found (so the
+    caller can flag it for manual review instead of guessing).
+    """
+    import pdfplumber
+    with pdfplumber.open(file_storage) as pdf:
+        text = '\n'.join((p.extract_text() or '') for p in pdf.pages)
+
+    student_no_m = re.search(r'Student No:\s*([\d\-]+)', text)
+    name_m       = re.search(r'Name:\s*(.+?)\s*Program:', text)
+    program_m    = re.search(r'Program:\s*(.+?)\s*Curriculum:', text)
+    year_m       = re.search(r'Year Level:\s*([A-Za-z ]+?)(?:\n|$)', text)
+
+    if not student_no_m or not name_m:
+        return None
+
+    student_no = student_no_m.group(1).strip()
+    digits_only = re.sub(r'\D', '', student_no)
+    if not digits_only:
+        return None
+
+    return {
+        'student_no': student_no,
+        'name': name_m.group(1).strip(),
+        'program': program_m.group(1).strip() if program_m else '',
+        'year_level': year_m.group(1).strip() if year_m else '',
+        'generated_email': f'{digits_only}@{SCHOOL_EMAIL_DOMAIN}',
+    }
 
 # ─── Fill in the Blank helpers ──────────────────────────────────────────────
 # Storage format for a fill_blank question's correct_answer column:
@@ -2848,6 +2951,103 @@ def admin_delete_student_email(email_id):
     flash('Email removed from allowed list.', 'success')
     return redirect(url_for('admin_allowed_students'))
 
+@app.route('/admin/allowed-emails/students/upload', methods=['POST'])
+@role_required('admin')
+def admin_upload_student_emails():
+    """Direct bulk import: use this when the registrar already hands over a
+    ready-made list (Excel/CSV/Word/PDF) that already contains emails."""
+    file = request.files.get('emails_file')
+    if not file or not file.filename:
+        flash('Please choose a file to upload.', 'error')
+        return redirect(url_for('admin_allowed_students'))
+    try:
+        emails = extract_emails_from_file(file)
+    except ValueError as e:
+        flash(str(e), 'error')
+        return redirect(url_for('admin_allowed_students'))
+    except Exception:
+        flash('Could not read that file. Make sure it is a valid .csv, .xlsx, .docx, or .pdf file.', 'error')
+        return redirect(url_for('admin_allowed_students'))
+
+    conn = get_db()
+    added, skipped = 0, 0
+    for email in emails:
+        try:
+            conn.execute('INSERT INTO allowed_student_emails (email) VALUES (?)', (email,))
+            added += 1
+        except Exception:
+            skipped += 1
+    conn.commit()
+    if added:
+        flash(f'Successfully added {added} student email(s) from {file.filename}.', 'success')
+    if skipped:
+        flash(f'{skipped} email(s) were already in the list (skipped).', 'error')
+    if not emails:
+        flash('No valid email addresses were found in that file.', 'error')
+    return redirect(url_for('admin_allowed_students'))
+
+@app.route('/admin/allowed-emails/students/cor-preview', methods=['POST'])
+@role_required('admin')
+def admin_cor_preview():
+    """Step 1 of COR auto-detect: parse one or more uploaded COR PDFs and show
+    a review table (student info + the auto-generated email) BEFORE anything
+    is added to the whitelist, so the admin can catch a bad OCR/parse instead
+    of blindly trusting it."""
+    files = request.files.getlist('cor_files')
+    files = [f for f in files if f and f.filename]
+    if not files:
+        flash('Please choose one or more COR PDF files.', 'error')
+        return redirect(url_for('admin_allowed_students'))
+
+    conn = get_db()
+    already_allowed = {r['email'] for r in conn.execute('SELECT email FROM allowed_student_emails').fetchall()}
+
+    results = []
+    for f in files:
+        if not f.filename.lower().endswith('.pdf'):
+            results.append({'filename': f.filename, 'ok': False, 'reason': 'Not a PDF file'})
+            continue
+        try:
+            info = parse_cor_pdf(f)
+        except Exception:
+            info = None
+        if not info:
+            results.append({'filename': f.filename, 'ok': False,
+                             'reason': "Couldn't find Student No / Name on this file — may be a scanned image or different layout"})
+            continue
+        info['filename'] = f.filename
+        info['ok'] = True
+        info['already_allowed'] = info['generated_email'] in already_allowed
+        results.append(info)
+
+    return render_template('admin/cor_preview.html', results=results)
+
+@app.route('/admin/allowed-emails/students/cor-confirm', methods=['POST'])
+@role_required('admin')
+def admin_cor_confirm():
+    """Step 2 of COR auto-detect: the admin has reviewed the preview table
+    and is now confirming which generated emails should actually be added."""
+    emails = request.form.getlist('confirm_email')
+    conn = get_db()
+    added, skipped = 0, 0
+    for email in emails:
+        email = email.strip().lower()
+        if not email:
+            continue
+        try:
+            conn.execute('INSERT INTO allowed_student_emails (email) VALUES (?)', (email,))
+            added += 1
+        except Exception:
+            skipped += 1
+    conn.commit()
+    if added:
+        flash(f'Successfully added {added} student email(s) from COR upload.', 'success')
+    if skipped:
+        flash(f'{skipped} email(s) were already in the list (skipped).', 'error')
+    if not emails:
+        flash('No emails were selected to add.', 'error')
+    return redirect(url_for('admin_allowed_students'))
+
 @app.route('/admin/allowed-emails/teachers')
 @role_required('admin')
 def admin_allowed_teachers():
@@ -2911,6 +3111,39 @@ def admin_delete_teacher_email(email_id):
     conn.execute('DELETE FROM allowed_teacher_emails WHERE id = ?', (email_id,))
     conn.commit()
     flash('Email removed from allowed list.', 'success')
+    return redirect(url_for('admin_allowed_teachers'))
+
+@app.route('/admin/allowed-emails/teachers/upload', methods=['POST'])
+@role_required('admin')
+def admin_upload_teacher_emails():
+    file = request.files.get('emails_file')
+    if not file or not file.filename:
+        flash('Please choose a file to upload.', 'error')
+        return redirect(url_for('admin_allowed_teachers'))
+    try:
+        emails = extract_emails_from_file(file)
+    except ValueError as e:
+        flash(str(e), 'error')
+        return redirect(url_for('admin_allowed_teachers'))
+    except Exception:
+        flash('Could not read that file. Make sure it is a valid .csv, .xlsx, .docx, or .pdf file.', 'error')
+        return redirect(url_for('admin_allowed_teachers'))
+
+    conn = get_db()
+    added, skipped = 0, 0
+    for email in emails:
+        try:
+            conn.execute('INSERT INTO allowed_teacher_emails (email) VALUES (?)', (email,))
+            added += 1
+        except Exception:
+            skipped += 1
+    conn.commit()
+    if added:
+        flash(f'Successfully added {added} teacher email(s) from {file.filename}.', 'success')
+    if skipped:
+        flash(f'{skipped} email(s) were already in the list (skipped).', 'error')
+    if not emails:
+        flash('No valid email addresses were found in that file.', 'error')
     return redirect(url_for('admin_allowed_teachers'))
 
 # ─── Enhanced Admin Routes ────────────────────────────────────────────────────
