@@ -17,6 +17,36 @@
   // Use server-calculated remaining time so timer persists across page reloads/re-entries
   const remainingEl = document.getElementById('time-remaining');
   let timerSeconds = remainingEl ? parseInt(remainingEl.value) : DURATION_SECONDS;
+  let autoSubmitted = false;
+
+  // ── EXAM TIMER — counts down from the teacher-set duration and auto-submits at 0 ──
+  const timerDisplayEl = document.getElementById('exam-timer');
+  function formatTime(totalSeconds) {
+    const s = Math.max(0, totalSeconds);
+    const mm = Math.floor(s / 60);
+    const ss = s % 60;
+    return String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0');
+  }
+  function renderTimer() {
+    if (!timerDisplayEl) return;
+    timerDisplayEl.textContent = formatTime(timerSeconds);
+    if (timerSeconds <= 60) timerDisplayEl.classList.add('timer-warning');
+  }
+  renderTimer(); // show the correct time immediately, don't wait for the first tick
+  const timerIntervalId = setInterval(() => {
+    if (terminated) { clearInterval(timerIntervalId); return; }
+    if (timerSeconds <= 0) {
+      renderTimer();
+      clearInterval(timerIntervalId);
+      if (!autoSubmitted) {
+        autoSubmitted = true;
+        submitExam();
+      }
+      return;
+    }
+    timerSeconds -= 1;
+    renderTimer();
+  }, 1000);
 
   // ── ANTI-COPY / ANTI-CHEAT (UI restriction only, no data logged — active immediately) ──
   document.addEventListener('contextmenu', e => e.preventDefault());
@@ -356,6 +386,36 @@
   }
   window._examSaveAnswer = saveAnswer;
 
+  // ── DEBOUNCED SAVE FOR TEXT INPUT ──
+  // Typing/deleting fast fires many 'input' events back-to-back. Each one used
+  // to trigger its own independent network request, and those requests could
+  // land at the server out of order (a slower request carrying OLD text could
+  // finish after a newer request carrying the now-empty text), leaving stale
+  // text saved even though the field looks empty. Debouncing collapses a burst
+  // of keystrokes into a single save of the truly-final value, so there's only
+  // ever one request in flight per question and no ordering race.
+  const SAVE_DEBOUNCE_MS = 500;
+  const _saveDebounceTimers = {};
+  function debouncedSaveAnswer(questionId, answerText) {
+    // Keep the local backup instant so a refresh never loses what was typed
+    setLocalAnswer(questionId, answerText);
+    clearTimeout(_saveDebounceTimers[questionId]);
+    _saveDebounceTimers[questionId] = setTimeout(() => {
+      delete _saveDebounceTimers[questionId];
+      saveAnswer(questionId, answerText);
+    }, SAVE_DEBOUNCE_MS);
+  }
+  // Immediately commit the current value and cancel any pending debounce for
+  // this question — used at explicit checkpoints (switching sections) where
+  // we want what's on screen saved right away rather than waiting out the
+  // debounce window.
+  function flushSaveAnswer(questionId, answerText) {
+    clearTimeout(_saveDebounceTimers[questionId]);
+    delete _saveDebounceTimers[questionId];
+    saveAnswer(questionId, answerText);
+  }
+  window._examFlushSaveAnswer = flushSaveAnswer;
+
   // Fix selected class on label when a choice is clicked
   function applySelectedClass(radio) {
     const name = radio.name;
@@ -374,9 +434,9 @@
     });
   });
 
-  // Wire up textareas: save instantly on every keystroke
+  // Wire up textareas: debounce saves so fast typing/deleting can't race itself
   document.querySelectorAll('textarea.auto-save').forEach(ta => {
-    ta.addEventListener('input', () => saveAnswer(ta.dataset.qid, ta.value));
+    ta.addEventListener('input', () => debouncedSaveAnswer(ta.dataset.qid, ta.value));
   });
 
   // Wire up fill-in-the-blank inputs: on every keystroke, join all blanks for
@@ -387,10 +447,15 @@
       const qid = inp.dataset.qid;
       const blanks = Array.from(document.querySelectorAll(`.fib-blank-input[data-qid="${qid}"]`))
         .sort((a, b) => parseInt(a.dataset.blankIndex) - parseInt(b.dataset.blankIndex));
-      const joined = blanks.map(b => b.value).join('|');
+      // If every blank is empty, save an actual empty string — otherwise
+      // join() still inserts '|' separators between the empty values
+      // (e.g. "|" for 2 blanks), which is non-empty and wrongly counts
+      // as "answered" even though nothing was typed.
+      const allEmpty = blanks.every(b => b.value.trim() === '');
+      const joined = allEmpty ? '' : blanks.map(b => b.value).join('|');
       const hidden = document.querySelector(`.fib-hidden[data-qid="${qid}"]`);
       if (hidden) hidden.value = joined;
-      saveAnswer(qid, joined);
+      debouncedSaveAnswer(qid, joined);
     });
   });
 

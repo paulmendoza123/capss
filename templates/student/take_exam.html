@@ -25,6 +25,7 @@
     }
     .exam-header .fw-700 { font-size: 0.9rem; }
     .exam-timer { font-size: 1.1rem; }
+    .exam-timer.timer-warning { color: #f75f5f; font-weight: 700; }
 
     /* Question blocks more compact */
     .question-block { padding: 0.9rem; margin-bottom: 0.75rem; }
@@ -314,7 +315,10 @@ function goSection(idx) {
 
 function saveCurrentSectionAnswers() {
   const SESSION_ID = parseInt(document.getElementById('exam-session-id')?.value);
-  const save = window._examSaveAnswer || function(qid, val) {
+  // Prefer the immediate "flush" save (commits now and cancels any pending
+  // debounce for that question) so switching sections never leaves a stale
+  // debounced write to fire later with an outdated value.
+  const save = window._examFlushSaveAnswer || window._examSaveAnswer || function(qid, val) {
     const payload = JSON.stringify({ session_id: SESSION_ID, question_id: parseInt(qid), answer_text: val });
     fetch('/api/save-answer', {
       method: 'POST',
@@ -331,7 +335,12 @@ function saveCurrentSectionAnswers() {
   const page = document.querySelector(`.exam-section-page[data-section-index="${currentSection}"]`);
   if (!page) return;
   page.querySelectorAll('input[type=radio]:checked').forEach(radio => save(radio.dataset.qid, radio.value));
-  page.querySelectorAll('textarea.auto-save').forEach(ta => save(ta.dataset.qid, ta.value));
+  // Only auto-save textareas (essay/short-answer/fill-blank) that actually have
+  // content — otherwise navigating sections without answering marks the question
+  // "answered" in the teacher's monitoring view with a blank response.
+  page.querySelectorAll('textarea.auto-save').forEach(ta => {
+    if (ta.value.trim() !== '') save(ta.dataset.qid, ta.value);
+  });
 }
 
 // Restore last visited section

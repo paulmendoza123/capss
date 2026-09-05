@@ -1609,7 +1609,7 @@ def teacher_exam_monitoring(exam_id):
     total_q = conn.execute('SELECT COUNT(*) FROM questions WHERE exam_id=?', (exam_id,)).fetchone()[0]
     active_sessions = conn.execute('''
         SELECT es.*, u.full_name,
-               COUNT(DISTINCT a.question_id) as answered,
+               COUNT(DISTINCT CASE WHEN TRIM(COALESCE(a.answer_text,'')) != '' THEN a.question_id END) as answered,
                es.tab_switch_count
         FROM exam_sessions es
         JOIN users u ON es.student_id = u.id
@@ -2486,6 +2486,7 @@ def teacher_bank_import_file():
                 'type': 'fill_blank',
                 'text': q_text,
                 'answer': answer_raw,
+                'points': blank_count,
             })
         else:
             parsed.append({
@@ -2515,12 +2516,15 @@ def teacher_bank_import_file():
     # ── Insert questions ─────────────────────────────────────────────────────
     added = 0
     for q in parsed:
+        # Fill-in-the-blank points scale with how many blanks the question has
+        # (one point per blank); every other type defaults to 1 point.
+        points = q.get('points', 1)
         cur = conn.execute(
             '''INSERT INTO questions
                (exam_id, section_id, question_text, question_type, points, correct_answer,
                 order_index, bank_group_id, is_bank_only, teacher_id)
-               VALUES (NULL, NULL, ?, ?, 1, ?, 0, ?, 1, ?)''',
-            (q['text'], q['type'], q['answer'], group_id, session['user_id'])
+               VALUES (NULL, NULL, ?, ?, ?, ?, 0, ?, 1, ?)''',
+            (q['text'], q['type'], points, q['answer'], group_id, session['user_id'])
         )
         q_id = cur.lastrowid
         if q['type'] == 'multiple_choice':
@@ -3560,7 +3564,7 @@ def api_monitoring(exam_id):
 
     active_sessions = conn.execute('''
         SELECT es.id, u.full_name, es.tab_switch_count, es.status,
-               COUNT(DISTINCT a.question_id) as answered,
+               COUNT(DISTINCT CASE WHEN TRIM(COALESCE(a.answer_text,'')) != '' THEN a.question_id END) as answered,
                es.started_at, es.last_seen
         FROM exam_sessions es
         JOIN users u ON es.student_id = u.id
@@ -3804,6 +3808,13 @@ def api_save_answer():
     sess = conn.execute('SELECT * FROM exam_sessions WHERE id=? AND student_id=?',
                         (session_id, session['user_id'])).fetchone()
     if sess and sess['status'] == 'ongoing':
+        if answer_text == '':
+            # Nothing to save — and if a prior (now-cleared) answer exists, remove it
+            # so the question no longer counts as "answered" in monitoring/progress.
+            conn.execute('DELETE FROM answers WHERE session_id=? AND question_id=?',
+                        (session_id, question_id))
+            conn.commit()
+            return jsonify({'status': 'cleared'})
         conn.execute('''
             INSERT OR REPLACE INTO answers (session_id, question_id, answer_text)
             VALUES (?,?,?)
