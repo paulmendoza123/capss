@@ -297,13 +297,26 @@
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.35rem">
           <label class="form-label" style="margin:0">Select Questions</label>
-          <button type="button" class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 8px"
+          <button type="button" id="importSelectAllBtn" class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 8px"
             onclick="(function(btn){
-              var boxes=document.querySelectorAll('#import-bank-form input[name=question_ids]');
-              var all=Array.from(boxes).every(b=>b.checked);
+              var boxes=Array.from(document.querySelectorAll('#import-bank-form input[name=question_ids]'))
+                .filter(function(b){ return b.closest('[data-qrow]').style.display !== 'none'; });
+              var all=boxes.every(b=>b.checked);
               boxes.forEach(b=>b.checked=!all);
               btn.textContent=all?'Select All':'Deselect All';
             })(this)">Select All</button>
+        </div>
+
+        {# Type filter — narrows every group down to just the selected question type #}
+        <div style="display:flex;gap:0.35rem;margin-bottom:0.6rem;flex-wrap:wrap">
+          <button type="button" class="btn btn-primary btn-sm import-type-filter-btn active" data-type="all"
+            onclick="filterImportByType('all', this)">All</button>
+          <button type="button" class="btn btn-ghost btn-sm import-type-filter-btn" data-type="multiple_choice"
+            onclick="filterImportByType('multiple_choice', this)">Multiple Choice</button>
+          <button type="button" class="btn btn-ghost btn-sm import-type-filter-btn" data-type="short_answer"
+            onclick="filterImportByType('short_answer', this)">Short Answer</button>
+          <button type="button" class="btn btn-ghost btn-sm import-type-filter-btn" data-type="fill_blank"
+            onclick="filterImportByType('fill_blank', this)">Fill in the Blank</button>
         </div>
 
         {# Group questions first by bank group, then by exam #}
@@ -314,21 +327,28 @@
             {# Key: use bank_group_id if set, otherwise fall back to exam_title so each group/exam gets its own section #}
             {% set group_key = ('grp:' ~ bq.bank_group_id) if bq.bank_group_id else ('exam:' ~ bq.exam_title) %}
             {% if group_key != ns.current_group %}
-              {# Close previous group div #}
-              {% if ns.group_idx > 0 %}</div>{% endif %}
+              {# Close previous group wrapper #}
+              {% if ns.group_idx > 0 %}</div></div>{% endif %}
               {% set ns.current_group = group_key %}
               {% set ns.group_idx = ns.group_idx + 1 %}
               {% set gid = 'mgrp-' ~ ns.group_idx %}
 
-              {# Count questions in this sub-group — match by same group_key logic #}
-              {% set grp_count = namespace(n=0) %}
+              {# Count questions in this sub-group — match by same group_key logic,
+                 broken down per type so the filter bar can show a live count #}
+              {% set grp_count = namespace(n=0, mc=0, sa=0, fib=0) %}
               {% for cq in bank_questions %}
-                {% if bq.bank_group_id %}
-                  {% if cq.bank_group_id == bq.bank_group_id %}{% set grp_count.n = grp_count.n + 1 %}{% endif %}
-                {% else %}
-                  {% if cq.exam_title == bq.exam_title and not cq.bank_group_id %}{% set grp_count.n = grp_count.n + 1 %}{% endif %}
+                {% set in_group = (bq.bank_group_id and cq.bank_group_id == bq.bank_group_id) or (not bq.bank_group_id and cq.exam_title == bq.exam_title and not cq.bank_group_id) %}
+                {% if in_group %}
+                  {% set grp_count.n = grp_count.n + 1 %}
+                  {% if cq.question_type == 'multiple_choice' %}{% set grp_count.mc = grp_count.mc + 1 %}
+                  {% elif cq.question_type == 'fill_blank' %}{% set grp_count.fib = grp_count.fib + 1 %}
+                  {% else %}{% set grp_count.sa = grp_count.sa + 1 %}{% endif %}
                 {% endif %}
               {% endfor %}
+
+              {# Group wrapper — header + content toggle together so the type
+                 filter can hide/show a whole group with one style change #}
+              <div data-group-wrapper data-gid="{{ gid }}">
 
               {# Group header #}
               <div style="margin-top:{% if ns.group_idx > 1 %}0.4rem{% else %}0{% endif %}">
@@ -359,7 +379,11 @@
                     {% endif %}
                   </span>
                   <span style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
-                    <span style="font-size:0.72rem;color:var(--text2)">{{ grp_count.n }} question{{ 's' if grp_count.n != 1 else '' }}</span>
+                    <span class="grp-count-label" style="font-size:0.72rem;color:var(--text2)"
+                      data-count-all="{{ grp_count.n }}"
+                      data-count-multiple_choice="{{ grp_count.mc }}"
+                      data-count-short_answer="{{ grp_count.sa }}"
+                      data-count-fill_blank="{{ grp_count.fib }}">{{ grp_count.n }} question{{ 's' if grp_count.n != 1 else '' }}</span>
                     <span class="arrow" style="font-size:0.75rem;color:var(--text3)">▶</span>
                   </span>
                 </button>
@@ -370,8 +394,9 @@
                 <div style="display:flex;justify-content:flex-end;padding:0.25rem 0.4rem 0.1rem">
                   <button type="button" class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 8px"
                     onclick="(function(btn){
-                      var boxes=document.getElementById('{{ gid }}').querySelectorAll('input[type=checkbox]');
-                      var all=Array.from(boxes).every(b=>b.checked);
+                      var boxes=Array.from(document.getElementById('{{ gid }}').querySelectorAll('input[type=checkbox]'))
+                        .filter(function(b){ return b.closest('[data-qrow]').style.display !== 'none'; });
+                      var all=boxes.every(b=>b.checked);
                       boxes.forEach(b=>b.checked=!all);
                       btn.textContent=all?'Select All':'Deselect All';
                     })(this)">Select All</button>
@@ -379,19 +404,21 @@
             {% endif %}
 
             {# Question row #}
-            <label style="display:flex;align-items:flex-start;gap:0.5rem;padding:0.35rem 0.5rem 0.35rem 0.75rem;cursor:pointer;border-radius:5px"
+            <label data-qrow data-qtype="{{ bq.question_type }}" style="display:flex;align-items:flex-start;gap:0.5rem;padding:0.35rem 0.5rem 0.35rem 0.75rem;cursor:pointer;border-radius:5px"
               onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
               <input type="checkbox" name="question_ids" value="{{ bq.id }}" style="margin-top:3px;flex-shrink:0">
               <div style="min-width:0">
                 <div style="font-size:0.84rem;font-weight:600;line-height:1.3">{{ bq.question_text }}</div>
                 <div style="font-size:0.72rem;color:var(--text2);margin-top:0.1rem">
                   {{ bq.points }} pt{{ 's' if bq.points != 1 else '' }}
-                  {%- if bq.question_type == 'multiple_choice' %} · MC{%- else %} · SA{%- endif %}
+                  {%- if bq.question_type == 'multiple_choice' %} · MC
+                  {%- elif bq.question_type == 'fill_blank' %} · FIB
+                  {%- else %} · SA{%- endif %}
                 </div>
               </div>
             </label>
 
-            {% if loop.last %}</div>{% endif %}
+            {% if loop.last %}</div></div>{% endif %}
           {% endfor %}
 
         </div>
@@ -780,6 +807,60 @@ function submitAddSection(e) {
 
 /* Import from Question Bank — same AJAX pattern as submitAddQuestion, so
    importing doesn't reload the page or jump back to the top. */
+
+// Filters the bank-import list down to one question type across every group.
+// Groups with no matching questions are hidden entirely. Groups are NEVER
+// auto-expanded by the filter — they stay closed by default just like "All",
+// and only reveal the matching questions if the teacher opens them manually.
+function filterImportByType(type, btn) {
+  document.querySelectorAll('.import-type-filter-btn').forEach(b => {
+    const active = b === btn;
+    b.classList.toggle('active', active);
+    b.classList.toggle('btn-primary', active);
+    b.classList.toggle('btn-ghost', !active);
+  });
+
+  const form = document.getElementById('import-bank-form');
+  if (!form) return;
+
+  form.querySelectorAll('[data-qrow]').forEach(row => {
+    // Explicitly restore 'flex' (not '') — clearing the property entirely
+    // would drop the checkbox-next-to-text layout defined in the row's
+    // original inline style.
+    row.style.display = (type === 'all' || row.dataset.qtype === type) ? 'flex' : 'none';
+  });
+
+  form.querySelectorAll('[data-group-wrapper]').forEach(wrapper => {
+    const gid = wrapper.dataset.gid;
+    const content = document.getElementById(gid);
+    if (!content) return;
+    const rows = Array.from(content.querySelectorAll('[data-qrow]'));
+    const hasMatch = rows.some(r => type === 'all' || r.dataset.qtype === type);
+    wrapper.style.display = hasMatch ? '' : 'none';
+
+    // Update the "X questions" label in the group header to reflect the
+    // count for the currently selected type, without touching open/closed state.
+    const countLabel = wrapper.querySelector('.grp-count-label');
+    if (countLabel) {
+      const keyMap = {
+        all: 'countAll',
+        multiple_choice: 'countMultiple_choice',
+        short_answer: 'countShort_answer',
+        fill_blank: 'countFill_blank'
+      };
+      const n = parseInt(countLabel.dataset[keyMap[type]] || '0', 10);
+      countLabel.textContent = n + ' question' + (n !== 1 ? 's' : '');
+    }
+  });
+
+  // Reset the "Select All" button labels since the visible set changed
+  const selectAllBtn = document.getElementById('importSelectAllBtn');
+  if (selectAllBtn) selectAllBtn.textContent = 'Select All';
+  form.querySelectorAll('[data-group-wrapper] .btn-ghost.btn-sm').forEach(b => {
+    if (b.textContent.trim() === 'Deselect All') b.textContent = 'Select All';
+  });
+}
+
 function submitImportFromBank(e) {
   e.preventDefault();
   const form = e.target;
