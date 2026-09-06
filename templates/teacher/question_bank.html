@@ -168,10 +168,9 @@
         </div>
         <div style="display:flex;gap:0.4rem;flex-shrink:0;margin-left:0.5rem">
           <button type="button" class="btn btn-ghost btn-sm" onclick="toggleGroupEdit({{ g.id }})" title="Rename" style="padding:0.4rem 0.6rem">✏️</button>
-          <form method="POST" action="{{ url_for('teacher_delete_bank_group', group_id=g.id) }}"
-                onsubmit="return confirm('Delete group \'{{ g.name }}\'? Questions will become ungrouped.')">
-            <button type="submit" class="btn btn-danger btn-sm" title="Delete" style="padding:0.4rem 0.6rem">🗑</button>
-          </form>
+          <button type="button" class="btn btn-danger btn-sm" title="Delete" style="padding:0.4rem 0.6rem"
+                  data-group-id="{{ g.id }}" data-group-name="{{ g.name }}" data-group-qcount="{{ qcount.n }}"
+                  onclick="confirmDeleteGroup(this.dataset.groupId, this.dataset.groupName, this.dataset.groupQcount)">🗑</button>
         </div>
       </div>
       {% endfor %}
@@ -185,6 +184,35 @@
 
     <div class="modal-footer" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)">
       <button type="button" class="btn btn-ghost" onclick="closeModal('modal-manage-groups')">Close</button>
+    </div>
+  </div>
+</div>
+
+{# Confirmation modal for deleting a group — asks whether its questions
+   should be kept (ungrouped) or deleted along with the group. Reused for
+   every group via JS instead of one modal per group. #}
+<div class="modal-overlay" id="modal-confirm-delete-group">
+  <div class="modal" style="max-width:420px;width:92vw;padding:1.5rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+      <div class="modal-title" style="margin-bottom:0;font-size:1.05rem">Delete Group</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-confirm-delete-group')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
+    </div>
+    <p id="deleteGroupMessage" style="font-size:0.9rem;color:var(--text2);margin-bottom:1rem"></p>
+    <form id="deleteGroupForm" method="POST" action="">
+      <input type="hidden" name="delete_questions" id="deleteGroupQFlag" value="0">
+      <div style="display:flex;flex-direction:column;gap:0.5rem">
+        <button type="submit" class="btn btn-ghost" style="text-align:left"
+                onclick="document.getElementById('deleteGroupQFlag').value='0'">
+          Delete group only (keep questions)
+        </button>
+        <button type="submit" class="btn btn-danger" style="text-align:left"
+                onclick="document.getElementById('deleteGroupQFlag').value='1'">
+          Delete group and all its questions
+        </button>
+      </div>
+    </form>
+    <div class="modal-footer" style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid var(--border)">
+      <button type="button" class="btn btn-ghost" onclick="closeModal('modal-confirm-delete-group')">Cancel</button>
     </div>
   </div>
 </div>
@@ -472,6 +500,23 @@ window.addEventListener('DOMContentLoaded', () => {
 function toggleGroupEdit(id) {
   const row = document.getElementById('edit-grp-' + id);
   row.style.display = row.style.display === 'none' || !row.style.display ? 'flex' : 'none';
+}
+
+/* ── Group delete confirmation — ask what to do with the questions inside ── */
+function confirmDeleteGroup(id, name, qcount) {
+  qcount = parseInt(qcount, 10) || 0;
+  const form = document.getElementById('deleteGroupForm');
+  form.action = '/teacher/question-bank/groups/' + id + '/delete';
+  document.getElementById('deleteGroupQFlag').value = '0';
+
+  if (qcount > 0) {
+    document.getElementById('deleteGroupMessage').textContent =
+      '"' + name + '" has ' + qcount + ' question' + (qcount !== 1 ? 's' : '') + '. What would you like to do?';
+    openModal('modal-confirm-delete-group');
+  } else {
+    // Nothing inside the group — no need to ask, just delete it
+    form.submit();
+  }
 }
 </script>
 

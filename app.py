@@ -2271,11 +2271,25 @@ def teacher_delete_bank_group(group_id):
     if not grp:
         flash('Group not found.', 'error')
         return redirect(url_for('teacher_question_bank'))
-    # Unassign questions from this group
-    conn.execute('UPDATE questions SET bank_group_id=NULL WHERE bank_group_id=?', (group_id,))
-    conn.execute('DELETE FROM question_bank_groups WHERE id=?', (group_id,))
-    conn.commit()
-    flash(f'Group "{grp["name"]}" deleted. Questions are now ungrouped.', 'success')
+
+    delete_questions = request.form.get('delete_questions') == '1'
+    if delete_questions:
+        # Only remove this teacher's own bank-only questions in the group —
+        # copies already imported into a real exam are separate rows created
+        # at import time, so this never touches a live/past exam.
+        conn.execute(
+            'DELETE FROM questions WHERE bank_group_id=? AND is_bank_only=1 AND teacher_id=?',
+            (group_id, session['user_id'])
+        )
+        conn.execute('DELETE FROM question_bank_groups WHERE id=?', (group_id,))
+        conn.commit()
+        flash(f'Group "{grp["name"]}" and its questions were deleted.', 'success')
+    else:
+        # Unassign questions from this group
+        conn.execute('UPDATE questions SET bank_group_id=NULL WHERE bank_group_id=?', (group_id,))
+        conn.execute('DELETE FROM question_bank_groups WHERE id=?', (group_id,))
+        conn.commit()
+        flash(f'Group "{grp["name"]}" deleted. Questions are now ungrouped.', 'success')
     return redirect(url_for('teacher_question_bank'))
 
 @app.route('/teacher/question-bank/groups/<int:group_id>/rename', methods=['POST'])
