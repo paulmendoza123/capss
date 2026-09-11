@@ -373,6 +373,39 @@ body {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(79,142,247,0.12);
 }
+.password-input-wrap {
+  position: relative;
+}
+.password-input-wrap .form-control {
+  padding-right: 2.6rem;
+}
+.password-toggle-btn {
+  position: absolute;
+  top: 50%;
+  right: 0.6rem;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text3);
+  line-height: 0;
+}
+.password-toggle-btn:hover { color: var(--text2); }
+.password-toggle-btn svg { width: 18px; height: 18px; }
+.password-toggle-btn .icon-eye-off { display: none; }
+.password-toggle-btn.is-visible .icon-eye { display: none; }
+.password-toggle-btn.is-visible .icon-eye-off { display: block; }
+.password-mismatch-msg {
+  color: var(--danger);
+  font-size: 0.78rem;
+  margin-top: 0.35rem;
+  display: none;
+}
+.password-mismatch-msg.is-visible { display: block; }
 .form-control::placeholder { color: var(--text3); }
 textarea.form-control { resize: vertical; min-height: 100px; }
 .form-select option { background: var(--bg2); }

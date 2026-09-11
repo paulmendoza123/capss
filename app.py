@@ -726,10 +726,14 @@ def signup():
         full_name = request.form.get('full_name', '').strip()
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
+        confirm_password = request.form.get('confirm_password', '')
         program = request.form.get('program', '')
         year_level = request.form.get('year_level', '')
-        if not all([full_name, email, password, program, year_level]):
+        if not all([full_name, email, password, confirm_password, program, year_level]):
             flash('Please fill in all fields.', 'error')
+            return render_template('signup.html', programs=programs)
+        if password != confirm_password:
+            flash('Passwords do not match.', 'error')
             return render_template('signup.html', programs=programs)
         # ── Whitelist check: only enrolled student emails can register ──
         allowed = conn.execute(
@@ -760,8 +764,12 @@ def signup_teacher():
         full_name = request.form.get('full_name', '').strip()
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
-        if not all([full_name, email, password]):
+        confirm_password = request.form.get('confirm_password', '')
+        if not all([full_name, email, password, confirm_password]):
             flash('Please fill in all fields.', 'error')
+            return render_template('signup_teacher.html')
+        if password != confirm_password:
+            flash('Passwords do not match.', 'error')
             return render_template('signup_teacher.html')
         # ── Whitelist check: only pre-approved teacher emails can register ──
         conn = get_db()

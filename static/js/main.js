@@ -91,4 +91,42 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.target === overlay) overlay.classList.remove('open');
     });
   });
+
+  // Show/hide password toggle buttons
+  document.querySelectorAll('.password-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = document.getElementById(btn.dataset.target);
+      if (!input) return;
+      const isVisible = input.type === 'text';
+      input.type = isVisible ? 'password' : 'text';
+      btn.classList.toggle('is-visible', !isVisible);
+      btn.setAttribute('aria-label', isVisible ? 'Show password' : 'Hide password');
+    });
+  });
+
+  // Live password confirmation match check
+  document.querySelectorAll('[data-confirm-target]').forEach(confirmInput => {
+    const original = document.getElementById(confirmInput.dataset.confirmTarget);
+    const msg = confirmInput.closest('.form-group')?.querySelector('.password-mismatch-msg');
+    const form = confirmInput.closest('form');
+    if (!original) return;
+
+    const check = () => {
+      const mismatch = confirmInput.value.length > 0 && confirmInput.value !== original.value;
+      confirmInput.setCustomValidity(mismatch ? 'Passwords do not match' : '');
+      if (msg) msg.classList.toggle('is-visible', mismatch);
+      return !mismatch;
+    };
+
+    confirmInput.addEventListener('input', check);
+    original.addEventListener('input', check);
+    if (form) {
+      form.addEventListener('submit', e => {
+        if (!check()) {
+          e.preventDefault();
+          confirmInput.reportValidity();
+        }
+      });
+    }
+  });
 });
