@@ -2445,26 +2445,68 @@ def teacher_bank_import_file():
     # the same blank with "/"):
     #   1. The ___ is the powerhouse of the cell, and water is H2O and ___.
     #   Answer: mitochondria/mitochondrion | oxygen/O2
+    #
+    # Any question type may wrap a code sample in a fenced block — use
+    # ``` ... ``` or ''' ... ''' (either marker; they don't have to match on
+    # both ends). Indentation inside the fence is preserved, and on the
+    # student-facing exam/results pages a question with a fenced block
+    # (i.e. any question_text containing a newline) is shown in a
+    # monospaced code box instead of plain text. Example with a blank
+    # inside the code:
+    #   3. What will this code output?
+    #   '''
+    #   x = 10
+    #   if x > 5:
+    #       print("___")
+    #   else:
+    #       print("small")
+    #   '''
+    #   Answer: big
     # ─────────────────────────────────────────────────────────────────────────
-    lines = [l.rstrip() for l in content.splitlines()]
+    # Only trim trailing newline artifacts here — leading whitespace is kept
+    # so indentation inside a fenced ``` or ''' code block survives.
+    lines = [l.rstrip('\r\n') for l in content.splitlines()]
+
+    _HEADER_RE = _re.compile(r'^(multiple\s*choice|short\s*answer|fill\s*in\s*the\s*blank)\s*:?\s*$', _re.IGNORECASE)
+    _FENCE_RE = _re.compile(r"^(```|''')")
 
     # Drop section header lines (e.g. "Multiple Choice:", "Short Answer:",
     # "Fill in the Blank:") so they don't get mistaken for a stray question
-    # with no answer.
-    _HEADER_RE = _re.compile(r'^(multiple\s*choice|short\s*answer|fill\s*in\s*the\s*blank)\s*:?\s*$', _re.IGNORECASE)
-    lines = [l for l in lines if not _HEADER_RE.match(l.strip())]
+    # with no answer. Skipped while inside a ``` fence so a code line that
+    # happens to look like a header (rare, but possible) isn't eaten.
+    filtered = []
+    in_fence = False
+    for l in lines:
+        s = l.strip()
+        if _FENCE_RE.match(s):
+            in_fence = not in_fence
+            filtered.append(l)
+            continue
+        if in_fence or not _HEADER_RE.match(s):
+            filtered.append(l)
+    lines = filtered
 
     # ── Clean parser: split file into question blocks first, then parse each ──
-    # A new block starts whenever we see a numbered line: "1.", "2.", "3)" etc.
+    # A new block starts whenever we see a numbered line: "1.", "2.", "3)" etc,
+    # except while inside a ``` fence (so a stray "1)" inside a code sample
+    # doesn't get mistaken for the start of the next question).
     blocks = []
     current_block = []
+    in_fence = False
     for line in lines:
         stripped = line.strip()
+        if _FENCE_RE.match(stripped):
+            in_fence = not in_fence
+            current_block.append(line)
+            continue
+        if in_fence:
+            current_block.append(line)
+            continue
         if _re.match(r'^\d+[\.\)]\s+', stripped) and current_block:
             blocks.append(current_block)
-            current_block = [stripped]
+            current_block = [line]
         elif stripped or current_block:
-            current_block.append(stripped)
+            current_block.append(line)
     if current_block:
         blocks.append(current_block)
 
@@ -2474,19 +2516,38 @@ def teacher_bank_import_file():
             continue
         # First line is the question (strip leading number)
         q_line = block[0]
-        q_text = _re.sub(r'^\d+[\.\)]\s+', '', q_line).strip()
-        if not q_text:
+        q_first = _re.sub(r'^\d+[\.\)]\s+', '', q_line.strip()).strip()
+        if not q_first:
             continue
 
         choices = {}
         answer_raw = ''
+        # Everything up to the first choice line becomes part of the question
+        # text (joined with real newlines), so a ``` fenced code block right
+        # after the question prompt is kept intact — indentation and all.
+        question_lines = [q_first]
+        in_fence = False
         for bline in block[1:]:
-            c_match = _re.match(r'^([a-dA-D])[\.\)]\s+(.+)', bline)
-            a_match = _re.match(r'^[Aa]nswer\s*:\s*(.+)', bline)
+            stripped_b = bline.strip()
+            if _FENCE_RE.match(stripped_b):
+                in_fence = not in_fence
+                continue  # don't keep the ``` markers themselves
+            if in_fence:
+                question_lines.append(bline)  # preserve original indentation
+                continue
+            c_match = _re.match(r'^([a-dA-D])[\.\)]\s+(.+)', stripped_b)
+            a_match = _re.match(r'^[Aa]nswer\s*:\s*(.+)', stripped_b)
             if c_match:
                 choices[c_match.group(1).upper()] = c_match.group(2).strip()
             elif a_match:
                 answer_raw = a_match.group(1).strip()
+            elif not choices:
+                # Still part of the question body (plain extra line, no fence)
+                question_lines.append(stripped_b)
+
+        q_text = '\n'.join(question_lines).strip('\n')
+        if not q_text:
+            continue
 
         if choices:
             ans_label = answer_raw.upper().strip('.')[:1] if answer_raw else 'A'

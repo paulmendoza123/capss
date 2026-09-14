@@ -31,6 +31,19 @@
     .question-block { padding: 0.9rem; margin-bottom: 0.75rem; }
     .question-num { font-size: 0.75rem; }
     .question-text { font-size: 0.95rem; line-height: 1.5; }
+    .question-code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: rgba(0,0,0,0.04);
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      margin: 0;
+      overflow-x: auto;
+    }
 
     /* Choices full width and easier to tap */
     .choice-item {
@@ -199,7 +212,11 @@
     <div class="question-block no-select">
       <div class="question-num">Question {{ loop.index }} · {{ q.points }} pt(s)</div>
       {% if q.question_type != 'fill_blank' %}
+      {% if '\n' in q.question_text %}
+      <pre class="question-code no-select">{{ q.question_text }}</pre>
+      {% else %}
       <div class="question-text">{{ q.question_text }}</div>
+      {% endif %}
       {% endif %}
 
       {% if q.question_type == 'multiple_choice' %}
@@ -216,12 +233,19 @@
       </div>
       {% elif q.question_type == 'fill_blank' %}
       {% set saved_parts = (saved_map.get(q.id, '') or '').split('|') %}
+      {% if '\n' in q.question_text %}
+      <pre class="question-code fib-text-line no-select" data-qid="{{ q.id }}">{% for part in q.text_parts %}{{ part }}{% if not loop.last %}<input
+               type="text" class="form-control fib-blank-input" style="display:inline-block;width:140px;margin:0 0.3rem;text-transform:none"
+               data-qid="{{ q.id }}" data-blank-index="{{ loop.index0 }}"
+               value="{{ saved_parts[loop.index0] if saved_parts|length > loop.index0 else '' }}" />{% endif %}{% endfor %}</pre>
+      {% else %}
       <div class="question-text fib-text-line" data-qid="{{ q.id }}">
         {% for part in q.text_parts %}{{ part }}{% if not loop.last %}<input
                type="text" class="form-control fib-blank-input" style="display:inline-block;width:140px;margin:0 0.3rem"
                data-qid="{{ q.id }}" data-blank-index="{{ loop.index0 }}"
                value="{{ saved_parts[loop.index0] if saved_parts|length > loop.index0 else '' }}" />{% endif %}{% endfor %}
       </div>
+      {% endif %}
       <textarea name="answer_{{ q.id }}" class="auto-save fib-hidden" data-qid="{{ q.id }}"
                 style="display:none">{{ saved_map.get(q.id, '') }}</textarea>
       {% else %}

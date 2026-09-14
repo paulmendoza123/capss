@@ -42,6 +42,18 @@
       padding: 0.85rem 0 !important;
     }
     .question-text-result { font-size: 0.92rem; line-height: 1.5; }
+    .question-code-result {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: rgba(0,0,0,0.04);
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      margin: 0 0 0.25rem 0;
+    }
 
     /* Choice items in review */
     .choices-list .choice-item {
@@ -109,7 +121,11 @@
   <div class="no-select" style="padding:1rem 0; border-bottom:1px solid var(--border);">
     <div class="text-xs text-muted font-mono mb-1">Question {{ q.original_number }} · {{ q.points }} pt(s)</div>
     {% if q.question_type != 'fill_blank' %}
+    {% if '\n' in q.question_text %}
+    <pre class="fw-600 question-code-result">{{ q.question_text }}</pre>
+    {% else %}
     <div class="fw-600 mb-1 question-text-result">{{ q.question_text }}</div>
+    {% endif %}
     {% endif %}
 
     {% if q.question_type == 'multiple_choice' %}
@@ -128,9 +144,13 @@
         {% endfor %}
       </div>
     {% elif q.question_type == 'fill_blank' %}
+      {% if '\n' in q.question_text %}
+      <pre class="fw-600 question-code-result">{% for part in q.text_parts %}{{ part }}{% if not loop.last %}<span class="badge {% if q.fib_blanks[loop.index0].is_correct %}badge-blue{% else %}badge-gray{% endif %}" style="margin:0 0.2rem">___{{ loop.index }}___</span>{% endif %}{% endfor %}</pre>
+      {% else %}
       <div class="fw-600 mb-1 question-text-result">
         {% for part in q.text_parts %}{{ part }}{% if not loop.last %}<span class="badge {% if q.fib_blanks[loop.index0].is_correct %}badge-blue{% else %}badge-gray{% endif %}" style="margin:0 0.2rem">___{{ loop.index }}___</span>{% endif %}{% endfor %}
       </div>
+      {% endif %}
       <div class="text-sm mt-1" style="display:flex;flex-direction:column;gap:0.3rem">
         {% for b in q.fib_blanks %}
         <div>

@@ -5,6 +5,11 @@
 
 <style>
   /* ── Modal improvements ── */
+  .import-format-tab.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
   .qb-modal-section {
     background: var(--bg2);
     border: 1px solid var(--border);
@@ -221,7 +226,7 @@
    IMPORT FILE MODAL
 ══════════════════════════════════════════════════ #}
 <div class="modal-overlay" id="modal-import-file">
-  <div class="modal" style="max-width:560px;width:95vw">
+  <div class="modal" style="max-width:820px;width:95vw">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
       <div class="modal-title" style="margin-bottom:0">📂 Import Questions from File</div>
       <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-import-file')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
@@ -230,30 +235,105 @@
     {# Format guide #}
     <div class="qb-modal-section" style="margin-bottom:1rem">
       <div class="qb-modal-section-title">📋 Required File Format (.txt, .docx)</div>
-      <div style="font-size:0.78rem;color:var(--text2);line-height:1.65;font-family:monospace;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:0.75rem 0.85rem">
-        <div style="color:var(--accent);font-weight:700;margin-bottom:0.35rem">Multiple Choice:</div>
-        <div>1. Which loop repeats a block of code?</div>
-        <div>a. if</div>
-        <div>b. for</div>
-        <div>c. print</div>
-        <div>d. input</div>
-        <div>Answer: b</div>
-        <div style="margin:0.6rem 0;border-top:1px dashed var(--border)"></div>
-        <div style="color:var(--accent2);font-weight:700;margin-bottom:0.35rem">Short Answer:</div>
-        <div>1. What is the brain of the computer?</div>
-        <div>Answer: CPU</div>
-        <div style="margin:0.6rem 0;border-top:1px dashed var(--border)"></div>
-        <div style="color:#c77dff;font-weight:700;margin-bottom:0.35rem">Fill in the Blank:</div>
-        <div>1. The ___ is the brain of the computer, and RAM stands for ___.</div>
-        <div>Answer: CPU/Central Processing Unit | Random Access Memory/RAM</div>
-      </div>
-      <div style="font-size:0.75rem;color:var(--text3);margin-top:0.5rem">
-        ℹ️ The group name will be taken from the filename automatically (e.g. <em>Chapter3.docx</em> → <strong>Chapter3</strong>).
-      </div>
-      <div style="font-size:0.75rem;color:var(--text3);margin-top:0.35rem">
-        ℹ️ For Fill in the Blank: use <strong>___</strong> (three underscores) to mark each blank in the question. In the answer line, separate answers for <strong>different blanks</strong> with <strong>|</strong>, and separate <strong>alternate acceptable answers</strong> for the same blank with <strong>/</strong>.
+
+      {# Format box + vertical type selector, side by side #}
+      <div style="display:flex;gap:0.75rem;align-items:stretch">
+
+        <div style="flex:1;min-width:0;font-size:0.78rem;color:var(--text2);line-height:1.65;font-family:monospace;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:0.75rem 0.85rem">
+
+          {# ── Multiple Choice ── #}
+          <div class="import-format-panel" data-format-panel="mc">
+            <div style="color:var(--text3);font-weight:700;margin-bottom:0.35rem;font-family:inherit">Plain question:</div>
+            <div>1. Which loop repeats a block of code?</div>
+            <div>a. if</div>
+            <div>b. for</div>
+            <div>c. print</div>
+            <div>d. input</div>
+            <div>Answer: b</div>
+            <div style="margin:0.6rem 0;border-top:1px dashed var(--border)"></div>
+            <div style="color:var(--text3);font-weight:700;margin-bottom:0.35rem;font-family:inherit">With a code block:</div>
+            <div>2. What is the output of this code?</div>
+            <div>```</div>
+            <div>x = 4</div>
+            <div>if x % 2 == 0:</div>
+            <div>&nbsp;&nbsp;&nbsp;&nbsp;print("even")</div>
+            <div>else:</div>
+            <div>&nbsp;&nbsp;&nbsp;&nbsp;print("odd")</div>
+            <div>```</div>
+            <div>a. even</div>
+            <div>b. odd</div>
+            <div>c. error</div>
+            <div>d. nothing</div>
+            <div>Answer: a</div>
+          </div>
+
+          {# ── Short Answer ── #}
+          <div class="import-format-panel" data-format-panel="sa" style="display:none">
+            <div style="color:var(--text3);font-weight:700;margin-bottom:0.35rem;font-family:inherit">Plain question:</div>
+            <div>1. What is the brain of the computer?</div>
+            <div>Answer: CPU</div>
+            <div style="margin:0.6rem 0;border-top:1px dashed var(--border)"></div>
+            <div style="color:var(--text3);font-weight:700;margin-bottom:0.35rem;font-family:inherit">With a code block:</div>
+            <div>2. What will this code print?</div>
+            <div>```</div>
+            <div>for i in range(3):</div>
+            <div>&nbsp;&nbsp;&nbsp;&nbsp;print(i)</div>
+            <div>```</div>
+            <div>Answer: 0 1 2</div>
+          </div>
+
+          {# ── Fill in the Blank ── #}
+          <div class="import-format-panel" data-format-panel="fib" style="display:none">
+            <div style="color:var(--text3);font-weight:700;margin-bottom:0.35rem;font-family:inherit">Plain question:</div>
+            <div>1. The ___ is the brain of the computer, and RAM stands for ___.</div>
+            <div>Answer: CPU/Central Processing Unit | Random Access Memory/RAM</div>
+            <div style="margin:0.6rem 0;border-top:1px dashed var(--border)"></div>
+            <div style="color:var(--text3);font-weight:700;margin-bottom:0.35rem;font-family:inherit">With a code block:</div>
+            <div>2. Study the code below.</div>
+            <div>```</div>
+            <div>x = 10</div>
+            <div>y = 3</div>
+            <div>print(x // y)</div>
+            <div>```</div>
+            <div>The output is ___.</div>
+            <div>Answer: 3</div>
+          </div>
+
+        </div>
+
+        {# Type selector buttons, stacked vertically on the right #}
+        <div style="display:flex;flex-direction:column;gap:0.4rem;flex-shrink:0;width:220px">
+          <button type="button" class="btn btn-ghost btn-sm import-format-tab active" data-format-tab="mc"
+                  onclick="showImportFormat('mc')" style="justify-content:flex-start">Multiple Choice</button>
+          <button type="button" class="btn btn-ghost btn-sm import-format-tab" data-format-tab="sa"
+                  onclick="showImportFormat('sa')" style="justify-content:flex-start">Short Answer</button>
+          <button type="button" class="btn btn-ghost btn-sm import-format-tab" data-format-tab="fib"
+                  onclick="showImportFormat('fib')" style="justify-content:flex-start">Fill in the Blank</button>
+
+          <div style="font-size:0.72rem;color:var(--text3);margin-top:0.5rem;line-height:1.5">
+            ℹ️ The group name will be taken from the filename automatically (e.g. <em>Chapter3.docx</em> → <strong>Chapter3</strong>).
+          </div>
+          <div style="font-size:0.72rem;color:var(--text3);line-height:1.5">
+            ℹ️ For Fill in the Blank: use <strong>___</strong> (three underscores) to mark each blank in the question. In the answer line, separate answers for <strong>different blanks</strong> with <strong>|</strong>, and separate <strong>alternate acceptable answers</strong> for the same blank with <strong>/</strong>.
+          </div>
+          <div style="font-size:0.72rem;color:var(--text3);line-height:1.5">
+            ℹ️ For a code block (any question type): wrap the code in <strong>```</strong> on its own line before and after. Indentation and blank lines inside the fence are kept exactly as typed.
+          </div>
+        </div>
+
       </div>
     </div>
+
+    <script>
+      function showImportFormat(type) {
+        document.querySelectorAll('.import-format-panel').forEach(function(p) {
+          p.style.display = (p.getAttribute('data-format-panel') === type) ? '' : 'none';
+        });
+        document.querySelectorAll('.import-format-tab').forEach(function(b) {
+          b.classList.toggle('active', b.getAttribute('data-format-tab') === type);
+        });
+      }
+    </script>
 
     <form method="POST" action="{{ url_for('teacher_bank_import_file') }}" enctype="multipart/form-data">
       <div class="form-group" style="margin-bottom:1rem">

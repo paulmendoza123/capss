@@ -83,7 +83,11 @@
             <span class="drag-handle" draggable="true" title="Drag to reorder or move to another section">⠿</span>
             <span class="q-index-label">Q{{ loop.index }}</span> · {{ q.points }} pt(s) · {{ q.question_type | replace('_',' ') }}
           </div>
+          {% if '\n' in q.question_text %}
+          <pre class="question-code-preview">{{ q.question_text }}</pre>
+          {% else %}
           <div class="question-text">{{ q.question_text }}</div>
+          {% endif %}
           {% if q.question_type == 'multiple_choice' and q.choices %}
           <div class="choices-list" style="pointer-events:none;gap:0.3rem">
             {% for c in q.choices %}
@@ -526,6 +530,18 @@
 </div>
 
 <style>
+.question-code-preview {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(0,0,0,0.04);
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 6px;
+  padding: 0.65rem 0.85rem;
+  margin: 0 0 0.5rem 0;
+}
 .toggle-switch { position:relative; display:inline-block; width:44px; height:24px; flex-shrink:0; }
 .toggle-switch input { opacity:0; width:0; height:0; }
 .toggle-slider {
