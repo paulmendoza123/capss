@@ -774,18 +774,67 @@ function mcRemoveChoice(el) {
   if (!row) return;
   const grid = row.closest('.mc-choice-grid');
   if (!grid) return;
-  if (mcVisibleRows(grid).length <= MC_MIN_CHOICES) {
+
+  const visible = mcVisibleRows(grid);
+  if (visible.length <= MC_MIN_CHOICES) {
     alert('A multiple choice question needs at least ' + MC_MIN_CHOICES + ' choices.');
     return;
   }
-  const input = row.querySelector('input');
-  if (input) input.value = '';
-  row.style.display = 'none';
+
+  const removeIndex = visible.indexOf(row);
+  if (removeIndex === -1) return;
+
+  // Remember which visible row is currently the "correct" one so we can
+  // keep pointing at the same answer after everything shifts up.
+  const sel = mcSelectFor(grid);
+  const correctIndex = sel ? visible.findIndex(r => r.dataset.label === sel.value) : -1;
+
+  // Shift every choice's TEXT up by one slot instead of just hiding the
+  // removed row. This is what keeps the letters contiguous: if you delete
+  // choice C, choice D's text moves into the "Choice C" box, E moves into
+  // D, and so on - so D no longer just sits there still labeled D.
+  const texts = visible.map(r => r.querySelector('input').value);
+  texts.splice(removeIndex, 1);
+  visible.forEach((r, i) => {
+    const inp = r.querySelector('input');
+    if (inp) inp.value = i < texts.length ? texts[i] : '';
+  });
+
+  // The last slot is now empty - hide it.
+  visible[visible.length - 1].style.display = 'none';
+
   mcSyncChoices(grid);
+
+  // Re-point the Correct Answer dropdown at the slot the previously-correct
+  // choice ended up in. If the correct choice itself was the one removed,
+  // fall back to the first remaining choice.
+  if (sel && correctIndex !== -1) {
+    let newIndex;
+    if (correctIndex === removeIndex) {
+      newIndex = 0;
+    } else if (correctIndex > removeIndex) {
+      newIndex = correctIndex - 1;
+    } else {
+      newIndex = correctIndex;
+    }
+    const newVisible = mcVisibleRows(grid);
+    if (newVisible[newIndex]) sel.value = newVisible[newIndex].dataset.label;
+  }
 }
 
 /* On an edit form, only the choices the question really has are shown. */
 function mcInitGrid(grid) {
+  // Remember the question's real saved answer the first time this grid is
+  // initialized. mcSyncChoices rebuilds the <option> elements from scratch
+  // and never marks one as the HTML-default "selected" option, so the
+  // browser's native form.reset() can't restore it correctly on its own
+  // (it just falls back to the first option, "A"). Keeping our own record
+  // lets us restore the true original answer explicitly below.
+  const sel = mcSelectFor(grid);
+  if (sel && grid.dataset.mcOriginalAnswer === undefined) {
+    grid.dataset.mcOriginalAnswer = sel.value;
+  }
+
   if (grid.dataset.mcMode === 'edit') {
     const rows = mcRows(grid);
     rows.forEach(r => {
@@ -799,6 +848,15 @@ function mcInitGrid(grid) {
     }
   }
   mcSyncChoices(grid);
+
+  // Point the dropdown back at the real saved answer, as long as that
+  // choice is still one of the options currently on screen.
+  if (sel && grid.dataset.mcOriginalAnswer) {
+    const opts = Array.from(sel.options).map(o => o.value);
+    if (opts.includes(grid.dataset.mcOriginalAnswer)) {
+      sel.value = grid.dataset.mcOriginalAnswer;
+    }
+  }
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -868,7 +926,22 @@ function openQuestionEdit(id) {
 function closeQuestionEdit(id) {
   const view = document.getElementById('qview-' + id);
   const edit = document.getElementById('qedit-' + id);
-  if (edit) edit.style.display = 'none';
+  if (edit) {
+    // Discard any unsaved edits by putting the form back to its original values.
+    const form = edit.querySelector('form');
+    if (form) {
+      form.reset();
+      const grid = form.querySelector('.mc-choice-grid');
+      if (grid) {
+        // form.reset() restores each choice's text, but not the row's
+        // show/hide state (that's a manual style, not a form value) —
+        // clear it so mcInitGrid can recompute it from the restored text.
+        grid.querySelectorAll('.mc-choice-row').forEach(row => row.style.removeProperty('display'));
+        mcInitGrid(grid);
+      }
+    }
+    edit.style.display = 'none';
+  }
   if (view) view.style.display = 'block';
 }
 
@@ -886,7 +959,12 @@ function openSectionEdit(id) {
 function closeSectionEdit(id) {
   const view = document.getElementById('sview-' + id);
   const edit = document.getElementById('sedit-' + id);
-  if (edit) edit.style.display = 'none';
+  if (edit) {
+    // Discard any unsaved edits by putting the form back to its original values.
+    const form = edit.querySelector('form');
+    if (form) form.reset();
+    edit.style.display = 'none';
+  }
   if (view) view.style.display = 'flex';
 }
 function submitSectionEdit(e, id) {

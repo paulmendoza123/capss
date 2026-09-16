@@ -85,10 +85,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Modal helpers
   window.openModal = id => document.getElementById(id)?.classList.add('open');
-  window.closeModal = id => document.getElementById(id)?.classList.remove('open');
+  window.closeModal = id => {
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    // Closing a modal (via ✕, Cancel, or clicking outside) should discard any
+    // unsaved edits rather than leave them sitting in the form for next time.
+    modal.querySelectorAll('form').forEach(form => {
+      form.reset();
+      form.querySelectorAll('.mc-choice-grid').forEach(grid => {
+        // form.reset() restores each choice's text, but not the row's
+        // show/hide state (that's a manual style, not a form value) —
+        // clear it so mcInitGrid can recompute it from the restored text.
+        grid.querySelectorAll('.mc-choice-row').forEach(row => row.style.removeProperty('display'));
+        if (typeof window.mcInitGrid === 'function') window.mcInitGrid(grid);
+      });
+    });
+    modal.classList.remove('open');
+  };
   document.querySelectorAll('.modal-overlay').forEach(overlay => {
     overlay.addEventListener('click', e => {
-      if (e.target === overlay) overlay.classList.remove('open');
+      if (e.target === overlay) closeModal(overlay.id);
     });
   });
 
