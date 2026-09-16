@@ -325,5 +325,47 @@ document.addEventListener('DOMContentLoaded', function() {
   applyTheme(saved);
 });
 </script>
+
+<script>
+// ── Preserve scroll position across form-submit page reloads ──
+// Pages like the Question Bank and Exam Editor submit plain <form> posts
+// (edit/delete question, etc.) which redirect back to the same page.
+// That full reload normally resets scroll to the top. Here we remember the
+// scroll position right before the page unloads, then restore it once the
+// new page has rendered.
+(function() {
+  var KEY_PREFIX = 'spark-scrollpos:';
+  var key = KEY_PREFIX + location.pathname;
+
+  window.addEventListener('beforeunload', function() {
+    try {
+      sessionStorage.setItem(key, String(window.scrollY));
+    } catch (e) {}
+  });
+
+  function restoreScroll() {
+    var saved;
+    try {
+      saved = sessionStorage.getItem(key);
+      if (saved === null) return;
+      sessionStorage.removeItem(key);
+    } catch (e) { return; }
+    var y = parseInt(saved, 10);
+    if (isNaN(y)) return;
+    // Layout may still be settling (fonts/images/tables), so reassert
+    // the scroll position a couple of times shortly after load.
+    window.scrollTo(0, y);
+    requestAnimationFrame(function() { window.scrollTo(0, y); });
+    setTimeout(function() { window.scrollTo(0, y); }, 50);
+    setTimeout(function() { window.scrollTo(0, y); }, 200);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', restoreScroll);
+  } else {
+    restoreScroll();
+  }
+})();
+</script>
 </body>
 </html>

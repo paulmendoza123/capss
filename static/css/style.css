@@ -1,5 +1,15 @@
 /* ── SPARK CSS ── */
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Fonts are loaded from the system's own installed fonts only — no
+   internet connection is required. If you later want the exact Sora /
+   JetBrains Mono look, download the .woff2 files, drop them in
+   static/fonts/, and add an @font-face block here pointing to them;
+   the font-family names below already reference 'Sora' and
+   'JetBrains Mono' first, so self-hosted files would be picked up
+   automatically with no other changes needed. */
+:root {
+  --font-sans: 'Sora', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, Menlo, 'Liberation Mono', monospace;
+}
 
 /* ── LIGHT MODE (default) ── */
 :root {
@@ -91,7 +101,7 @@ body, .sidebar, .topbar, .card, .stat-card, .exam-card, .class-card, .monitor-ca
 html { font-size: 15px; scroll-behavior: smooth; }
 
 body {
-  font-family: 'Sora', sans-serif;
+  font-family: var(--font-sans);
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -155,7 +165,7 @@ body {
 .sidebar-logo .logo-sub {
   font-size: 0.65rem;
   color: var(--text3);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -177,7 +187,7 @@ body {
   color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
 }
 
 .sidebar-nav { flex: 1; padding: 0.75rem 0; }
@@ -187,7 +197,7 @@ body {
   color: var(--text3);
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
 }
 .nav-item {
   display: flex;
@@ -306,7 +316,7 @@ body {
   padding: 1.25rem;
 }
 .stat-label { font-size: 0.75rem; color: var(--text2); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.5rem; }
-.stat-value { font-size: 2rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.stat-value { font-size: 2rem; font-weight: 700; font-family: var(--font-mono); }
 .stat-value.blue { color: var(--accent); }
 .stat-value.green { color: var(--accent2); }
 .stat-value.orange { color: var(--accent3); }
@@ -321,7 +331,7 @@ body {
   border-radius: var(--radius-sm);
   font-size: 0.85rem;
   font-weight: 600;
-  font-family: 'Sora', sans-serif;
+  font-family: var(--font-sans);
   cursor: pointer;
   border: 1px solid transparent;
   text-decoration: none;
@@ -365,7 +375,7 @@ body {
   padding: 0.65rem 0.9rem;
   color: var(--text);
   font-size: 0.875rem;
-  font-family: 'Sora', sans-serif;
+  font-family: var(--font-sans);
   transition: var(--transition);
   outline: none;
 }
@@ -427,7 +437,7 @@ th {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--text3);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
 }
 td { padding: 0.75rem 1rem; font-size: 0.875rem; border-bottom: 1px solid var(--border); }
 tr:last-child td { border-bottom: none; }
@@ -441,7 +451,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   border-radius: 20px;
   font-size: 0.7rem;
   font-weight: 600;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -472,7 +482,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   transition: var(--transition);
-  font-family: 'Sora', sans-serif;
+  font-family: var(--font-sans);
 }
 .tab-btn:hover { color: var(--text); }
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
@@ -526,7 +536,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 }
 .class-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--shadow); }
 .class-code {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   color: var(--accent);
   background: rgba(79,142,247,0.1);
@@ -585,7 +595,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   background: transparent;
   border: none;
   color: var(--text);
-  font-family: 'Sora', sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.82rem;
   font-weight: 500;
   padding: 0.55rem 0.65rem;
@@ -639,7 +649,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .monitor-progress { flex: 2; min-width: 140px; max-width: 260px; width: 0; }
 .monitor-stats { display: flex; gap: 1rem; align-items: center; }
 .monitor-stat { text-align: center; }
-.monitor-stat-val { font-family: 'JetBrains Mono', monospace; font-size: 1rem; font-weight: 700; }
+.monitor-stat-val { font-family: var(--font-mono); font-size: 1rem; font-weight: 700; }
 .monitor-stat-label { font-size: 0.65rem; color: var(--text3); text-transform: uppercase; }
 .monitor-actions { display: flex; gap: 0.5rem; }
 
@@ -658,7 +668,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   z-index: 40;
 }
 .exam-timer {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 1.5rem;
   font-weight: 700;
   color: var(--accent2);
@@ -677,7 +687,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 }
 .question-block:focus-within { border-color: var(--accent); }
 .question-num {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 0.7rem;
   color: var(--text3);
   margin-bottom: 0.5rem;
@@ -698,7 +708,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .choice-item input[type=radio] { accent-color: var(--accent); }
 .choice-item.selected { border-color: var(--accent); background: rgba(79,142,247,0.08); }
 .choice-label-badge {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   background: var(--bg3);
   color: var(--text2);
@@ -712,7 +722,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--text3);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   padding: 0.5rem 0;
   margin: 1rem 0 0.5rem;
   border-bottom: 1px solid var(--border);
@@ -730,7 +740,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .result-score {
   font-size: 4rem;
   font-weight: 700;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   margin-bottom: 0.5rem;
 }
 .result-score.pass { color: var(--accent2); }
@@ -851,7 +861,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .text-danger { color: var(--danger); }
 .text-success { color: var(--accent2); }
 .text-accent { color: var(--accent); }
-.font-mono { font-family: 'JetBrains Mono', monospace; }
+.font-mono { font-family: var(--font-mono); }
 .fw-600 { font-weight: 600; }
 .fw-700 { font-weight: 700; }
 
