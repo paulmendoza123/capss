@@ -19,6 +19,46 @@ app.secret_key = 'spark_secret_key_2027'
 EMAIL_RE = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
 SCHOOL_EMAIL_DOMAIN = 'psu.palawan.edu.ph'
 
+# Multiple-choice questions support up to 26 options, labeled A through Z.
+MC_LABELS = list(string.ascii_uppercase)
+
+# Minimum number of choices a multiple-choice question must have.
+MC_MIN_CHOICES = 2
+
+
+def mc_collect_choices(form):
+    """Return [(label, text), ...] for every non-empty choice_<label> field."""
+    out = []
+    for label in MC_LABELS:
+        ct = (form.get(f'choice_{label}') or '').strip()
+        if ct:
+            out.append((label, ct))
+    return out
+
+
+def mc_validate(choices, correct):
+    """Validate a multiple-choice submission.
+
+    Returns (ok, correct_label, error_message). The correct answer must be one
+    of the labels that actually has choice text, and there must be at least
+    MC_MIN_CHOICES choices.
+    """
+    if len(choices) < MC_MIN_CHOICES:
+        return False, correct, (
+            f'Multiple choice questions need at least {MC_MIN_CHOICES} choices. '
+            f'Only {len(choices)} was provided.' if len(choices) == 1 else
+            f'Multiple choice questions need at least {MC_MIN_CHOICES} choices. '
+            f'Only {len(choices)} were provided.'
+        )
+    labels = [lbl for lbl, _ in choices]
+    correct = (correct or '').strip().upper()
+    if correct not in labels:
+        return False, correct, (
+            'The correct answer must be one of the choices you filled in '
+            f'({", ".join(labels)}).'
+        )
+    return True, correct, None
+
 def extract_emails_from_file(file_storage):
     """Reads an uploaded .csv, .xlsx, .docx, or .pdf file and pulls out every
     valid-looking email address found anywhere in it — works no matter how
@@ -2080,6 +2120,15 @@ def teacher_add_question(section_id):
     if not q_text:
         if _wants_json():
             return jsonify({'ok': False, 'error': 'Question text is required.'}), 400
+    mc_choices = None
+    if q_type == 'multiple_choice' and q_text:
+        mc_choices = mc_collect_choices(request.form)
+        ok, correct, err = mc_validate(mc_choices, correct)
+        if not ok:
+            flash(err, 'error')
+            if _wants_json():
+                return jsonify({'ok': False, 'error': err}), 400
+            return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
     if q_type == 'fill_blank' and q_text:
         blank_count = fib_count_blanks(q_text)
         answer_count = len(correct.split('|')) if correct else 0
@@ -2099,12 +2148,10 @@ def teacher_add_question(section_id):
             VALUES (?,?,?,?,?,?,?,?)
         ''', (exam_id, section_id, q_text, q_type, points, correct, count, case_sensitive))
         q_id = cur.lastrowid
-        if q_type == 'multiple_choice':
-            for label in ['A', 'B', 'C', 'D']:
-                ct = request.form.get(f'choice_{label}', '').strip()
-                if ct:
-                    conn.execute('INSERT INTO choices (question_id, choice_label, choice_text) VALUES (?,?,?)',
-                                 (q_id, label, ct))
+        if mc_choices is not None:
+            for label, ct in mc_choices:
+                conn.execute('INSERT INTO choices (question_id, choice_label, choice_text) VALUES (?,?,?)',
+                             (q_id, label, ct))
         conn.commit()
         flash('Question added.', 'success')
         if _wants_json():
@@ -2198,15 +2245,23 @@ def teacher_edit_question(question_id):
             if redirect_to == 'bank' or not exam_id:
                 return redirect(url_for('teacher_question_bank'))
             return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
+    mc_choices = None
+    if q['question_type'] == 'multiple_choice':
+        mc_choices = mc_collect_choices(request.form)
+        ok, correct, err = mc_validate(mc_choices, correct)
+        if not ok:
+            flash(err, 'error')
+            redirect_to = request.form.get('redirect_to', '')
+            if redirect_to == 'bank' or not exam_id:
+                return redirect(url_for('teacher_question_bank'))
+            return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
     conn.execute('UPDATE questions SET question_text=?, correct_answer=?, points=?, bank_group_id=?, case_sensitive=? WHERE id=?',
                  (q_text, correct, points, bank_group_id, case_sensitive, question_id))
-    if q['question_type'] == 'multiple_choice':
+    if mc_choices is not None:
         conn.execute('DELETE FROM choices WHERE question_id=?', (question_id,))
-        for label in ['A', 'B', 'C', 'D']:
-            ct = request.form.get(f'choice_{label}', '').strip()
-            if ct:
-                conn.execute('INSERT INTO choices (question_id, choice_label, choice_text) VALUES (?,?,?)',
-                             (question_id, label, ct))
+        for label, ct in mc_choices:
+            conn.execute('INSERT INTO choices (question_id, choice_label, choice_text) VALUES (?,?,?)',
+                         (question_id, label, ct))
     conn.commit()
     flash('Question updated.', 'success')
     redirect_to = request.form.get('redirect_to', '')
@@ -2355,6 +2410,14 @@ def teacher_bank_add_question():
         flash('Question text and type are required.', 'error')
         return redirect(url_for('teacher_question_bank'))
 
+    mc_choices = None
+    if q_type == 'multiple_choice':
+        mc_choices = mc_collect_choices(request.form)
+        ok, correct, err = mc_validate(mc_choices, correct)
+        if not ok:
+            flash(err, 'error')
+            return redirect(url_for('teacher_question_bank'))
+
     if q_type == 'fill_blank':
         blank_count = fib_count_blanks(q_text)
         answer_count = len(correct.split('|')) if correct else 0
@@ -2378,14 +2441,12 @@ def teacher_bank_add_question():
         (q_text, q_type, points, correct, bank_group_id, session['user_id'], case_sensitive)
     )
     q_id = cur.lastrowid
-    if q_type == 'multiple_choice':
-        for label in ['A', 'B', 'C', 'D']:
-            ct = request.form.get(f'choice_{label}', '').strip()
-            if ct:
-                conn.execute(
-                    'INSERT INTO choices (question_id, choice_label, choice_text) VALUES (?,?,?)',
-                    (q_id, label, ct)
-                )
+    if mc_choices is not None:
+        for label, ct in mc_choices:
+            conn.execute(
+                'INSERT INTO choices (question_id, choice_label, choice_text) VALUES (?,?,?)',
+                (q_id, label, ct)
+            )
     conn.commit()
     flash('Question added to bank.', 'success')
     return redirect(url_for('teacher_question_bank'))
@@ -2435,6 +2496,8 @@ def teacher_bank_import_file():
     #   c. print
     #   d. input
     #   Answer: b
+    #
+    # Multiple choice questions may have up to 26 choices, labeled a-z.
     #
     # Short answer:
     #   1. What is the brain of the computer?
@@ -2535,7 +2598,7 @@ def teacher_bank_import_file():
             if in_fence:
                 question_lines.append(bline)  # preserve original indentation
                 continue
-            c_match = _re.match(r'^([a-dA-D])[\.\)]\s+(.+)', stripped_b)
+            c_match = _re.match(r'^([a-zA-Z])[\.\)]\s+(.+)', stripped_b)
             a_match = _re.match(r'^[Aa]nswer\s*:\s*(.+)', stripped_b)
             if c_match:
                 choices[c_match.group(1).upper()] = c_match.group(2).strip()

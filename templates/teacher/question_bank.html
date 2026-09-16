@@ -2,8 +2,22 @@
 {% block title %}Question Bank{% endblock %}
 {% block topbar_title %}Question Bank{% endblock %}
 {% block content %}
+{% set mc_labels = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'] %}
 
 <style>
+  /* ── Multiple-choice add/remove (up to Z) ── */
+  .mc-choice-row .mc-choice-remove {
+    float: right;
+    cursor: pointer;
+    color: var(--text3);
+    font-weight: 400;
+  }
+  .mc-choice-row .mc-choice-remove:hover {
+    color: var(--danger);
+  }
+  .mc-add-choice-btn {
+    margin: 0.35rem 0 0.75rem;
+  }
   /* ── Modal improvements ── */
   .import-format-tab.active {
     background: var(--accent);
@@ -249,7 +263,9 @@
             <div>b. for</div>
             <div>c. print</div>
             <div>d. input</div>
+            <div>e. return</div>
             <div>Answer: b</div>
+            <div style="color:var(--text3);margin-top:0.35rem">Up to 26 choices per question, labeled a–z.</div>
             <div style="margin:0.6rem 0;border-top:1px dashed var(--border)"></div>
             <div style="color:var(--text3);font-weight:700;margin-bottom:0.35rem;font-family:inherit">With a code block:</div>
             <div>2. What is the output of this code?</div>
@@ -401,18 +417,22 @@ function updateImportPreview(input) {
 
       {# MC choices — hidden until type selected #}
       <div id="bqChoices" style="display:none">
-        <div class="form-row" style="grid-template-columns:1fr 1fr">
-          {% for lbl in ['A','B','C','D'] %}
-          <div class="form-group">
-            <label class="form-label">Choice {{ lbl }}</label>
+        <div class="form-row mc-choice-grid" style="grid-template-columns:1fr 1fr">
+          {% for lbl in mc_labels %}
+          <div class="form-group mc-choice-row{{ ' mc-choice-extra' if loop.index > 4 else '' }}" data-label="{{ lbl }}"
+               {% if loop.index > 4 %}style="display:none"{% endif %}>
+            <label class="form-label">Choice {{ lbl }}
+              <span class="mc-choice-remove" onclick="mcRemoveChoice(this)" title="Remove choice">✕</span>
+            </label>
             <input type="text" name="choice_{{ lbl }}" class="form-control" placeholder="Option {{ lbl }}">
           </div>
           {% endfor %}
         </div>
+        <button type="button" class="btn btn-ghost btn-sm mc-add-choice-btn" onclick="mcAddChoice(this)">+ Add Choice</button>
         <div class="form-group">
           <label class="form-label">Correct Answer</label>
           <select name="correct_answer_mc" id="bankMcAnswer" class="form-select" style="max-width:120px">
-            {% for lbl in ['A','B','C','D'] %}
+            {% for lbl in mc_labels %}
             <option value="{{ lbl }}">{{ lbl }}</option>
             {% endfor %}
           </select>
@@ -483,6 +503,111 @@ function updateImportPreview(input) {
 </div>
 
 <script>
+/* ── Multiple-choice: add/remove choice rows (minimum 2, up to Z) ── */
+const MC_MIN_CHOICES = 2;
+
+function mcRows(grid) {
+  return Array.from(grid.querySelectorAll('.mc-choice-row'));
+}
+function mcVisibleRows(grid) {
+  return mcRows(grid).filter(r => r.style.display !== 'none');
+}
+function mcAddBtnFor(grid) {
+  let btn = grid.nextElementSibling;
+  if (btn && btn.classList && btn.classList.contains('mc-add-choice-btn')) return btn;
+  const scope = grid.closest('form') || grid.parentElement;
+  return scope ? scope.querySelector('.mc-add-choice-btn') : null;
+}
+function mcSelectFor(grid) {
+  const scope = grid.closest('form') || grid.parentElement;
+  if (!scope) return null;
+  return scope.querySelector('select[name="correct_answer"], select[name="correct_answer_mc"]');
+}
+
+/* Keeps the ✕ buttons, the + Add Choice button and the Correct Answer
+   dropdown in sync with the choices that are actually on screen. */
+function mcSyncChoices(grid) {
+  if (!grid) return;
+  const rows = mcRows(grid);
+  const visible = mcVisibleRows(grid);
+
+  // Removing is only allowed while more than the minimum remain.
+  const canRemove = visible.length > MC_MIN_CHOICES;
+  rows.forEach(r => {
+    const x = r.querySelector('.mc-choice-remove');
+    if (x) x.style.display = canRemove ? '' : 'none';
+  });
+
+  const addBtn = mcAddBtnFor(grid);
+  if (addBtn) addBtn.style.display = visible.length < rows.length ? '' : 'none';
+
+  // The Correct Answer dropdown only offers the choices that exist.
+  const sel = mcSelectFor(grid);
+  if (!sel) return;
+  const labels = visible.map(r => r.dataset.label).filter(Boolean);
+  const prev = sel.value;
+  sel.innerHTML = '';
+  labels.forEach(l => {
+    const o = document.createElement('option');
+    o.value = l;
+    o.textContent = l;
+    sel.appendChild(o);
+  });
+  sel.value = labels.indexOf(prev) !== -1 ? prev : (labels[0] || '');
+}
+
+function mcAddChoice(btn) {
+  let grid = btn.previousElementSibling;
+  if (!grid || !grid.classList.contains('mc-choice-grid')) {
+    const scope = btn.closest('form') || document;
+    grid = scope.querySelector('.mc-choice-grid');
+  }
+  if (!grid) return;
+  const next = mcRows(grid).find(r => r.style.display === 'none');
+  if (next) {
+    next.style.display = '';
+    const inp = next.querySelector('input');
+    if (inp) inp.focus();
+  }
+  mcSyncChoices(grid);
+}
+
+function mcRemoveChoice(el) {
+  const row = el.closest('.mc-choice-row');
+  if (!row) return;
+  const grid = row.closest('.mc-choice-grid');
+  if (!grid) return;
+  if (mcVisibleRows(grid).length <= MC_MIN_CHOICES) {
+    alert('A multiple choice question needs at least ' + MC_MIN_CHOICES + ' choices.');
+    return;
+  }
+  const input = row.querySelector('input');
+  if (input) input.value = '';
+  row.style.display = 'none';
+  mcSyncChoices(grid);
+}
+
+/* On an edit form, only the choices the question really has are shown. */
+function mcInitGrid(grid) {
+  if (grid.dataset.mcMode === 'edit') {
+    const rows = mcRows(grid);
+    rows.forEach(r => {
+      const inp = r.querySelector('input');
+      if (!inp || !inp.value.trim()) r.style.display = 'none';
+    });
+    let shown = rows.filter(r => r.style.display !== 'none').length;
+    for (const r of rows) {
+      if (shown >= MC_MIN_CHOICES) break;
+      if (r.style.display === 'none') { r.style.display = ''; shown++; }
+    }
+  }
+  mcSyncChoices(grid);
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.mc-choice-grid').forEach(mcInitGrid);
+});
+
 /* ── Type selection ── */
 function selectType(type) {
   document.getElementById('bankQType').value = type;
@@ -525,7 +650,25 @@ function bankSubmitValidate(e) {
   if (!type) { e.preventDefault(); alert('Please select a question type.'); return false; }
   const ca = document.getElementById('bankCorrectAnswer');
   if (type === 'multiple_choice') {
-    ca.value = document.getElementById('bankMcAnswer').value;
+    const grid = document.querySelector('#bqChoices .mc-choice-grid');
+    const filled = grid
+      ? mcVisibleRows(grid).filter(r => {
+          const i = r.querySelector('input');
+          return i && i.value.trim();
+        })
+      : [];
+    if (filled.length < MC_MIN_CHOICES) {
+      e.preventDefault();
+      alert('Multiple choice questions need at least ' + MC_MIN_CHOICES + ' filled-in choices.');
+      return false;
+    }
+    const mcSel = document.getElementById('bankMcAnswer');
+    if (!filled.some(r => r.dataset.label === mcSel.value)) {
+      e.preventDefault();
+      alert('The correct answer must point to a choice that has text.');
+      return false;
+    }
+    ca.value = mcSel.value;
   } else if (type === 'fill_blank') {
     ca.value = document.getElementById('bankFibAnswer').value;
     const blankCount = (document.getElementById('bankQText').value.match(/___/g) || []).length;
@@ -760,20 +903,24 @@ function confirmDeleteGroup(id, name, qcount) {
         </div>
       </div>
       {% if q.question_type == 'multiple_choice' %}
-      <div class="form-row" style="grid-template-columns:1fr 1fr">
-        {% for lbl in ['A','B','C','D'] %}
+      <div class="form-row mc-choice-grid" data-mc-mode="edit" style="grid-template-columns:1fr 1fr">
+        {% for lbl in mc_labels %}
         {% set choice = q.choices | selectattr('choice_label','equalto',lbl) | first | default(None) %}
-        <div class="form-group">
-          <label class="form-label">Choice {{ lbl }}</label>
+        <div class="form-group mc-choice-row{{ ' mc-choice-extra' if loop.index > 4 else '' }}" data-label="{{ lbl }}"
+             {% if loop.index > 4 and not (choice and choice.choice_text) %}style="display:none"{% endif %}>
+          <label class="form-label">Choice {{ lbl }}
+            <span class="mc-choice-remove" onclick="mcRemoveChoice(this)" title="Remove choice">✕</span>
+          </label>
           <input type="text" name="choice_{{ lbl }}" class="form-control"
                  value="{{ choice.choice_text if choice else '' }}" placeholder="Option {{ lbl }}">
         </div>
         {% endfor %}
       </div>
+      <button type="button" class="btn btn-ghost btn-sm mc-add-choice-btn" onclick="mcAddChoice(this)">+ Add Choice</button>
       <div class="form-group">
         <label class="form-label">Correct Answer</label>
         <select name="correct_answer" class="form-select" style="max-width:120px">
-          {% for lbl in ['A','B','C','D'] %}
+          {% for lbl in mc_labels %}
           <option value="{{ lbl }}" {% if q.correct_answer == lbl %}selected{% endif %}>{{ lbl }}</option>
           {% endfor %}
         </select>
