@@ -31,19 +31,7 @@
     .question-block { padding: 0.9rem; margin-bottom: 0.75rem; }
     .question-num { font-size: 0.75rem; }
     .question-text { font-size: 0.95rem; line-height: 1.5; }
-    .question-code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
-      font-size: 0.85rem;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      word-break: break-word;
-      background: rgba(0,0,0,0.04);
-      border: 1px solid rgba(0,0,0,0.08);
-      border-radius: 6px;
-      padding: 0.75rem 1rem;
-      margin: 0;
-      overflow-x: auto;
-    }
+    .question-code { font-size: 0.85rem; padding: 0.75rem 1rem; }
 
     /* Choices full width and easier to tap */
     .choice-item {
@@ -68,6 +56,9 @@
 
     /* Tab warning banner */
     #tab-warning-banner { font-size: 0.8rem; padding: 0.6rem 0.8rem; }
+
+    /* Section announcement */
+    .section-announcement { font-size: 0.85rem; }
   }
 
   @media (max-width: 480px) {
@@ -79,7 +70,7 @@
   }
 </style>
 {% endblock %}
-{% block topbar_title %}Taking Exam{% endblock %}
+{% block topbar_title %}{{ exam.title }}{% endblock %}
 {% block content %}
 
 <!-- Consent Modal — must be accepted before ANY monitoring starts (tab/blur/fullscreen tracking) -->
@@ -188,7 +179,7 @@
 <!-- Exam Header -->
 <div class="exam-header">
   <div>
-    <div class="fw-700" style="font-size:1rem">{{ exam.title }}</div>
+    <div class="fw-700" id="header-section-title" style="font-size:1rem">{{ sections_data[0].title or exam.title }}</div>
     <div class="text-sm text-muted" id="section-indicator"></div>
   </div>
   <div class="flex items-center gap-2">
@@ -204,8 +195,8 @@
 
   {% for sd in sections_data %}
   <div class="exam-section-page" data-section-index="{{ loop.index0 }}" style="display:none">
-    {% if sd.title %}
-    <div class="section-header">{{ sd.title }}</div>
+    {% if sd.description %}
+    <div class="section-announcement">{{ sd.description }}</div>
     {% endif %}
 
     {% for q in sd.questions %}
@@ -277,6 +268,8 @@
 
 <script>
 const totalSections = {{ sections_data | length }};
+const sectionTitles = {{ sections_data | map(attribute='title') | list | tojson }};
+const examTitleFallback = {{ exam.title | tojson }};
 const SESSION_KEY = 'exam_section_{{ exam_session.id }}';
 const ANSWERS_KEY = 'exam_answers_{{ exam_session.id }}';
 let currentSection = 0;
@@ -334,6 +327,8 @@ function goSection(idx) {
   const total = totalSections;
   document.getElementById('section-indicator').textContent =
     total > 1 ? `Section ${idx + 1} of ${total}` : '';
+  const headerTitleEl = document.getElementById('header-section-title');
+  if (headerTitleEl) headerTitleEl.textContent = sectionTitles[idx] || examTitleFallback;
   window.scrollTo(0, 0);
 }
 

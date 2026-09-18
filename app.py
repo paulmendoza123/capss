@@ -1162,7 +1162,7 @@ def student_take_exam(exam_id):
                 if q['question_type'] == 'fill_blank':
                     q['text_parts'] = (q['question_text'] or '').split('___')
                 all_questions.append(q)
-            sections_data.append({'title': sec['title'], 'questions': q_list})
+            sections_data.append({'title': sec['title'], 'description': sec['description'], 'questions': q_list})
     else:
         # No sections — treat all questions as one page
         qs = conn.execute(
@@ -1183,7 +1183,7 @@ def student_take_exam(exam_id):
             if q['question_type'] == 'fill_blank':
                 q['text_parts'] = (q['question_text'] or '').split('___')
             all_questions.append(q)
-        sections_data.append({'title': None, 'questions': q_list})
+        sections_data.append({'title': None, 'description': None, 'questions': q_list})
 
     # Persist the question order for this session (first time only)
     if exam['randomize_questions'] and saved_order is None and existing:
