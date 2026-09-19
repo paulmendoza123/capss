@@ -10,6 +10,15 @@
   /* Hide hamburger menu button — no sidebar during exam */
   .topbar-menu-btn { display: none !important; }
 
+  /* Keep the topbar (exam name + timer) fixed at the very top,
+     always visible no matter how far the student scrolls. */
+  .topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+  }
+
   /* Mobile exam layout */
   @media (max-width: 768px) {
     .topbar { padding: 0.65rem 1rem; }
@@ -57,8 +66,12 @@
     /* Tab warning banner */
     #tab-warning-banner { font-size: 0.8rem; padding: 0.6rem 0.8rem; }
 
-    /* Section announcement */
-    .section-announcement { font-size: 0.85rem; }
+    /* Section announcement — same compact container as question blocks */
+    .section-announcement {
+      font-size: 0.95rem;
+      padding: 0.9rem;
+      margin-bottom: 0.75rem;
+    }
   }
 
   @media (max-width: 480px) {
@@ -71,7 +84,32 @@
 </style>
 {% endblock %}
 {% block topbar_title %}{{ exam.title }}{% endblock %}
+{% block topbar_actions %}
+<div id="exam-timer" class="exam-timer">{{ "%02d"|format(exam.duration_minutes) }}:00</div>
+{% endblock %}
 {% block content %}
+
+<script>
+// ── Compensate for the topbar switching to position:fixed on this page ──
+// A fixed element is removed from normal document flow, so without this
+// the page content (including the section box) would render underneath
+// it immediately, even before any scrolling happens. This measures the
+// topbar's real rendered height and pushes .main-content down by that
+// amount so nothing is hidden behind the now-floating topbar.
+(function offsetForFixedTopbar() {
+  const topbar = document.querySelector('.topbar');
+  const mainContent = document.querySelector('.main-content');
+  if (!topbar || !mainContent) return;
+
+  function applyOffset() {
+    mainContent.style.paddingTop = topbar.offsetHeight + 'px';
+  }
+
+  applyOffset();
+  window.addEventListener('resize', applyOffset);
+  window.addEventListener('orientationchange', applyOffset);
+})();
+</script>
 
 <!-- Consent Modal — must be accepted before ANY monitoring starts (tab/blur/fullscreen tracking) -->
 <div id="consent-modal" style="
@@ -182,9 +220,6 @@
     <div class="fw-700" id="header-section-title" style="font-size:1rem">{{ sections_data[0].title or exam.title }}</div>
     <div class="text-sm text-muted" id="section-indicator"></div>
   </div>
-  <div class="flex items-center gap-2">
-    <div id="exam-timer" class="exam-timer">{{ "%02d"|format(exam.duration_minutes) }}:00</div>
-  </div>
 </div>
 
 
@@ -267,6 +302,27 @@
 </form>
 
 <script>
+// ── Keep the section title box sticky right below the topbar ──
+// Both the topbar and exam-header use `position: sticky; top: 0`, so
+// without this the topbar (higher z-index) would scroll over and hide
+// the section title box once the page is scrolled. This measures the
+// topbar's real rendered height (which changes on mobile) and offsets
+// the section box to sit exactly beneath it. The timer itself now lives
+// in the topbar, so it is always visible regardless of this offset.
+(function pinExamHeaderBelowTopbar() {
+  const topbar = document.querySelector('.topbar');
+  const examHeader = document.querySelector('.exam-header');
+  if (!topbar || !examHeader) return;
+
+  function applyOffset() {
+    examHeader.style.top = topbar.offsetHeight + 'px';
+  }
+
+  applyOffset();
+  window.addEventListener('resize', applyOffset);
+  window.addEventListener('orientationchange', applyOffset);
+})();
+
 const totalSections = {{ sections_data | length }};
 const sectionTitles = {{ sections_data | map(attribute='title') | list | tojson }};
 const examTitleFallback = {{ exam.title | tojson }};
