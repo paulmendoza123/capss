@@ -215,7 +215,7 @@
   {% set submitted = results | selectattr('status', 'eq', 'submitted') | list %}
   {% set pass_count = [] %}
   {% for r in results %}
-    {% if r.total_points and r.score is not none and (r.score / r.total_points * 100) >= pass_pct %}
+    {% if r.total_points and r.score is not none and (r.score * 100 / r.total_points) >= pass_pct %}
       {% if pass_count.append(1) %}{% endif %}
     {% endif %}
   {% endfor %}
@@ -238,7 +238,7 @@
         </thead>
         <tbody>
           {% for r in results %}
-          {% set pct = ((r.score / r.total_points) * 100)|int if r.total_points and r.score is not none else 0 %}
+          {% set pct = (r.score * 100 / r.total_points)|int if r.total_points and r.score is not none else 0 %}
           <tr>
             <td class="fw-600">{{ r.full_name }}</td>
             <td class="font-mono">

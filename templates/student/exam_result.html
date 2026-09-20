@@ -102,11 +102,11 @@
 
 {% else %}
 {% set pass_pct = exam.passing_score if exam.passing_score is not none else 75 %}
-{% set pct = ((exam_session.score / exam_session.total_points) * 100)|int if exam_session.total_points else 0 %}
+{% set pct = (exam_session.score * 100 / exam_session.total_points)|int if exam_session.total_points else 0 %}
 
 <div class="result-header">
   <div class="result-score {% if pct >= pass_pct %}pass{% else %}fail{% endif %}">
-    {{ exam_session.score|int }} / {{ exam_session.total_points }}
+    {{ exam_session.score|score_fmt }} / {{ exam_session.total_points }}
   </div>
   <div style="font-size:1.5rem;font-weight:700;margin-bottom:0.5rem">
     {{ pct }}% — {% if pct >= pass_pct %}<span class="text-success">PASSED ✓</span>{% else %}<span class="text-danger">FAILED ✗</span>{% endif %}

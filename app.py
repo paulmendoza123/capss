@@ -198,6 +198,68 @@ def fib_grade(student_answer, correct_answer, case_sensitive=False):
             correct_count += 1
     return correct_count, total
 
+def _q_get(q, key, default=None):
+    """Read a column from a sqlite3.Row or dict, tolerating a missing column."""
+    try:
+        v = q[key]
+    except (IndexError, KeyError):
+        return default
+    return default if v is None else v
+
+def question_credit(q, answer):
+    """Fraction of credit (0.0 - 1.0) that `answer` earns on question `q`.
+    Single source of truth used by submit grading, the student answer review
+    and the per-question analytics, so they can never disagree."""
+    ans = (answer or '').strip()
+    correct = (_q_get(q, 'correct_answer', '') or '').strip()
+    qtype = _q_get(q, 'question_type', '')
+    case_sensitive = bool(_q_get(q, 'case_sensitive', 0))
+    if qtype == 'fill_blank':
+        got, total = fib_grade(ans, correct, case_sensitive)
+        return (got / total) if total else 0.0
+    if not ans:
+        return 0.0  # an unanswered question never earns credit
+    if qtype == 'multiple_choice':
+        return 1.0 if ans.upper() == correct.upper() else 0.0
+    if case_sensitive:
+        return 1.0 if ans == correct else 0.0
+    return 1.0 if ans.lower() == correct.lower() else 0.0
+
+def count_fully_correct(conn, exam_id, questions):
+    """{question_id: number of SUBMITTED sessions whose answer is fully correct}.
+    Uses question_credit so fill-in-the-blank alternates ('/'), multiple blanks
+    ('|') and case-sensitivity are respected (a raw string compare is not)."""
+    by_id = {q['id']: q for q in questions}
+    counts = {qid: 0 for qid in by_id}
+    if not by_id:
+        return counts
+    rows = conn.execute('''
+        SELECT question_id, answer_text FROM answers
+        WHERE session_id IN (SELECT id FROM exam_sessions WHERE exam_id=? AND status='submitted')
+    ''', (exam_id,)).fetchall()
+    for r in rows:
+        q = by_id.get(r['question_id'])
+        if q is not None and question_credit(q, r['answer_text']) >= 1.0:
+            counts[q['id']] += 1
+    return counts
+
+def pct_floor(score, total):
+    """Whole-number percentage, multiplying BEFORE dividing so exact scores
+    are not floored by float error (e.g. 58/100 must be 58, not 57)."""
+    if score is None or not total:
+        return None
+    return int(score * 100 / total)
+
+@app.template_filter('score_fmt')
+def score_fmt(v):
+    """Show a score without truncating partial credit: 7 -> '7', 7.5 -> '7.5'."""
+    if v is None:
+        return '—'
+    v = float(v)
+    if v == int(v):
+        return str(int(v))
+    return f'{v:.2f}'.rstrip('0').rstrip('.')
+
 DB_PATH = os.path.join(os.path.dirname(__file__), 'instance', 'spark.db')
 
 # ─── Database ────────────────────────────────────────────────────────────────
@@ -1030,7 +1092,10 @@ def student_exams():
 def student_take_exam(exam_id):
     conn = get_db()
     exam = conn.execute('SELECT * FROM exams WHERE id=?', (exam_id,)).fetchone()
-    if not exam or exam['status'] != 'active':
+    # A closed exam blocks NEW entries (GET), but a student who is already
+    # mid-exam must still be able to submit (manually or via the timer's
+    # auto-submit). Otherwise their session stays 'ongoing' with no score.
+    if not exam or (exam['status'] != 'active' and request.method != 'POST'):
         flash('This exam is not currently active.', 'error')
         return redirect(url_for('student_exams'))
 
@@ -1063,8 +1128,8 @@ def student_take_exam(exam_id):
 
     if request.method == 'POST':
         sess_id = request.form.get('session_id', type=int)
-        exam_sess = conn.execute('SELECT * FROM exam_sessions WHERE id=? AND student_id=?',
-                                 (sess_id, session['user_id'])).fetchone()
+        exam_sess = conn.execute('SELECT * FROM exam_sessions WHERE id=? AND student_id=? AND exam_id=?',
+                                 (sess_id, session['user_id'], exam_id)).fetchone()
         if not exam_sess or exam_sess['status'] != 'ongoing':
             flash('Invalid session.', 'error')
             return redirect(url_for('student_exams'))
@@ -1079,28 +1144,9 @@ def student_take_exam(exam_id):
                 INSERT OR REPLACE INTO answers (session_id, question_id, answer_text)
                 VALUES (?, ?, ?)
             ''', (sess_id, q['id'], ans))
-            try:
-                is_case_sensitive = bool(q['case_sensitive'])
-            except (IndexError, KeyError):
-                is_case_sensitive = False
-            if q['question_type'] == 'multiple_choice':
-                if ans.upper() == (q['correct_answer'] or '').upper():
-                    score += q['points']
-            elif q['question_type'] == 'fill_blank':
-                # Partial credit: award points proportional to the number of
-                # blanks the student got right out of the total blanks.
-                correct_blanks, total_blanks = fib_grade(ans, q['correct_answer'], is_case_sensitive)
-                if total_blanks > 0:
-                    score += q['points'] * (correct_blanks / total_blanks)
-            else:
-                # Short answer: respect the per-question case-sensitivity toggle.
-                # Default (case_sensitive not set / 0) keeps the original case-insensitive
-                # comparison so existing questions/behavior are unaffected.
-                if is_case_sensitive:
-                    if ans.strip() == (q['correct_answer'] or '').strip():
-                        score += q['points']
-                elif ans.lower() == (q['correct_answer'] or '').lower():
-                    score += q['points']
+            # Fill-in-the-blank earns partial credit per blank; everything
+            # else is all-or-nothing. Case-sensitivity is honoured.
+            score += q['points'] * question_credit(q, ans)
 
         conn.execute('''
             UPDATE exam_sessions SET status='submitted', submitted_at=CURRENT_TIMESTAMP,
@@ -1235,6 +1281,11 @@ def student_exam_result(exam_id):
     if not exam_sess:
         return redirect(url_for('student_exams'))
 
+    # Still mid-exam: there is no result yet, send them back to the exam
+    # instead of showing "0 / None — FAILED".
+    if exam_sess['status'] == 'ongoing':
+        return redirect(url_for('student_take_exam', exam_id=exam_id))
+
     # Terminated students cannot view the result page — redirect them away
     if exam_sess['status'] == 'terminated':
         return redirect(url_for('student_class_detail', class_id=exam['class_id']))
@@ -1268,13 +1319,10 @@ def student_exam_result(exam_id):
                 qd['choices'] = [dict(c) for c in choices]
             else:
                 qd['choices'] = []
-            try:
-                is_case_sensitive = bool(q['case_sensitive'])
-            except (IndexError, KeyError):
-                is_case_sensitive = False
+            is_case_sensitive = bool(_q_get(q, 'case_sensitive', 0))
             is_correct = False
             if q['question_type'] == 'multiple_choice':
-                is_correct = (qd['student_answer'] or '').upper() == (q['correct_answer'] or '').upper()
+                is_correct = question_credit(q, qd['student_answer']) >= 1.0
             elif q['question_type'] == 'fill_blank':
                 correct_blanks, total_blanks = fib_grade(qd['student_answer'], q['correct_answer'], is_case_sensitive)
                 is_correct = total_blanks > 0 and correct_blanks == total_blanks
@@ -1300,7 +1348,9 @@ def student_exam_result(exam_id):
                 qd['fib_blanks'] = blank_results
                 qd['text_parts'] = (q['question_text'] or '').split('___')
             else:
-                is_correct = (qd['student_answer'] or '').lower() == (q['correct_answer'] or '').lower()
+                # Same grader as submit-time scoring, so the review always
+                # agrees with the score (incl. case-sensitive questions).
+                is_correct = question_credit(q, qd['student_answer']) >= 1.0
             qd['is_correct'] = is_correct
             questions.append(qd)
 
@@ -1535,10 +1585,10 @@ def teacher_copy_class(class_id):
         for q in questions:
             new_section_id = section_id_map.get(q['section_id']) if q['section_id'] else None
             qcur = conn.execute('''
-                INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (new_exam_id, new_section_id, q['question_text'], q['question_type'], q['points'],
-                  q['correct_answer'], q['order_index']))
+                  q['correct_answer'], q['order_index'], _q_get(q, 'case_sensitive', 0)))
             new_question_id = qcur.lastrowid
 
             choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (q['id'],)).fetchall()
@@ -1689,6 +1739,7 @@ def teacher_exam_monitoring(exam_id):
 
     questions_raw = conn.execute('''
         SELECT q.id, q.question_text, q.question_type, q.points, q.correct_answer,
+               COALESCE(q.case_sensitive, 0) AS case_sensitive,
                s.title as section_title, q.order_index, s.order_index as sec_order
         FROM questions q
         LEFT JOIN sections s ON q.section_id = s.id
@@ -1697,16 +1748,9 @@ def teacher_exam_monitoring(exam_id):
     ''', (exam_id,)).fetchall()
 
     question_stats = []
+    _correct_counts = count_fully_correct(conn, exam_id, questions_raw)
     for q in questions_raw:
-        if session_ids:
-            correct_count = conn.execute('''
-                SELECT COUNT(*) FROM answers
-                WHERE question_id=? AND session_id IN ({})
-                AND LOWER(TRIM(answer_text)) = LOWER(TRIM(?))
-            '''.format(','.join('?' * len(session_ids))),
-            [q['id']] + session_ids + [q['correct_answer']]).fetchone()[0]
-        else:
-            correct_count = 0
+        correct_count = _correct_counts.get(q['id'], 0)
         pct = round((correct_count / total_submitted * 100)) if total_submitted else 0
         question_stats.append({
             'question_text': q['question_text'],
@@ -1746,6 +1790,7 @@ def teacher_exam_results(exam_id):
     # Question analysis — how many students answered each question correctly
     questions_raw = conn.execute('''
         SELECT q.id, q.question_text, q.question_type, q.points, q.correct_answer,
+               COALESCE(q.case_sensitive, 0) AS case_sensitive,
                s.title as section_title, q.order_index, s.order_index as sec_order
         FROM questions q
         LEFT JOIN sections s ON q.section_id = s.id
@@ -1760,16 +1805,9 @@ def teacher_exam_results(exam_id):
     session_ids = [r['id'] for r in submitted_sessions]
 
     question_stats = []
+    _correct_counts = count_fully_correct(conn, exam_id, questions_raw)
     for q in questions_raw:
-        if session_ids:
-            correct_count = conn.execute('''
-                SELECT COUNT(*) FROM answers
-                WHERE question_id=? AND session_id IN ({})
-                AND LOWER(TRIM(answer_text)) = LOWER(TRIM(?))
-            '''.format(','.join('?' * len(session_ids))),
-            [q['id']] + session_ids + [q['correct_answer']]).fetchone()[0]
-        else:
-            correct_count = 0
+        correct_count = _correct_counts.get(q['id'], 0)
         pct = round((correct_count / total_submitted * 100)) if total_submitted else 0
         question_stats.append({
             'question_text': q['question_text'],
@@ -1982,6 +2020,11 @@ def teacher_add_section(exam_id):
             return jsonify({'ok': False, 'error': 'Section title is required.'}), 400
         return redirect(url_for('teacher_exam_detail', exam_id=exam_id) + '#add-section-card')
     conn = get_db()
+    if not conn.execute('SELECT 1 FROM exams e JOIN classes c ON e.class_id=c.id WHERE e.id=? AND c.teacher_id=?',
+                        (exam_id, session['user_id'])).fetchone():
+        if _wants_json():
+            return jsonify({'ok': False, 'error': 'Exam not found.'}), 404
+        return redirect(url_for('teacher_home'))
     count = conn.execute('SELECT COUNT(*) FROM sections WHERE exam_id=?', (exam_id,)).fetchone()[0]
     cur = conn.execute('INSERT INTO sections (exam_id, title, description, section_type, order_index) VALUES (?,?,?,?,?)',
                  (exam_id, title, description or None, 'multiple_choice', count))
@@ -2036,7 +2079,12 @@ def teacher_edit_section(section_id):
 @role_required('teacher')
 def teacher_delete_section(section_id):
     conn = get_db()
-    sec = conn.execute('SELECT * FROM sections WHERE id=?', (section_id,)).fetchone()
+    sec = conn.execute('''
+        SELECT s.* FROM sections s
+        JOIN exams e ON s.exam_id = e.id
+        JOIN classes c ON e.class_id = c.id
+        WHERE s.id=? AND c.teacher_id=?
+    ''', (section_id, session['user_id'])).fetchone()
     if sec:
         exam_id = sec['exam_id']
         conn.execute('DELETE FROM choices WHERE question_id IN (SELECT id FROM questions WHERE section_id=?)', (section_id,))
@@ -2050,7 +2098,12 @@ def teacher_delete_section(section_id):
 @role_required('teacher')
 def teacher_import_from_bank(section_id):
     conn = get_db()
-    sec = conn.execute('SELECT * FROM sections WHERE id=?', (section_id,)).fetchone()
+    sec = conn.execute('''
+        SELECT s.* FROM sections s
+        JOIN exams e ON s.exam_id = e.id
+        JOIN classes c ON e.class_id = c.id
+        WHERE s.id=? AND c.teacher_id=?
+    ''', (section_id, session['user_id'])).fetchone()
     if not sec:
         if _wants_json():
             return jsonify({'ok': False, 'error': 'Section not found.'}), 404
@@ -2060,7 +2113,9 @@ def teacher_import_from_bank(section_id):
     imported = 0
     skipped = 0
     for qid in question_ids:
-        src = conn.execute('SELECT * FROM questions WHERE id=?', (qid,)).fetchone()
+        # Only this teacher's own bank questions may be imported.
+        src = conn.execute('SELECT * FROM questions WHERE id=? AND is_bank_only=1 AND teacher_id=?',
+                           (qid, session['user_id'])).fetchone()
         if not src:
             continue
         # Skip if same question text+type already exists in this section
@@ -2076,9 +2131,10 @@ def teacher_import_from_bank(section_id):
         # the bank (is_bank_only left at its default 0) and is not linked to
         # any bank group. Only the Question Bank page can create groups.
         cur = conn.execute('''
-            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index)
-            VALUES (?,?,?,?,?,?,?)
-        ''', (exam_id, section_id, src['question_text'], src['question_type'], src['points'], src['correct_answer'], count))
+            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive)
+            VALUES (?,?,?,?,?,?,?,?)
+        ''', (exam_id, section_id, src['question_text'], src['question_type'], src['points'], src['correct_answer'], count,
+              _q_get(src, 'case_sensitive', 0)))
         new_qid = cur.lastrowid
         if src['question_type'] == 'multiple_choice':
             choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (qid,)).fetchall()
@@ -2099,7 +2155,12 @@ def teacher_import_from_bank(section_id):
 @role_required('teacher')
 def teacher_add_question(section_id):
     conn = get_db()
-    sec = conn.execute('SELECT * FROM sections WHERE id=?', (section_id,)).fetchone()
+    sec = conn.execute('''
+        SELECT s.* FROM sections s
+        JOIN exams e ON s.exam_id = e.id
+        JOIN classes c ON e.class_id = c.id
+        WHERE s.id=? AND c.teacher_id=?
+    ''', (section_id, session['user_id'])).fetchone()
     if not sec:
         if _wants_json():
             return jsonify({'ok': False, 'error': 'Section not found.'}), 404
@@ -2697,7 +2758,7 @@ def teacher_question_bank():
     # "Add Question" / "Import File" on this page.
     raw = conn.execute('''
         SELECT q.id, q.question_text, q.question_type, q.points, q.correct_answer,
-               q.bank_group_id, q.is_bank_only,
+               q.bank_group_id, q.is_bank_only, COALESCE(q.case_sensitive, 0) AS case_sensitive,
                e.title as exam_title,
                c.subject_name as exam_subject, c.block_name as exam_block,
                s.title as section_title,
@@ -3427,21 +3488,32 @@ def admin_exam_analytics(exam_id):
         'terminated': terminated, 'avg_score': avg_score,
         'score_ranges': score_ranges, 'total_questions': total_questions,
     }
-    hard_questions = conn.execute("""
+    # Per-question correctness (submitted sessions only), graded with the same
+    # rules as scoring so fill-in-the-blank / case-sensitive questions are right.
+    q_rows = conn.execute("""
         SELECT q.id, q.question_text, q.question_type, q.correct_answer,
-               COUNT(a.id) as total_answers,
-               SUM(CASE WHEN LOWER(TRIM(a.answer_text)) = LOWER(TRIM(q.correct_answer)) THEN 1 ELSE 0 END) as correct_count
-        FROM questions q LEFT JOIN answers a ON q.id = a.question_id
-        WHERE q.exam_id=? GROUP BY q.id HAVING total_answers > 0
-        ORDER BY (correct_count * 1.0 / total_answers) ASC LIMIT 10
+               COALESCE(q.case_sensitive, 0) AS case_sensitive,
+               s.title as section_title, s.order_index as sec_order, q.order_index
+        FROM questions q LEFT JOIN sections s ON q.section_id = s.id
+        WHERE q.exam_id=? ORDER BY s.order_index, q.order_index
     """, (exam_id,)).fetchall()
+    correct_counts = count_fully_correct(conn, exam_id, q_rows)
+    answer_totals = {r['question_id']: r['n'] for r in conn.execute("""
+        SELECT question_id, COUNT(*) as n FROM answers
+        WHERE session_id IN (SELECT id FROM exam_sessions WHERE exam_id=? AND status='submitted')
+        GROUP BY question_id
+    """, (exam_id,)).fetchall()}
     hard_questions_list = []
-    for q in hard_questions:
-        rate = round((q['correct_count'] / q['total_answers']) * 100, 1) if q['total_answers'] > 0 else 0
-        hard_questions_list.append({
-            'question_text': q['question_text'], 'question_type': q['question_type'],
-            'correct_count': q['correct_count'], 'total_answers': q['total_answers'], 'rate': rate,
-        })
+    for q in q_rows:
+        total_ans = answer_totals.get(q['id'], 0)
+        if total_ans > 0:
+            hard_questions_list.append({
+                'question_text': q['question_text'], 'question_type': q['question_type'],
+                'correct_count': correct_counts[q['id']], 'total_answers': total_ans,
+                'rate': round((correct_counts[q['id']] / total_ans) * 100, 1),
+            })
+    hard_questions_list.sort(key=lambda x: x['rate'])
+    hard_questions_list = hard_questions_list[:10]
     suspicious = conn.execute("""
         SELECT sl.*, u.full_name FROM suspicious_logs sl
         JOIN users u ON sl.student_id = u.id WHERE sl.exam_id=? ORDER BY sl.logged_at DESC
@@ -3450,25 +3522,15 @@ def admin_exam_analytics(exam_id):
     # Per-Section Analytics: same idea as the teacher-facing results page —
     # average correctness grouped by exam section, for a quick "which part of
     # the exam was hardest overall" view.
-    section_rows = conn.execute("""
-        SELECT q.id, s.title as section_title, s.order_index as sec_order, q.correct_answer,
-               COUNT(a.id) as total_answers,
-               SUM(CASE WHEN LOWER(TRIM(a.answer_text)) = LOWER(TRIM(q.correct_answer)) THEN 1 ELSE 0 END) as correct_count
-        FROM questions q
-        LEFT JOIN sections s ON q.section_id = s.id
-        LEFT JOIN answers a ON q.id = a.question_id
-        WHERE q.exam_id=?
-        GROUP BY q.id
-        ORDER BY s.order_index
-    """, (exam_id,)).fetchall()
     section_order = []
     section_agg = {}
-    for r in section_rows:
+    for r in q_rows:
         title = r['section_title'] or 'Untitled Section'
         if title not in section_agg:
             section_agg[title] = {'section_title': title, 'question_count': 0, 'pct_sum': 0}
             section_order.append(title)
-        pct = round((r['correct_count'] / r['total_answers']) * 100) if r['total_answers'] else 0
+        _tot = answer_totals.get(r['id'], 0)
+        pct = round((correct_counts[r['id']] / _tot) * 100) if _tot else 0
         section_agg[title]['question_count'] += 1
         section_agg[title]['pct_sum'] += pct
     section_stats = []
@@ -3547,7 +3609,10 @@ def log_suspicious():
     session_id = data.get('session_id')
     event_type = data.get('event_type', 'tab_switch')
     conn = get_db()
-    sess = conn.execute('SELECT * FROM exam_sessions WHERE id=?', (session_id,)).fetchone()
+    # Only the student who owns the session may log events against it —
+    # otherwise anyone logged in could push another student to auto-termination.
+    sess = conn.execute('SELECT * FROM exam_sessions WHERE id=? AND student_id=?',
+                        (session_id, session['user_id'])).fetchone()
     if sess and sess['status'] == 'ongoing':
         conn.execute('''
             INSERT INTO suspicious_logs (session_id, student_id, exam_id, event_type)
@@ -3784,7 +3849,7 @@ def api_monitoring(exam_id):
     for r in results_rows:
         row = dict(r)
         if row['score'] is not None and row['total_points']:
-            row['pct'] = round((row['score'] / row['total_points']) * 100)
+            row['pct'] = pct_floor(row['score'], row['total_points'])
         else:
             row['pct'] = None
         results_list.append(row)
@@ -3796,7 +3861,8 @@ def api_monitoring(exam_id):
     session_ids = [r['id'] for r in submitted_sessions]
 
     questions_raw = conn.execute('''
-        SELECT q.id, q.question_text, q.correct_answer,
+        SELECT q.id, q.question_text, q.question_type, q.correct_answer,
+               COALESCE(q.case_sensitive, 0) AS case_sensitive,
                s.title as section_title, q.order_index, s.order_index as sec_order
         FROM questions q
         LEFT JOIN sections s ON q.section_id = s.id
@@ -3805,16 +3871,9 @@ def api_monitoring(exam_id):
     ''', (exam_id,)).fetchall()
 
     question_stats = []
+    _correct_counts = count_fully_correct(conn, exam_id, questions_raw)
     for q in questions_raw:
-        if session_ids:
-            correct_count = conn.execute('''
-                SELECT COUNT(*) FROM answers
-                WHERE question_id=? AND session_id IN ({})
-                AND LOWER(TRIM(answer_text)) = LOWER(TRIM(?))
-            '''.format(','.join('?' * len(session_ids))),
-            [q['id']] + session_ids + [q['correct_answer']]).fetchone()[0]
-        else:
-            correct_count = 0
+        correct_count = _correct_counts.get(q['id'], 0)
         pct = round((correct_count / total_submitted * 100)) if total_submitted else 0
         question_stats.append({
             'question_text': q['question_text'],
@@ -3866,7 +3925,7 @@ def api_results(exam_id):
     for r in results:
         row = dict(r)
         if row['score'] is not None and row['total_points']:
-            pct = round((row['score'] / row['total_points']) * 100)
+            pct = pct_floor(row['score'], row['total_points'])
         else:
             pct = None
         row['pct'] = pct
@@ -3881,6 +3940,7 @@ def api_results(exam_id):
 
     questions_raw = conn.execute('''
         SELECT q.id, q.question_text, q.question_type, q.points, q.correct_answer,
+               COALESCE(q.case_sensitive, 0) AS case_sensitive,
                s.title as section_title, q.order_index, s.order_index as sec_order
         FROM questions q
         LEFT JOIN sections s ON q.section_id = s.id
@@ -3889,16 +3949,9 @@ def api_results(exam_id):
     ''', (exam_id,)).fetchall()
 
     question_stats = []
+    _correct_counts = count_fully_correct(conn, exam_id, questions_raw)
     for q in questions_raw:
-        if session_ids:
-            correct_count = conn.execute('''
-                SELECT COUNT(*) FROM answers
-                WHERE question_id=? AND session_id IN ({})
-                AND LOWER(TRIM(answer_text)) = LOWER(TRIM(?))
-            '''.format(','.join('?' * len(session_ids))),
-            [q['id']] + session_ids + [q['correct_answer']]).fetchone()[0]
-        else:
-            correct_count = 0
+        correct_count = _correct_counts.get(q['id'], 0)
         pct = round((correct_count / total_submitted * 100)) if total_submitted else 0
         question_stats.append({
             'question_text': q['question_text'],
@@ -3947,13 +4000,17 @@ def api_save_answer():
     data = request.get_json(force=True, silent=True) or {}
     session_id = data.get('session_id')
     question_id = data.get('question_id')
-    answer_text = data.get('answer_text', '').strip()
+    answer_text = str(data.get('answer_text') or '').strip()
     if not session_id or question_id is None:
         return jsonify({'status': 'error', 'reason': 'missing fields'})
     conn = get_db()
     sess = conn.execute('SELECT * FROM exam_sessions WHERE id=? AND student_id=?',
                         (session_id, session['user_id'])).fetchone()
     if sess and sess['status'] == 'ongoing':
+        # The question must belong to the exam this session is for.
+        if not conn.execute('SELECT 1 FROM questions WHERE id=? AND exam_id=?',
+                            (question_id, sess['exam_id'])).fetchone():
+            return jsonify({'status': 'error', 'reason': 'invalid question'})
         if answer_text == '':
             # Nothing to save — and if a prior (now-cleared) answer exists, remove it
             # so the question no longer counts as "answered" in monitoring/progress.

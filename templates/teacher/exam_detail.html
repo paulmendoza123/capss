@@ -514,6 +514,10 @@
       </div>
       <div class="flex gap-3 mb-2" style="flex-wrap:wrap">
         <label class="checkbox-group">
+          <input type="checkbox" name="fullscreen_required" {% if exam.fullscreen_required %}checked{% endif %} />
+          <span class="checkbox-label">Require fullscreen</span>
+        </label>
+        <label class="checkbox-group">
           <input type="checkbox" name="show_results" {% if exam.show_results %}checked{% endif %} />
           <span class="checkbox-label">Show results to students</span>
         </label>

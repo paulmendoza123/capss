@@ -444,6 +444,9 @@
   // through the same pipeline as short-answer questions.
   document.querySelectorAll('.fib-blank-input').forEach(inp => {
     inp.addEventListener('input', () => {
+      // '|' is the blank separator in the stored answer — typing one would
+      // shift every later blank out of place, so it is not allowed here.
+      if (inp.value.includes('|')) inp.value = inp.value.replace(/\|/g, '');
       const qid = inp.dataset.qid;
       const blanks = Array.from(document.querySelectorAll(`.fib-blank-input[data-qid="${qid}"]`))
         .sort((a, b) => parseInt(a.dataset.blankIndex) - parseInt(b.dataset.blankIndex));

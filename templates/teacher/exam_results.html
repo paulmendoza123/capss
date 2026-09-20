@@ -20,7 +20,7 @@
 {% set pass_pct = exam.passing_score if exam.passing_score is not none else 75 %}
 {% set pass_count = [] %}
 {% for r in submitted %}
-  {% if r.total_points and r.score is not none and (r.score / r.total_points * 100) >= pass_pct %}
+  {% if r.total_points and r.score is not none and (r.score * 100 / r.total_points) >= pass_pct %}
     {% if pass_count.append(1) %}{% endif %}
   {% endif %}
 {% endfor %}
@@ -54,11 +54,11 @@
       </thead>
       <tbody>
         {% for r in results %}
-        {% set pct = ((r.score / r.total_points) * 100)|int if r.total_points and r.score is not none else 0 %}
+        {% set pct = (r.score * 100 / r.total_points)|int if r.total_points and r.score is not none else 0 %}
         <tr>
           <td class="fw-600">{{ r.full_name }}</td>
           <td class="font-mono">
-            {% if r.score is not none %}{{ r.score|int }} / {{ r.total_points }}{% else %}—{% endif %}
+            {% if r.score is not none %}{{ r.score|score_fmt }} / {{ r.total_points }}{% else %}—{% endif %}
           </td>
           <td>
             {% if r.score is not none and r.total_points %}
@@ -179,10 +179,10 @@ function generateReport() {
 
   const rows = [
     {% for r in results %}
-    {% set pct = ((r.score / r.total_points) * 100)|int if r.total_points and r.score is not none else 0 %}
+    {% set pct = (r.score * 100 / r.total_points)|int if r.total_points and r.score is not none else 0 %}
     {
       student: {{ r.full_name | tojson }},
-      score: {{ (r.score|int|string ~ ' out of ' ~ r.total_points|string) | tojson if r.score is not none else '"—"' }},
+      score: {{ (r.score|score_fmt ~ ' out of ' ~ r.total_points|string) | tojson if r.score is not none else '"—"' }},
       percentage: {{ (pct|string ~ '%') | tojson if r.score is not none and r.total_points else '"—"' }},
       status: {% if r.status == 'terminated' %}"Terminated"{% elif r.status == 'ongoing' %}"Ongoing"{% elif pct >= pass_pct %}"Passed"{% else %}"Failed"{% endif %},
       submitted: {{ (r.submitted_at | string) | tojson if r.submitted_at else '"—"' }}
