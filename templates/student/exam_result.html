@@ -21,6 +21,30 @@
     user-select: none;
   }
 
+  /* Question text / code blocks: always wrap inside the card (all screen sizes) */
+  .card { min-width: 0; }
+  .question-text-result {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    max-width: 100%;
+  }
+  .question-code-result {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    max-width: 100%;
+    box-sizing: border-box;
+    background: rgba(0,0,0,0.04);
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin: 0 0 0.5rem 0;
+  }
+  .question-code-result .badge, .question-text-result .badge { white-space: nowrap; }
+
   /* Mobile result layout */
   @media (max-width: 768px) {
     .page-body { padding: 0.75rem; max-width: 100%; }
@@ -42,18 +66,7 @@
       padding: 0.85rem 0 !important;
     }
     .question-text-result { font-size: 0.92rem; line-height: 1.5; }
-    .question-code-result {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
-      font-size: 0.85rem;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      word-break: break-word;
-      background: rgba(0,0,0,0.04);
-      border: 1px solid rgba(0,0,0,0.08);
-      border-radius: 6px;
-      padding: 0.75rem 1rem;
-      margin: 0 0 0.25rem 0;
-    }
+    .question-code-result { font-size: 0.85rem; line-height: 1.5; padding: 0.75rem; }
 
     /* Choice items in review */
     .choices-list .choice-item {

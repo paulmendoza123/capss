@@ -7,7 +7,7 @@
   <a href="{{ url_for('teacher_exam_detail', exam_id=exam.id) }}" class="btn btn-ghost">← Back</a>
 </div>
 
-<div class="card" style="max-width:520px">
+<div class="card" style="max-width:580px">
   <form method="POST">
     <div class="form-group">
       <label class="form-label">Exam Title</label>
@@ -16,17 +16,16 @@
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Duration (minutes)</label>
-        <input type="number" name="duration_minutes" class="form-control" value="{{ exam.duration_minutes }}" required />
+        <input type="number" name="duration_minutes" class="form-control" value="{{ exam.duration_minutes }}" min="5" required />
       </div>
       <div class="form-group">
         <label class="form-label">Scheduled Date & Time</label>
         <input type="datetime-local" name="scheduled_at" class="form-control" value="{{ (exam.scheduled_at or '')|replace(' ', 'T') }}" />
-        <div class="form-hint">⚡ The exam will automatically open at this date & time.</div>
       </div>
     </div>
 
     <!-- Tab Switch Monitoring -->
-    <div class="form-group">
+    <div class="form-group" style="margin-bottom:0.5rem">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
         <label class="form-label" style="margin:0">Tab Switch Monitoring</label>
         <label class="toggle-switch">
@@ -36,7 +35,7 @@
           <span class="toggle-slider"></span>
         </label>
       </div>
-      <div class="form-hint" id="tabSwitchHint">
+      <div class="form-hint" id="tabSwitchHint" style="min-height:1.2em">
         {% if exam.tab_switch_enabled %}
           Students will be auto-terminated when they reach the tab switch limit.
         {% else %}
@@ -45,7 +44,7 @@
       </div>
     </div>
 
-    <div id="tabLimitGroup" class="form-group" style="margin-top:-0.25rem;{% if not exam.tab_switch_enabled %}display:none{% endif %}">
+    <div id="tabLimitGroup" class="form-group" style="margin-top:0.25rem;{% if not exam.tab_switch_enabled %}display:none{% endif %}">
       <label class="form-label">Tab Switch Limit</label>
       <input type="number" name="tab_switch_limit" class="form-control"
         value="{{ exam.tab_switch_limit if exam.tab_switch_limit else 3 }}" min="1" max="20" style="max-width:160px" />
@@ -67,6 +66,7 @@
       </div>
     </div>
 
+    <!-- Exam Status -->
     <div class="form-group">
       <label class="form-label">Exam Status</label>
       {% if exam.status == 'active' %}
@@ -92,33 +92,35 @@
         <div class="form-hint">Completed exams cannot be changed from here.</div>
       {% endif %}
     </div>
+    <div class="divider"></div>
+    <div class="form-group">
+      <label class="form-label">Passing Score (%)</label>
+      <input type="number" name="passing_score" class="form-control"
+             value="{{ exam.passing_score if exam.passing_score is not none else 50 }}"
+             min="1" max="100" style="max-width:160px" />
+      <div class="form-hint">Students scoring at or above this percentage will pass.</div>
+    </div>
+    <div class="divider"></div>
     <div class="flex gap-3 mb-2" style="flex-wrap:wrap">
       <label class="checkbox-group">
         <input type="checkbox" name="show_results" {% if exam.show_results %}checked{% endif %} />
-        <span class="checkbox-label">Show results to students</span>
+        <span class="checkbox-label">Show results after submission</span>
       </label>
       <label class="checkbox-group">
         <input type="checkbox" name="randomize_questions" {% if exam.randomize_questions %}checked{% endif %} />
         <span class="checkbox-label">Randomize question order</span>
       </label>
     </div>
-    <div class="form-group" style="margin-top:0.75rem">
-      <label class="form-label">Passing Score (%)</label>
-      <input type="number" name="passing_score" class="form-control"
-             value="{{ exam.passing_score if exam.passing_score is not none else 75 }}"
-             min="1" max="100" style="max-width:160px" />
-      <div class="form-hint">Students scoring at or above this percentage will pass.</div>
-    </div>
-    <div class="flex gap-1 mt-1">
-      <button type="submit" class="btn btn-primary">Save Settings</button>
-      <button type="submit" name="action" value="delete" class="btn btn-danger"
+    <div class="flex gap-2" style="flex-wrap:wrap">
+      <button type="submit" class="btn btn-primary btn-lg">Save Settings</button>
+      <button type="submit" name="action" value="delete" class="btn btn-danger btn-lg"
         onclick="return confirm('Delete this exam and ALL its data? This cannot be undone.')">🗑 Delete Exam</button>
     </div>
   </form>
 </div>
 
 <!-- Exam Code Card -->
-<div class="card" style="max-width:520px;margin-top:1.25rem">
+<div class="card" style="max-width:580px;margin-top:1.25rem">
   <div class="card-title mb-1">🔑 Exam Access Code</div>
   <div class="text-muted text-sm mb-2">Share this code with your students so they can enter the exam directly.</div>
   <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">

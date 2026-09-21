@@ -1763,7 +1763,7 @@ def teacher_create_exam(class_id):
         tab_switch_enabled = 1 if request.form.get('tab_switch_enabled') else 0
         tab_limit = request.form.get('tab_switch_limit', 3, type=int) if tab_switch_enabled else 0
         fullscreen_required = 1 if request.form.get('fullscreen_required') else 0
-        passing_score = request.form.get('passing_score', 75, type=int)
+        passing_score = request.form.get('passing_score', 50, type=int)
         if not title or not duration:
             flash('Title and duration are required.', 'error')
             return render_template('teacher/create_exam.html', cls=cls)
@@ -2095,7 +2095,7 @@ def teacher_exam_settings(exam_id):
         tab_switch_enabled = 1 if request.form.get('tab_switch_enabled') else 0
         tab_limit = request.form.get('tab_switch_limit', 3, type=int) if tab_switch_enabled else 0
         fullscreen_required = 1 if request.form.get('fullscreen_required') else 0
-        passing_score = request.form.get('passing_score', 75, type=int)
+        passing_score = request.form.get('passing_score', 50, type=int)
         status = request.form.get('status', 'upcoming')
         # Track manually_closed so the auto-scheduler doesn't re-open a teacher-closed exam
         existing_status = exam['status']
