@@ -198,6 +198,34 @@
   </div>
 </div>
 
+<!-- Submit Confirmation Modal — deliberately NOT a native confirm() dialog.
+     Native browser dialogs (confirm/alert/prompt) render outside the page's
+     own DOM, and on several browsers that means they get hidden behind the
+     fullscreen view, or force the browser to auto-exit fullscreen just to
+     show them — which then also fires a "fullscreen exit" violation right
+     as the student is trying to submit. This modal is plain page content,
+     so it always renders correctly inside fullscreen. -->
+<div id="submit-confirm-modal" style="
+  display:none;
+  position:fixed;inset:0;z-index:10000;
+  background:rgba(0,0,0,0.7);
+  align-items:center;justify-content:center;
+  padding:1.5rem;
+">
+  <div style="background:#1a1a2e;border:1px solid rgba(255,255,255,0.12);border-radius:12px;
+    padding:2rem;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <div style="font-size:2.5rem;margin-bottom:0.5rem">📝</div>
+    <div style="color:#fff;font-size:1.15rem;font-weight:700;margin-bottom:0.5rem">Submit your exam?</div>
+    <div style="color:rgba(255,255,255,0.65);font-size:0.9rem;margin-bottom:1.5rem">
+      This cannot be undone. Make sure you've answered everything you want to.
+    </div>
+    <div style="display:flex;gap:0.75rem;justify-content:center">
+      <button type="button" id="submit-confirm-cancel" class="btn btn-ghost">Cancel</button>
+      <button type="button" id="submit-confirm-yes" class="btn btn-success">Yes, Submit</button>
+    </div>
+  </div>
+</div>
+
 <!-- Hidden inputs for JS -->
 <input type="hidden" id="exam-session-id" value="{{ exam_session.id }}" />
 <input type="hidden" id="exam-id" value="{{ exam.id }}" />

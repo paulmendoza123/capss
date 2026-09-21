@@ -702,7 +702,10 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
 
 // Fast refresh: every 2 seconds
 refreshMonitoring();
-setInterval(refreshMonitoring, 1000);
+// Was 1000ms; that endpoint re-grades every submitted answer on every call, which
+// is heavy under real exam load (many students, a Pi-class server). 3s keeps the
+// monitoring view feeling live without hammering the server every second.
+setInterval(refreshMonitoring, 3000);
 
 // ── LOG FILTERS ──
 function applyLogFilters() {

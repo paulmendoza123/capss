@@ -10,6 +10,8 @@ import csv
 import io
 from functools import wraps
 from datetime import datetime
+import threading
+import time
 
 app = Flask(__name__)
 app.secret_key = 'spark_secret_key_2027'
@@ -121,36 +123,92 @@ def extract_emails_from_file(file_storage):
 
     return found
 
+# Labels recognized on a COR. Used both to find the fields we want, and —
+# when a PDF table layout puts two fields on the same visual line (e.g.
+# "Program: BSIT   Curriculum: 2018-2019") — to know where one field's value
+# ends and the next field's label begins, so it isn't swallowed whole.
+_COR_LABEL_ALTS = [
+    r'student\s*(?:no\.?|number)',
+    r'name',
+    r'program',
+    r'curriculum',
+    r'year\s*level',
+    r'semester',
+    r'block',
+    r'section',
+    r'college',
+]
+_COR_NEXT_LABEL_RE = re.compile(r'\b(?:' + '|'.join(_COR_LABEL_ALTS) + r')\s*\.?\s*:', re.IGNORECASE)
+
+# Each pattern is anchored to the start of the (stripped) line, matched
+# case-insensitively, with an optional period and flexible spacing before
+# the colon so "Student No:", "Student No.:", "STUDENT NUMBER :" all match.
+_COR_FIELD_RE = {
+    'student_no': re.compile(r'^student\s*(?:no\.?|number)\s*\.?\s*:?\s*(.+)$', re.IGNORECASE),
+    'name':       re.compile(r'^name\s*\.?\s*:?\s*(.+)$', re.IGNORECASE),
+    'program':    re.compile(r'^program\s*\.?\s*:?\s*(.+)$', re.IGNORECASE),
+    'year_level': re.compile(r'^year\s*level\s*\.?\s*:?\s*(.+)$', re.IGNORECASE),
+}
+
+
+def _cor_clean_value(raw):
+    """Cut a captured field value off at the point another known COR label
+    starts, if one appears later on the same line (table layouts sometimes
+    put two label/value pairs on one visual row)."""
+    m = _COR_NEXT_LABEL_RE.search(raw)
+    if m:
+        return raw[:m.start()].strip(' :-\t')
+    return raw.strip()
+
+
 def parse_cor_pdf(file_storage):
     """Reads a Certificate of Registration (COR) PDF — which does NOT print an
-    email address — and extracts the student's info from its known layout,
-    then generates the official school email from the student number using
-    the confirmed institutional pattern: digits-only(student no) + '@psu.palawan.edu.ph'.
+    email address — and extracts the student's info from its layout, then
+    generates the official school email from the student number using the
+    confirmed institutional pattern: digits-only(student no) + '@psu.palawan.edu.ph'.
     Returns a dict, or None if the expected fields couldn't be found (so the
     caller can flag it for manual review instead of guessing).
+
+    Each field is matched line-by-line (rather than chaining regexes across
+    the whole page) so an extra field sitting between two that we care about
+    — e.g. a Block/Section line between Name and Program, very common on
+    real COR templates — doesn't break the whole parse. Labels are matched
+    case-insensitively with an optional period/extra spacing (so "Student
+    No:", "Student No.:", "STUDENT NUMBER:" all work), and if a PDF table
+    layout puts two fields on the same visual line (e.g. "Program: BSIT
+    Curriculum: 2018-2019"), the value is cut off where the next known label
+    starts instead of swallowing it.
     """
     import pdfplumber
     with pdfplumber.open(file_storage) as pdf:
         text = '\n'.join((p.extract_text() or '') for p in pdf.pages)
 
-    student_no_m = re.search(r'Student No:\s*([\d\-]+)', text)
-    name_m       = re.search(r'Name:\s*(.+?)\s*Program:', text)
-    program_m    = re.search(r'Program:\s*(.+?)\s*Curriculum:', text)
-    year_m       = re.search(r'Year Level:\s*([A-Za-z ]+?)(?:\n|$)', text)
+    fields = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        for key, pattern in _COR_FIELD_RE.items():
+            if key in fields:
+                continue
+            m = pattern.match(stripped)
+            if m:
+                fields[key] = _cor_clean_value(m.group(1))
 
-    if not student_no_m or not name_m:
+    student_no_raw = fields.get('student_no')
+    name_raw = fields.get('name')
+    if not student_no_raw or not name_raw:
         return None
 
-    student_no = student_no_m.group(1).strip()
-    digits_only = re.sub(r'\D', '', student_no)
+    digits_only = re.sub(r'\D', '', student_no_raw)
     if not digits_only:
         return None
 
     return {
-        'student_no': student_no,
-        'name': name_m.group(1).strip(),
-        'program': program_m.group(1).strip() if program_m else '',
-        'year_level': year_m.group(1).strip() if year_m else '',
+        'student_no': student_no_raw,
+        'name': name_raw,
+        'program': fields.get('program', ''),
+        'year_level': fields.get('year_level', ''),
         'generated_email': f'{digits_only}@{SCHOOL_EMAIL_DOMAIN}',
     }
 
@@ -160,9 +218,21 @@ def parse_cor_pdf(file_storage):
 # '|' separates the blanks (in the order the '___' markers appear in the
 # question text), and '/' separates alternate acceptable answers for one blank.
 
+_FIB_BLANK_RE = re.compile(r'_{3,}')
+
 def fib_count_blanks(question_text):
-    """Number of '___' blank markers in a question's text."""
-    return (question_text or '').count('___')
+    """Number of blank markers in a question's text. A marker is any run of
+    3 or more underscores, not just exactly '___' — a teacher typing '____'
+    or '_____' by habit still counts as one blank rather than being missed
+    or (worse) splitting into a mangled display with a stray underscore."""
+    return len(_FIB_BLANK_RE.findall(question_text or ''))
+
+def fib_split_text(question_text):
+    """Split a fill_blank question's text on its blank markers (any run of
+    3+ underscores), for rendering the blanks as input boxes. Kept in sync
+    with fib_count_blanks so the number of pieces here always matches the
+    count used for grading/validation."""
+    return _FIB_BLANK_RE.split(question_text or '')
 
 def fib_parse_answer(correct_answer):
     """Parse a fill_blank correct_answer string into a list of blanks, each a
@@ -269,6 +339,7 @@ def get_db():
         conn = sqlite3.connect(DB_PATH, timeout=10)
         conn.row_factory = sqlite3.Row
         conn.execute('PRAGMA journal_mode=WAL')
+        conn.execute('PRAGMA synchronous=NORMAL')
         conn.execute('PRAGMA busy_timeout=5000')
         g.db = conn
     return g.db
@@ -438,6 +509,26 @@ def init_db():
             email TEXT UNIQUE NOT NULL,
             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+    ''')
+
+    # Indexes on the columns hit hardest by exam-time traffic (heartbeat, answer
+    # save, and status polling all filter on these every few seconds per
+    # student). Without them, sqlite does a full table scan per lookup, which
+    # gets noticeably slow under 50 concurrent students on modest hardware.
+    cursor.executescript('''
+        CREATE INDEX IF NOT EXISTS idx_exam_sessions_exam ON exam_sessions(exam_id);
+        CREATE INDEX IF NOT EXISTS idx_exam_sessions_student ON exam_sessions(student_id);
+        CREATE INDEX IF NOT EXISTS idx_answers_session ON answers(session_id);
+        CREATE INDEX IF NOT EXISTS idx_answers_question ON answers(question_id);
+        CREATE INDEX IF NOT EXISTS idx_suspicious_logs_session ON suspicious_logs(session_id);
+        CREATE INDEX IF NOT EXISTS idx_suspicious_logs_exam ON suspicious_logs(exam_id);
+        CREATE INDEX IF NOT EXISTS idx_questions_exam ON questions(exam_id);
+        CREATE INDEX IF NOT EXISTS idx_questions_section ON questions(section_id);
+        CREATE INDEX IF NOT EXISTS idx_sections_exam ON sections(exam_id);
+        CREATE INDEX IF NOT EXISTS idx_exams_class ON exams(class_id);
+        CREATE INDEX IF NOT EXISTS idx_class_enrollments_class ON class_enrollments(class_id);
+        CREATE INDEX IF NOT EXISTS idx_class_enrollments_student ON class_enrollments(student_id);
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     ''')
 
     # Default programs
@@ -718,7 +809,18 @@ def init_db():
             pass
 
 
-def auto_activate_scheduled_exams():
+def get_maintenance_db():
+    """Standalone sqlite connection for the background maintenance thread, which
+    runs outside any Flask request context and therefore can't use get_db()/g."""
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA synchronous=NORMAL')
+    conn.execute('PRAGMA busy_timeout=5000')
+    return conn
+
+
+def auto_activate_scheduled_exams(conn):
     """Auto-open any exams whose scheduled_at has arrived and are still 'upcoming'.
     Only auto-opens if the scheduled time is within the SAME DAY (today).
     Past-day scheduled exams are left closed — teacher must open them manually.
@@ -726,7 +828,6 @@ def auto_activate_scheduled_exams():
     so we compare against local time, not UTC.
     """
     try:
-        conn = get_db()
         now = datetime.now()
         now_str = now.strftime('%Y-%m-%d %H:%M')
         today_str = now.strftime('%Y-%m-%d')
@@ -748,9 +849,43 @@ def auto_activate_scheduled_exams():
         pass
 
 
-@app.before_request
-def check_scheduled_exams():
-    auto_activate_scheduled_exams()
+def auto_complete_finished_exams(conn):
+    """Mark an 'active' exam as 'completed' once its scheduled window (duration
+    plus a 15-minute grace period for stragglers) has fully elapsed and no
+    student is still mid-exam. Exams the teacher closed manually (status flips
+    to 'upcoming' via the toggle button) are untouched by this — it only ever
+    moves 'active' -> 'completed', never touches 'upcoming'.
+    """
+    try:
+        conn.execute("""
+            UPDATE exams
+            SET status = 'completed'
+            WHERE status = 'active'
+              AND activated_at IS NOT NULL
+              AND datetime(activated_at, '+' || duration_minutes || ' minutes', '+15 minutes')
+                  <= datetime('now', 'localtime')
+              AND id NOT IN (SELECT DISTINCT exam_id FROM exam_sessions WHERE status = 'ongoing')
+        """)
+        conn.commit()
+    except Exception:
+        pass
+
+
+def background_maintenance_loop(interval_seconds=20):
+    """Runs exam scheduling/completion checks on a timer instead of on every
+    single HTTP request. Uses its own sqlite connection since it runs outside
+    any Flask request context."""
+    while True:
+        try:
+            conn = get_maintenance_db()
+            try:
+                auto_activate_scheduled_exams(conn)
+                auto_complete_finished_exams(conn)
+            finally:
+                conn.close()
+        except Exception:
+            pass
+        time.sleep(interval_seconds)
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -1053,7 +1188,11 @@ def student_join_exam_by_code():
         ).fetchone()
         if existing and existing['status'] in ('submitted', 'terminated'):
             return redirect(url_for('student_exam_result', exam_id=exam['id']))
-        return redirect(url_for('student_take_exam', exam_id=exam['id']))
+        # Carry the code through as a query param: student_take_exam re-validates
+        # it on GET for any brand-new session, so forgetting it here would bounce
+        # the student straight back out with "Incorrect exam code" even though
+        # they just entered the right one.
+        return redirect(url_for('student_take_exam', exam_id=exam['id'], code=exam['exam_code']))
     return render_template('student/join_exam_by_code.html')
 
 
@@ -1206,7 +1345,7 @@ def student_take_exam(exam_id):
                 else:
                     q['choices'] = []
                 if q['question_type'] == 'fill_blank':
-                    q['text_parts'] = (q['question_text'] or '').split('___')
+                    q['text_parts'] = fib_split_text(q['question_text'])
                 all_questions.append(q)
             sections_data.append({'title': sec['title'], 'description': sec['description'], 'questions': q_list})
     else:
@@ -1227,7 +1366,7 @@ def student_take_exam(exam_id):
             else:
                 q['choices'] = []
             if q['question_type'] == 'fill_blank':
-                q['text_parts'] = (q['question_text'] or '').split('___')
+                q['text_parts'] = fib_split_text(q['question_text'])
             all_questions.append(q)
         sections_data.append({'title': None, 'description': None, 'questions': q_list})
 
@@ -1346,7 +1485,7 @@ def student_exam_result(exam_id):
                         'is_correct': b_correct,
                     })
                 qd['fib_blanks'] = blank_results
-                qd['text_parts'] = (q['question_text'] or '').split('___')
+                qd['text_parts'] = fib_split_text(q['question_text'])
             else:
                 # Same grader as submit-time scoring, so the review always
                 # agrees with the score (incl. case-sensitive questions).
@@ -1623,15 +1762,16 @@ def teacher_create_exam(class_id):
         randomize = 1 if request.form.get('randomize_questions') else 0
         tab_switch_enabled = 1 if request.form.get('tab_switch_enabled') else 0
         tab_limit = request.form.get('tab_switch_limit', 3, type=int) if tab_switch_enabled else 0
+        fullscreen_required = 1 if request.form.get('fullscreen_required') else 0
         passing_score = request.form.get('passing_score', 75, type=int)
         if not title or not duration:
             flash('Title and duration are required.', 'error')
             return render_template('teacher/create_exam.html', cls=cls)
         exam_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         cur = conn.execute('''
-            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, show_results, randomize_questions, tab_switch_limit, tab_switch_enabled, passing_score, exam_code)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, passing_score, exam_code))
+            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, show_results, randomize_questions, tab_switch_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code))
         exam_id = cur.lastrowid
 
         conn.commit()
@@ -2635,6 +2775,8 @@ def teacher_bank_import_file():
         blocks.append(current_block)
 
     parsed = []
+    skipped_no_answer = 0
+    skipped_blank_mismatch = 0
     for block in blocks:
         if not block:
             continue
@@ -2674,7 +2816,21 @@ def teacher_bank_import_file():
             continue
 
         if choices:
-            ans_label = answer_raw.upper().strip('.')[:1] if answer_raw else 'A'
+            # A multiple-choice question with no "Answer:" line has no way to
+            # know the correct choice. Previously this silently defaulted to
+            # "A", which could ship a wrong answer key with no indication
+            # anything was wrong. Skip it instead and tell the teacher how
+            # many were skipped so they can fix the source file.
+            if not answer_raw:
+                skipped_no_answer += 1
+                continue
+            ans_label = answer_raw.upper().strip('.')[:1]
+            if ans_label not in choices:
+                # Answer line doesn't match any of this question's choice
+                # labels (e.g. "Answer: e" but only a-d exist) — also not
+                # safe to guess, so skip rather than silently mis-key it.
+                skipped_no_answer += 1
+                continue
             parsed.append({
                 'type': 'multiple_choice',
                 'text': q_text,
@@ -2688,6 +2844,7 @@ def teacher_bank_import_file():
             blank_count = q_text.count('___')
             answer_count = len([p for p in answer_raw.split('|')]) if answer_raw else 0
             if blank_count == 0 or blank_count != answer_count:
+                skipped_blank_mismatch += 1
                 continue
             parsed.append({
                 'type': 'fill_blank',
@@ -2703,7 +2860,15 @@ def teacher_bank_import_file():
             })
 
     if not parsed:
-        flash('No questions found. Make sure your file uses the required format.', 'error')
+        if skipped_no_answer or skipped_blank_mismatch:
+            flash(
+                f'No questions could be imported: {skipped_no_answer + skipped_blank_mismatch} '
+                f'question(s) were skipped because they were missing a valid "Answer:" line '
+                f'or had a blank/answer count mismatch. Please check the file and try again.',
+                'error'
+            )
+        else:
+            flash('No questions found. Make sure your file uses the required format.', 'error')
         return redirect(url_for('teacher_question_bank'))
 
     # ── Create group (or reuse existing) ────────────────────────────────────
@@ -2720,9 +2885,20 @@ def teacher_bank_import_file():
         )
         group_id = cur.lastrowid
 
-    # ── Insert questions ─────────────────────────────────────────────────────
+    # ── Insert questions (skip ones already in this group — text+type match,
+    # same rule the "import from bank" feature already uses — so re-uploading
+    # the same file, or a file with overlapping questions, doesn't pile up
+    # duplicates in the bank every time) ─────────────────────────────────────
     added = 0
+    duplicates = 0
     for q in parsed:
+        dup = conn.execute(
+            'SELECT 1 FROM questions WHERE bank_group_id=? AND question_type=? AND question_text=?',
+            (group_id, q['type'], q['text'])
+        ).fetchone()
+        if dup:
+            duplicates += 1
+            continue
         # Fill-in-the-blank points scale with how many blanks the question has
         # (one point per blank); every other type defaults to 1 point.
         points = q.get('points', 1)
@@ -2744,7 +2920,19 @@ def teacher_bank_import_file():
         added += 1
 
     conn.commit()
-    flash(f'Imported {added} question{"s" if added != 1 else ""} into group "{group_name}".', 'success')
+    msg = f'Imported {added} question{"s" if added != 1 else ""} into group "{group_name}".'
+    if duplicates:
+        msg += f' Skipped {duplicates} already in this group (same question text).'
+    skipped_total = skipped_no_answer + skipped_blank_mismatch
+    if skipped_total:
+        msg += (
+            f' Skipped {skipped_total} question{"s" if skipped_total != 1 else ""} '
+            f'that were missing a valid "Answer:" line or had a blank/answer mismatch — '
+            f'please review the source file.'
+        )
+        flash(msg, 'info')
+    else:
+        flash(msg, 'success')
     return redirect(url_for('teacher_question_bank'))
 
 
@@ -3388,10 +3576,17 @@ def admin_reports():
         GROUP BY DATE(logged_at) ORDER BY date DESC
     """).fetchall()
     sus_rows = conn.execute("SELECT event_type, COUNT(*) as cnt FROM suspicious_logs GROUP BY event_type").fetchall()
-    suspicious_summary = {'tab_switch': 0, 'lost_focus': 0, 'other': 0}
+    # Connectivity events (connected/disconnected) aren't cheating signals —
+    # they're just network status — so they're excluded from this summary
+    # rather than dumped into "other" alongside real anti-cheat events.
+    _CONNECTIVITY_EVENTS = {'connected', 'disconnected'}
+    suspicious_summary = {'tab_switch': 0, 'fullscreen_exit': 0, 'window_minimize': 0, 'other': 0}
     for r in sus_rows:
-        if r['event_type'] in suspicious_summary:
-            suspicious_summary[r['event_type']] = r['cnt']
+        et = r['event_type']
+        if et in _CONNECTIVITY_EVENTS:
+            continue
+        if et in suspicious_summary:
+            suspicious_summary[et] = r['cnt']
         else:
             suspicious_summary['other'] += r['cnt']
     report = {
@@ -3614,12 +3809,38 @@ def log_suspicious():
     sess = conn.execute('SELECT * FROM exam_sessions WHERE id=? AND student_id=?',
                         (session_id, session['user_id'])).fetchone()
     if sess and sess['status'] == 'ongoing':
+        # tab_switch and fullscreen_exit can both fire for a single real
+        # "switched away" action on some browsers (leaving a fullscreen tab
+        # often triggers a visibility change too). To avoid burning two
+        # strikes for one real action, treat a countable event as a repeat
+        # of the one just before it if a *different* countable event type
+        # was logged for this same session within the last second. (sqlite's
+        # CURRENT_TIMESTAMP only has 1-second resolution, so this window is
+        # deliberately kept short — wide enough to catch two events firing
+        # within the same browser tick, not wide enough to risk swallowing a
+        # genuinely separate switch a moment later.)
+        is_probable_duplicate = False
+        if event_type in ('tab_switch', 'fullscreen_exit'):
+            recent = conn.execute('''
+                SELECT 1 FROM suspicious_logs
+                WHERE session_id = ? AND event_type IN ('tab_switch', 'fullscreen_exit')
+                  AND event_type != ?
+                  AND logged_at >= datetime('now', '-1 seconds')
+                ORDER BY logged_at DESC LIMIT 1
+            ''', (session_id, event_type)).fetchone()
+            is_probable_duplicate = recent is not None
+
         conn.execute('''
             INSERT INTO suspicious_logs (session_id, student_id, exam_id, event_type)
             VALUES (?, ?, ?, ?)
         ''', (session_id, sess['student_id'], sess['exam_id'], event_type))
         # window_minimize and screenshot are logged for teacher visibility but do NOT count toward tab_switch_limit
         if event_type in ('window_minimize', 'screenshot'):
+            conn.commit()
+            return jsonify({'status': 'logged', 'count': sess['tab_switch_count'], 'terminated': False})
+        if is_probable_duplicate:
+            # Still logged above so the teacher can see it happened, just
+            # not counted again against the strike limit.
             conn.commit()
             return jsonify({'status': 'logged', 'count': sess['tab_switch_count'], 'terminated': False})
         # Always count tab switches so teacher can monitor
@@ -3708,13 +3929,6 @@ def api_heartbeat():
     session_id = data.get('session_id')
     conn = get_db()
 
-    # Ensure column exists on old DBs
-    try:
-        conn.execute('ALTER TABLE exam_sessions ADD COLUMN last_seen TIMESTAMP')
-        conn.commit()
-    except Exception:
-        pass
-
     sess = conn.execute('SELECT * FROM exam_sessions WHERE id=?', (session_id,)).fetchone()
     if not sess or sess['student_id'] != session['user_id']:
         return jsonify({'status': 'error'}), 403
@@ -3766,12 +3980,6 @@ def api_monitoring(exam_id):
         return jsonify({'error': 'Not authorized'}), 403
 
     total_q = conn.execute('SELECT COUNT(*) FROM questions WHERE exam_id=?', (exam_id,)).fetchone()[0]
-    # Ensure last_seen column exists (handles existing DBs before migration)
-    try:
-        conn.execute('ALTER TABLE exam_sessions ADD COLUMN last_seen TIMESTAMP')
-        conn.commit()
-    except Exception:
-        pass  # Already exists
 
     active_sessions = conn.execute('''
         SELECT es.id, u.full_name, es.tab_switch_count, es.status,
@@ -4030,4 +4238,25 @@ if __name__ == '__main__':
     os.makedirs(os.path.join(os.path.dirname(__file__), 'instance'), exist_ok=True)
     with app.app_context():
         init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+
+    # Scheduling/auto-close checks now run on their own timer instead of on
+    # every request (see background_maintenance_loop / removed before_request hook).
+    maintenance_thread = threading.Thread(target=background_maintenance_loop, daemon=True)
+    maintenance_thread.start()
+
+    # This app is meant to run on a local classroom network (e.g. a Raspberry Pi
+    # acting as the exam server) with dozens of students connecting at once.
+    # Flask's built-in dev server handles one request at a time by default,
+    # which becomes a serious bottleneck under real exam traffic (each student
+    # polls status/heartbeat every few seconds). Waitress is a lightweight,
+    # pure-Python, multi-threaded production server that handles this properly
+    # and needs no extra system packages, so it works cleanly on a Pi.
+    try:
+        from waitress import serve
+        print("Starting production server (waitress) on http://0.0.0.0:5000 ...")
+        serve(app, host='0.0.0.0', port=5000, threads=16)
+    except ImportError:
+        print("WARNING: 'waitress' is not installed (pip install waitress).")
+        print("Falling back to Flask's built-in server with threading enabled.")
+        print("For real exam use with many students, install waitress instead.")
+        app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)

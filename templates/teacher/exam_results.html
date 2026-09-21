@@ -17,6 +17,8 @@
 
 {% if results %}
 {% set submitted = results | selectattr('status', 'eq', 'submitted') | list %}
+{% set ongoing = results | selectattr('status', 'eq', 'ongoing') | list %}
+{% set terminated = results | selectattr('status', 'eq', 'terminated') | list %}
 {% set pass_pct = exam.passing_score if exam.passing_score is not none else 75 %}
 {% set pass_count = [] %}
 {% for r in submitted %}
@@ -27,8 +29,8 @@
 
 <div class="stat-cards mb-3">
   <div class="stat-card">
-    <div class="stat-label">Total Submissions</div>
-    <div class="stat-value blue">{{ results | length }}</div>
+    <div class="stat-label">Submitted</div>
+    <div class="stat-value blue">{{ submitted | length }}</div>
   </div>
   <div class="stat-card">
     <div class="stat-label">Passed</div>
@@ -38,6 +40,18 @@
     <div class="stat-label">Failed</div>
     <div class="stat-value red">{{ submitted | length - pass_count | length }}</div>
   </div>
+  {% if ongoing %}
+  <div class="stat-card">
+    <div class="stat-label">Still In Progress</div>
+    <div class="stat-value orange">{{ ongoing | length }}</div>
+  </div>
+  {% endif %}
+  {% if terminated %}
+  <div class="stat-card">
+    <div class="stat-label">Terminated</div>
+    <div class="stat-value red">{{ terminated | length }}</div>
+  </div>
+  {% endif %}
 </div>
 
 <div class="card" style="padding:0;overflow:visible">

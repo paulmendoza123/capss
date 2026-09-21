@@ -91,5 +91,55 @@
     {% endif %}
   </div>
 
+  <!-- Suspicious Activity Summary -->
+  <div class="card">
+    <div class="card-title mb-2">Suspicious Activity Summary</div>
+    {% set sus = report.suspicious_summary %}
+    {% if sus and (sus.tab_switch + sus.fullscreen_exit + sus.window_minimize + sus.other) > 0 %}
+      <div style="display:flex;flex-direction:column;gap:0.6rem">
+        <div class="flex items-center justify-between">
+          <span class="text-sm">Tab Switches</span>
+          <span class="badge badge-red">{{ sus.tab_switch }}</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-sm">Fullscreen Exits</span>
+          <span class="badge badge-orange">{{ sus.fullscreen_exit }}</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span class="text-sm">Window Minimized</span>
+          <span class="badge badge-gray">{{ sus.window_minimize }}</span>
+        </div>
+        {% if sus.other > 0 %}
+        <div class="flex items-center justify-between">
+          <span class="text-sm">Other</span>
+          <span class="badge badge-gray">{{ sus.other }}</span>
+        </div>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="text-muted text-sm">No suspicious activity logged.</div>
+    {% endif %}
+  </div>
+
+  <!-- Login Activity (last 7 days) -->
+  <div class="card">
+    <div class="card-title mb-2">Login Activity (Last 7 Days)</div>
+    {% if report.login_activity %}
+      <div style="display:flex;flex-direction:column;gap:0.6rem">
+        {% for day in report.login_activity %}
+        <div class="flex items-center justify-between">
+          <span class="text-sm font-mono">{{ day.date }}</span>
+          <span>
+            <span class="badge badge-green">{{ day.success }} ok</span>
+            {% if day.failed > 0 %}<span class="badge badge-red">{{ day.failed }} failed</span>{% endif %}
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-muted text-sm">No login activity in the last 7 days.</div>
+    {% endif %}
+  </div>
+
 </div>
 {% endblock %}

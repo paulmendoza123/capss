@@ -319,9 +319,12 @@
   }
 
   // ── SAVE STATUS INDICATOR ──
-  // Shows a brief "Saved ✓" badge near the top of the exam
+  // Shows a brief status badge near the top of the exam. Three real states:
+  // 'saved' (green), 'cleared' (neutral — the student deliberately emptied
+  // the field, that's not a failure and shouldn't look like one), and
+  // 'failed' (red, only for an actual network/server problem).
   let _saveStatusTimer = null;
-  function showSaveStatus(ok) {
+  function showSaveStatus(state) {
     let el = document.getElementById('save-status-badge');
     if (!el) {
       el = document.createElement('div');
@@ -335,11 +338,16 @@
       document.body.appendChild(el);
     }
     clearTimeout(_saveStatusTimer);
-    if (ok) {
+    if (state === 'saved') {
       el.textContent = '✓ Answer saved';
       el.style.background = 'rgba(52,199,89,0.18)';
       el.style.border = '1px solid rgba(52,199,89,0.45)';
       el.style.color = '#34c759';
+    } else if (state === 'cleared') {
+      el.textContent = '↺ Answer cleared';
+      el.style.background = 'rgba(139,145,168,0.18)';
+      el.style.border = '1px solid rgba(139,145,168,0.4)';
+      el.style.color = '#b8bcc8';
     } else {
       el.textContent = '⚠ Save failed – retrying…';
       el.style.background = 'rgba(247,95,95,0.15)';
@@ -373,7 +381,7 @@
     })
     .then(r => r.json())
     .then(data => {
-      showSaveStatus(data.status === 'saved');
+      showSaveStatus(data.status === 'saved' ? 'saved' : data.status === 'cleared' ? 'cleared' : 'failed');
     })
     .catch(() => {
       // 3. Last-resort fallback: sendBeacon (no response, fire-and-forget)
@@ -381,7 +389,7 @@
         const blob = new Blob([payload], { type: 'application/json' });
         navigator.sendBeacon('/api/save-answer', blob);
       } catch(e) {}
-      showSaveStatus(false);
+      showSaveStatus('failed');
     });
   }
   window._examSaveAnswer = saveAnswer;
@@ -481,8 +489,24 @@
 
   function confirmAndSubmit() {
     if (terminated) return;
-    if (confirm('Are you sure you want to submit your exam? This cannot be undone.')) submitExam();
+    const modal = document.getElementById('submit-confirm-modal');
+    if (modal) {
+      modal.style.display = 'flex';
+    } else {
+      // Fallback only if the modal markup is somehow missing from the page.
+      if (confirm('Are you sure you want to submit your exam? This cannot be undone.')) submitExam();
+    }
   }
+
+  document.getElementById('submit-confirm-yes')?.addEventListener('click', () => {
+    const modal = document.getElementById('submit-confirm-modal');
+    if (modal) modal.style.display = 'none';
+    submitExam();
+  });
+  document.getElementById('submit-confirm-cancel')?.addEventListener('click', () => {
+    const modal = document.getElementById('submit-confirm-modal');
+    if (modal) modal.style.display = 'none';
+  });
 
   document.getElementById('submit-exam-btn-bottom')?.addEventListener('click', (e) => {
     e.preventDefault();
