@@ -1378,16 +1378,4 @@ div[style*="display: flex"][style*="gap"] .stat-card {
   max-width: 100% !important;
 }
 
-/* ── Text Capitalize & Whitespace Cleanup ──────────────────────────────────
-   Auto-capitalize first letter of each word for text inputs and textareas.
-   Excludes email, password, and number inputs. */
-input[type="text"].form-control,
-textarea.form-control {
-  text-transform: capitalize;
-}
 
-/* Also capitalize displayed text in question cards and choice items */
-.question-text,
-.choice-item .text-sm {
-  text-transform: capitalize;
-}
