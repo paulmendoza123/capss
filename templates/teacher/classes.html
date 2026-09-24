@@ -1,14 +1,13 @@
 {% extends 'base.html' %}
 {% block title %}My Classes{% endblock %}
-{% block topbar_title %}My Classes{% endblock %}
-{% block topbar_actions %}
-  <a href="{{ url_for('teacher_create_class') }}" class="btn btn-primary btn-sm">➕ Create Class</a>
-{% endblock %}
 {% block content %}
 <div class="page-header">
   <div>
     <div class="page-title">My Classes</div>
     <div class="page-subtitle">Classes you are managing</div>
+  </div>
+  <div class="page-actions">
+    <a href="{{ url_for('teacher_create_class') }}" class="btn btn-primary btn-sm">➕ Create Class</a>
   </div>
 </div>
 

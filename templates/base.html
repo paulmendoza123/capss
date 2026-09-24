@@ -125,17 +125,27 @@
 
   <!-- MAIN -->
   <div class="main-content">
+    {% set _topbar_title %}{% block topbar_title %}{% endblock %}{% endset %}
+    {% set _topbar_actions %}{% block topbar_actions %}{% endblock %}{% endset %}
+    {% set _topbar_title = _topbar_title|trim %}
+    {% set _topbar_actions = _topbar_actions|trim %}
+    {% if _topbar_title or _topbar_actions %}
     <div class="topbar">
       <div class="topbar-left">
         <button class="topbar-menu-btn" id="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle menu">
           <span></span><span></span><span></span>
         </button>
-        <div class="topbar-title">{% block topbar_title %}{% endblock %}</div>
+        <div class="topbar-title">{{ _topbar_title }}</div>
       </div>
       <div class="topbar-actions">
-        {% block topbar_actions %}{% endblock %}
+        {{ _topbar_actions }}
       </div>
     </div>
+    {% else %}
+    <button class="topbar-menu-btn topbar-menu-btn-standalone" id="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle menu">
+      <span></span><span></span><span></span>
+    </button>
+    {% endif %}
 
     <div class="alerts">
       {% with messages = get_flashed_messages(with_categories=true) %}

@@ -1,14 +1,13 @@
 {% extends 'base.html' %}
 {% block title %}My Classes{% endblock %}
-{% block topbar_title %}My Classes{% endblock %}
-{% block topbar_actions %}
-  <a href="{{ url_for('student_join_class') }}" class="btn btn-primary btn-sm">➕ Join a Class</a>
-{% endblock %}
 {% block content %}
 <div class="page-header">
   <div>
     <div class="page-title">My Classes</div>
     <div class="page-subtitle">Classes you are enrolled in</div>
+  </div>
+  <div class="page-actions">
+    <a href="{{ url_for('student_join_class') }}" class="btn btn-primary btn-sm">➕ Join a Class</a>
   </div>
 </div>
 

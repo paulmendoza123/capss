@@ -1121,6 +1121,11 @@ div[style*="display: flex"][style*="gap"] .stat-card {
   transition: var(--transition);
 }
 
+/* ── Standalone mobile menu button (pages with no topbar title/actions) ── */
+.topbar-menu-btn-standalone {
+  margin: 0.75rem 0 0 1rem;
+}
+
 /* ── Topbar left section (burger + title together) ── */
 .topbar-left {
   display: flex;
