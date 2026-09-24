@@ -91,6 +91,22 @@
             </div>
             <div class="monitor-stat-label">Tab Switches</div>
           </div>
+          <div class="monitor-stat">
+            <div class="monitor-stat-val fullscreen-exit-count
+              {% if s.fullscreen_exit_count and s.fullscreen_exit_count > 0 %}text-accent
+              {% else %}text-success{% endif %}">
+              {{ s.fullscreen_exit_count or 0 }}
+            </div>
+            <div class="monitor-stat-label">Exited Fullscreen</div>
+          </div>
+          <div class="monitor-stat">
+            <div class="monitor-stat-val lost-focus-count
+              {% if s.lost_focus_count and s.lost_focus_count > 0 %}text-accent
+              {% else %}text-success{% endif %}">
+              {{ s.lost_focus_count or 0 }}
+            </div>
+            <div class="monitor-stat-label">Lost Focus</div>
+          </div>
 
         </div>
         <div class="monitor-actions">
@@ -392,6 +408,10 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
     const pct = totalQ > 0 ? Math.round((s.answered / totalQ) * 100) : 0;
     const sw = s.tab_switch_count;
     const swColor = sw >= TAB_LIMIT ? 'text-danger' : sw > 0 ? 'text-accent' : 'text-success';
+    const fe = s.fullscreen_exit_count || 0;
+    const feColor = fe > 0 ? 'text-accent' : 'text-success';
+    const lf = s.lost_focus_count || 0;
+    const lfColor = lf > 0 ? 'text-accent' : 'text-success';
     const barColor = 'green';
     const isConnected = s.connected !== false;
     const dotClass = isConnected ? 'connected' : 'disconnected';
@@ -416,6 +436,14 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
           <div class="monitor-stat">
             <div class="monitor-stat-val switch-count ${swColor}">${sw}</div>
             <div class="monitor-stat-label">Tab Switches</div>
+          </div>
+          <div class="monitor-stat">
+            <div class="monitor-stat-val fullscreen-exit-count ${feColor}">${fe}</div>
+            <div class="monitor-stat-label">Exited Fullscreen</div>
+          </div>
+          <div class="monitor-stat">
+            <div class="monitor-stat-val lost-focus-count ${lfColor}">${lf}</div>
+            <div class="monitor-stat-label">Lost Focus</div>
           </div>
 
         </div>
@@ -650,6 +678,22 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
               card.classList.remove('flash-alert');
               void card.offsetWidth;
               card.classList.add('flash-alert');
+            }
+
+            // Update exited-fullscreen count (informational only, no auto-terminate)
+            const fe = s.fullscreen_exit_count || 0;
+            const feEl = card.querySelector('.fullscreen-exit-count');
+            if (feEl) {
+              feEl.textContent = fe;
+              feEl.className = 'monitor-stat-val fullscreen-exit-count ' + (fe > 0 ? 'text-accent' : 'text-success');
+            }
+
+            // Update lost-focus count (informational only, no auto-terminate)
+            const lf = s.lost_focus_count || 0;
+            const lfEl = card.querySelector('.lost-focus-count');
+            if (lfEl) {
+              lfEl.textContent = lf;
+              lfEl.className = 'monitor-stat-val lost-focus-count ' + (lf > 0 ? 'text-accent' : 'text-success');
             }
 
             // Update connection dot instantly

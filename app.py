@@ -452,6 +452,8 @@ def init_db():
             score REAL,
             total_points INTEGER,
             tab_switch_count INTEGER DEFAULT 0,
+            fullscreen_exit_count INTEGER DEFAULT 0,
+            lost_focus_count INTEGER DEFAULT 0,
             question_order TEXT,
             last_seen TIMESTAMP,
             FOREIGN KEY (exam_id) REFERENCES exams(id),
@@ -590,6 +592,20 @@ def init_db():
     # Migration: add fullscreen_required for fullscreen-mode enforcement
     try:
         conn.execute('ALTER TABLE exams ADD COLUMN fullscreen_required INTEGER DEFAULT 0')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
+    # Migration: add fullscreen_exit_count / lost_focus_count as their own
+    # counters, separate from tab_switch_count — only tab_switch_count drives
+    # auto-termination; these two are informational-only for teacher monitoring.
+    try:
+        conn.execute('ALTER TABLE exam_sessions ADD COLUMN fullscreen_exit_count INTEGER DEFAULT 0')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+    try:
+        conn.execute('ALTER TABLE exam_sessions ADD COLUMN lost_focus_count INTEGER DEFAULT 0')
         conn.commit()
     except Exception:
         pass  # Column already exists
@@ -3809,41 +3825,34 @@ def log_suspicious():
     sess = conn.execute('SELECT * FROM exam_sessions WHERE id=? AND student_id=?',
                         (session_id, session['user_id'])).fetchone()
     if sess and sess['status'] == 'ongoing':
-        # tab_switch and fullscreen_exit can both fire for a single real
-        # "switched away" action on some browsers (leaving a fullscreen tab
-        # often triggers a visibility change too). To avoid burning two
-        # strikes for one real action, treat a countable event as a repeat
-        # of the one just before it if a *different* countable event type
-        # was logged for this same session within the last second. (sqlite's
-        # CURRENT_TIMESTAMP only has 1-second resolution, so this window is
-        # deliberately kept short — wide enough to catch two events firing
-        # within the same browser tick, not wide enough to risk swallowing a
-        # genuinely separate switch a moment later.)
-        is_probable_duplicate = False
-        if event_type in ('tab_switch', 'fullscreen_exit'):
-            recent = conn.execute('''
-                SELECT 1 FROM suspicious_logs
-                WHERE session_id = ? AND event_type IN ('tab_switch', 'fullscreen_exit')
-                  AND event_type != ?
-                  AND logged_at >= datetime('now', '-1 seconds')
-                ORDER BY logged_at DESC LIMIT 1
-            ''', (session_id, event_type)).fetchone()
-            is_probable_duplicate = recent is not None
-
         conn.execute('''
             INSERT INTO suspicious_logs (session_id, student_id, exam_id, event_type)
             VALUES (?, ?, ?, ?)
         ''', (session_id, sess['student_id'], sess['exam_id'], event_type))
-        # window_minimize and screenshot are logged for teacher visibility but do NOT count toward tab_switch_limit
-        if event_type in ('window_minimize', 'screenshot'):
+
+        # Each event type has its own independent counter for teacher
+        # monitoring. Only tab_switch can ever auto-terminate the session —
+        # fullscreen_exit and window_minimize (lost focus) are counted for
+        # visibility only and never end the exam on their own.
+        if event_type == 'fullscreen_exit':
+            new_count = sess['fullscreen_exit_count'] + 1
+            conn.execute('UPDATE exam_sessions SET fullscreen_exit_count=? WHERE id=?', (new_count, session_id))
+            conn.commit()
+            return jsonify({'status': 'logged', 'count': new_count, 'terminated': False})
+
+        if event_type == 'window_minimize':
+            new_count = sess['lost_focus_count'] + 1
+            conn.execute('UPDATE exam_sessions SET lost_focus_count=? WHERE id=?', (new_count, session_id))
+            conn.commit()
+            return jsonify({'status': 'logged', 'count': new_count, 'terminated': False})
+
+        if event_type == 'screenshot':
+            # Logged for teacher visibility only — no dedicated counter, no termination.
             conn.commit()
             return jsonify({'status': 'logged', 'count': sess['tab_switch_count'], 'terminated': False})
-        if is_probable_duplicate:
-            # Still logged above so the teacher can see it happened, just
-            # not counted again against the strike limit.
-            conn.commit()
-            return jsonify({'status': 'logged', 'count': sess['tab_switch_count'], 'terminated': False})
-        # Always count tab switches so teacher can monitor
+
+        # tab_switch (default/fallback event type) — the only event that can
+        # auto-terminate the exam once it hits the teacher-set limit.
         new_count = sess['tab_switch_count'] + 1
         conn.execute('UPDATE exam_sessions SET tab_switch_count=? WHERE id=?', (new_count, session_id))
         conn.commit()
@@ -3982,7 +3991,7 @@ def api_monitoring(exam_id):
     total_q = conn.execute('SELECT COUNT(*) FROM questions WHERE exam_id=?', (exam_id,)).fetchone()[0]
 
     active_sessions = conn.execute('''
-        SELECT es.id, u.full_name, es.tab_switch_count, es.status,
+        SELECT es.id, u.full_name, es.tab_switch_count, es.fullscreen_exit_count, es.lost_focus_count, es.status,
                COUNT(DISTINCT CASE WHEN TRIM(COALESCE(a.answer_text,'')) != '' THEN a.question_id END) as answered,
                es.started_at, es.last_seen
         FROM exam_sessions es
