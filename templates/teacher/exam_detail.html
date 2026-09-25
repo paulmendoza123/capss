@@ -855,17 +855,22 @@ function mcInitGrid(grid) {
     grid.dataset.mcOriginalAnswer = sel.value;
   }
 
-  if (grid.dataset.mcMode === 'edit') {
-    const rows = mcRows(grid);
-    rows.forEach(r => {
-      const inp = r.querySelector('input');
-      if (!inp || !inp.value.trim()) r.style.display = 'none';
-    });
-    let shown = rows.filter(r => r.style.display !== 'none').length;
-    for (const r of rows) {
-      if (shown >= MC_MIN_CHOICES) break;
-      if (r.style.display === 'none') { r.style.display = ''; shown++; }
-    }
+  // An edit form only ever needs to show the choices the question really
+  // has (down to the true minimum), but a fresh "add" form's original
+  // default is 4 visible choices (A-D) - so when this grid gets reset
+  // (e.g. on modal close, where every input is blanked back out), it
+  // should collapse back to that same default of 4 rather than to the
+  // bare minimum of 2, which is what left every choice A-Z visible.
+  const minVisible = grid.dataset.mcMode === 'edit' ? MC_MIN_CHOICES : 4;
+  const rows = mcRows(grid);
+  rows.forEach(r => {
+    const inp = r.querySelector('input');
+    if (!inp || !inp.value.trim()) r.style.display = 'none';
+  });
+  let shown = rows.filter(r => r.style.display !== 'none').length;
+  for (const r of rows) {
+    if (shown >= minVisible) break;
+    if (r.style.display === 'none') { r.style.display = ''; shown++; }
   }
   mcSyncChoices(grid);
 

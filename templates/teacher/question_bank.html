@@ -239,7 +239,7 @@
    IMPORT FILE MODAL
 ══════════════════════════════════════════════════ #}
 <div class="modal-overlay" id="modal-import-file">
-  <div class="modal" style="max-width:820px;width:95vw">
+  <div class="modal" style="max-width:820px;width:95vw;max-height:90vh;overflow-y:auto">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
       <div class="modal-title" style="margin-bottom:0">📂 Import Questions from File</div>
       <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-import-file')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
@@ -637,17 +637,22 @@ function mcInitGrid(grid) {
     grid.dataset.mcOriginalAnswer = sel.value;
   }
 
-  if (grid.dataset.mcMode === 'edit') {
-    const rows = mcRows(grid);
-    rows.forEach(r => {
-      const inp = r.querySelector('input');
-      if (!inp || !inp.value.trim()) r.style.display = 'none';
-    });
-    let shown = rows.filter(r => r.style.display !== 'none').length;
-    for (const r of rows) {
-      if (shown >= MC_MIN_CHOICES) break;
-      if (r.style.display === 'none') { r.style.display = ''; shown++; }
-    }
+  // An edit form only ever needs to show the choices the question really
+  // has (down to the true minimum), but a fresh "add" form's original
+  // default is 4 visible choices (A-D) - so when this grid gets reset
+  // (e.g. on modal close, where every input is blanked back out), it
+  // should collapse back to that same default of 4 rather than to the
+  // bare minimum of 2, which is what left every choice A-Z visible.
+  const minVisible = grid.dataset.mcMode === 'edit' ? MC_MIN_CHOICES : 4;
+  const rows = mcRows(grid);
+  rows.forEach(r => {
+    const inp = r.querySelector('input');
+    if (!inp || !inp.value.trim()) r.style.display = 'none';
+  });
+  let shown = rows.filter(r => r.style.display !== 'none').length;
+  for (const r of rows) {
+    if (shown >= minVisible) break;
+    if (r.style.display === 'none') { r.style.display = ''; shown++; }
   }
   mcSyncChoices(grid);
 
