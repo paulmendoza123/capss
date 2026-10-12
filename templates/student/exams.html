@@ -20,19 +20,20 @@
 {% endfor %}
 <!-- Search & Filter -->
 <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
-  <input type="text" id="examSearch" class="form-control" placeholder="Search exams..." style="flex:1;min-width:180px;max-width:260px" oninput="filterExams()">
-  <select id="classFilter" class="form-select" style="width:200px;flex-shrink:0" onchange="filterExams()">
+  <input type="text" id="examSearch" class="form-control" placeholder="Search by exam title or subject..." style="flex:1 1 320px;min-width:200px" oninput="filterExams()" autocomplete="off">
+  <select id="classFilter" class="form-select" style="flex:0 0 200px;width:200px" onchange="filterExams()">
     <option value="all">All Classes</option>
     {% for class_key in classes | sort %}
     <option value="{{ class_key | lower }}">{{ class_key }}</option>
     {% endfor %}
   </select>
-  <select id="examFilter" class="form-select" style="width:160px;flex-shrink:0" onchange="filterExams()">
+  <select id="examFilter" class="form-select" style="flex:0 0 170px;width:170px" onchange="filterExams()">
     <option value="all">All Status</option>
     <option value="active">Active</option>
     <option value="upcoming">Upcoming</option>
     <option value="completed">Completed</option>
   </select>
+  <button type="button" id="clearFiltersBtn" class="btn btn-ghost" style="flex-shrink:0" onclick="clearExamFilters()">Clear filters</button>
 </div>
 {% endif %}
 
@@ -138,11 +139,12 @@
   <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg></div>
   <div class="empty-state-title">No exams found</div>
   <div class="empty-state-text">Try a different search or filter.</div>
+  <button type="button" class="btn btn-ghost mt-2" onclick="clearExamFilters()">Clear filters</button>
 </div>
 
 <script>
 function filterExams() {
-  const search = document.getElementById('examSearch').value.toLowerCase();
+  const search = document.getElementById('examSearch').value.trim().toLowerCase();
   const filter = document.getElementById('examFilter').value;
   const cls = document.getElementById('classFilter').value;
   const items = document.querySelectorAll('.exam-item');
@@ -168,6 +170,12 @@ function filterExams() {
   });
 
   document.getElementById('noResults').style.display = anyVisible ? 'none' : 'block';
+}
+function clearExamFilters() {
+  document.getElementById('examSearch').value = '';
+  document.getElementById('classFilter').value = 'all';
+  document.getElementById('examFilter').value = 'all';
+  filterExams();
 }
 </script>
 

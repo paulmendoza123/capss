@@ -14,23 +14,25 @@
   {% set class_key = exam.subject_name ~ ' · ' ~ exam.block_name %}
   {% if class_key not in classes %}{% set _ = classes.append(class_key) %}{% endif %}
 {% endfor %}
-<div class="flex gap-1 mb-3" style="flex-wrap:wrap;align-items:center">
-  <input type="text" id="examSearch" class="form-control" placeholder="Search exams or class..." style="max-width:260px" oninput="filterExams()">
-  <select id="classFilter" class="form-select" style="max-width:200px" onchange="filterExams()">
+<!-- Search & Filter -->
+<div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
+  <input type="text" id="examSearch" class="form-control" placeholder="Search by exam title, subject or block..." style="flex:1 1 320px;min-width:200px" oninput="filterExams()" autocomplete="off">
+  <select id="classFilter" class="form-select" style="flex:0 0 200px;width:200px" onchange="filterExams()">
     <option value="all">All Classes</option>
     {% for class_key in classes | sort %}
     <option value="{{ class_key | lower }}">{{ class_key }}</option>
     {% endfor %}
   </select>
-  <select id="statusFilter" class="form-select" style="max-width:160px" onchange="filterExams()">
+  <select id="statusFilter" class="form-select" style="flex:0 0 170px;width:170px" onchange="filterExams()">
     <option value="all">All Status</option>
     <option value="upcoming">Upcoming</option>
     <option value="active">Active</option>
     <option value="completed">Completed</option>
   </select>
+  <button type="button" id="clearFiltersBtn" class="btn btn-ghost" style="flex-shrink:0" onclick="clearExamFilters()">Clear filters</button>
 </div>
 
-<div class="card">
+<div class="card" id="examCard">
   <div class="table-wrap">
     <table>
       <thead>
@@ -73,7 +75,6 @@
         {% endfor %}
       </tbody>
     </table>
-    </div>
   </div>
 </div>
 
@@ -81,11 +82,12 @@
   <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg></div>
   <div class="empty-state-title">No exams found</div>
   <div class="empty-state-text">Try a different search or filter.</div>
+  <button type="button" class="btn btn-ghost mt-2" onclick="clearExamFilters()">Clear filters</button>
 </div>
 
 <script>
 function filterExams() {
-  const search = document.getElementById('examSearch').value.toLowerCase();
+  const search = document.getElementById('examSearch').value.trim().toLowerCase();
   const status = document.getElementById('statusFilter').value;
   const cls = document.getElementById('classFilter').value;
   const rows = document.querySelectorAll('.exam-row');
@@ -99,7 +101,15 @@ function filterExams() {
     if (show) any = true;
   });
   document.getElementById('noResults').style.display = any ? 'none' : 'block';
+  document.getElementById('examCard').style.display = any ? '' : 'none';
 }
+function clearExamFilters() {
+  document.getElementById('examSearch').value = '';
+  document.getElementById('classFilter').value = 'all';
+  document.getElementById('statusFilter').value = 'all';
+  filterExams();
+}
+filterExams();
 </script>
 
 {% else %}
