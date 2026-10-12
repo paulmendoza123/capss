@@ -74,7 +74,7 @@
   <div style="font-size:1.5rem;font-weight:700;margin-bottom:0.5rem">
     {{ pct }}% — {% if pct >= pass_pct %}<span class="text-success">PASSED ✓</span>{% else %}<span class="text-danger">FAILED ✗</span>{% endif %}
   </div>
-  <div class="text-sm text-muted">Submitted {{ exam_session.submitted_at or '—' }}</div>
+  <div class="text-sm text-muted">Submitted {{ (exam_session.submitted_at or '—')|time12 }}</div>
 </div>
 {% endif %}
 

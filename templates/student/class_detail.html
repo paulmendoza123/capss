@@ -39,7 +39,7 @@
       <div class="exam-card-title">{{ exam.title }}</div>
       <div class="exam-card-meta">
         <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam.duration_minutes }} min</span>
-        {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at }}</span>{% endif %}
+        {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at|time12 }}</span>{% endif %}
       </div>
       {% if exam.session_status == 'ongoing' %}
       <a href="{{ url_for('student_take_exam', exam_id=exam.id) }}" class="btn btn-success btn-sm">Continue →</a>
@@ -60,7 +60,7 @@
       <div class="exam-card-title">{{ exam.title }}</div>
       <div class="exam-card-meta">
         <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam.duration_minutes }} min</span>
-        {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at }}</span>{% endif %}
+        {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at|time12 }}</span>{% endif %}
       </div>
       <span class="badge badge-gray">Not yet open</span>
     </div>
@@ -116,7 +116,7 @@
       <div class="exam-card-title">{{ exam.title }}</div>
       <div class="exam-card-meta">
         <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam.duration_minutes }} min</span>
-        {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at }}</span>{% endif %}
+        {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at|time12 }}</span>{% endif %}
       </div>
       <span class="badge badge-gray">Closed</span>
     </div>

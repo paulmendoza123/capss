@@ -86,7 +86,7 @@
             {% else %}<span class="badge badge-blue">Completed</span>{% endif %}
           </td>
           <td class="font-mono text-sm">{{ exam.session_count }}</td>
-          <td class="text-sm text-muted">{{ exam.scheduled_at or '—' }}</td>
+          <td class="text-sm text-muted">{{ (exam.scheduled_at or '—')|time12 }}</td>
           <td>
             <a href="{{ url_for('admin_exam_analytics', exam_id=exam.id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg> Analytics</a>
           </td>

@@ -68,7 +68,7 @@
     </div>
     <div class="form-group">
       <div class="form-label">Scheduled</div>
-      <div class="text-sm text-muted">{{ exam.scheduled_at or 'Not scheduled' }}</div>
+      <div class="text-sm text-muted">{{ (exam.scheduled_at or 'Not scheduled')|time12 }}</div>
     </div>
   </div>
 </div>
@@ -174,8 +174,8 @@
             {% else %}<span class="badge badge-red">Terminated</span>{% endif %}
           </td>
           <td class="font-mono text-sm">{{ s.tab_switch_count }}</td>
-          <td class="text-sm text-muted">{{ s.started_at }}</td>
-          <td class="text-sm text-muted">{{ s.submitted_at or '—' }}</td>
+          <td class="text-sm text-muted">{{ s.started_at|time12 }}</td>
+          <td class="text-sm text-muted">{{ (s.submitted_at or '—')|time12 }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -207,7 +207,7 @@
             {% elif log.event_type == 'lost_focus' or log.event_type == 'window_minimize' or log.event_type == 'window_blur' %}<span class="badge badge-orange">Lost Focus</span>
             {% else %}<span class="badge badge-gray">{{ log.event_type }}</span>{% endif %}
           </td>
-          <td class="text-sm text-muted font-mono">{{ log.logged_at }}</td>
+          <td class="text-sm text-muted font-mono">{{ log.logged_at|time12 }}</td>
         </tr>
         {% endfor %}
       </tbody>

@@ -94,7 +94,7 @@
               <span class="font-mono">{{ s.tab_switch_count or 0 }}</span>
             {% endif %}
           </td>
-          <td class="text-sm text-muted">{{ s.started_at or '—' }}</td>
+          <td class="text-sm text-muted">{{ (s.started_at or '—')|time12 }}</td>
           <td class="font-mono">
             {% if s.score is not none and s.total_points %}{{ s.score|int }}/{{ s.total_points }}
             {% else %}—{% endif %}

@@ -169,7 +169,7 @@
               {% elif log.event_type == 'consent_given' %}<span class="badge badge-green">✓ Consented to Monitoring</span>
               {% else %}<span class="badge badge-gray">{{ log.event_type }}</span>{% endif %}
             </td>
-            <td class="text-sm text-muted font-mono">{{ log.logged_at }}</td>
+            <td class="text-sm text-muted font-mono">{{ log.logged_at|time12 }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -273,7 +273,7 @@
                 <span class="badge badge-red">Failed</span>
               {% endif %}
             </td>
-            <td class="text-sm text-muted">{{ r.submitted_at or '—' }}</td>
+            <td class="text-sm text-muted">{{ (r.submitted_at or '—')|time12 }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -503,7 +503,7 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
       return `<tr data-name="${name.toLowerCase()}" data-event="${log.event_type}">
         <td class="fw-600">${name}</td>
         <td>${badge}</td>
-        <td class="text-sm text-muted font-mono">${log.logged_at}</td>
+        <td class="text-sm text-muted font-mono">${fmtTime12(log.logged_at)}</td>
       </tr>`;
     }).join('');
     applyLogFilters();
@@ -511,6 +511,15 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
 
   // ── UPDATE RESULTS TAB ──
   let lastResultsData = null;
+  // Display only: 'YYYY-MM-DD HH:MM[:SS]' -> 12-hour time with AM/PM.
+  // Raw values are still used for sorting; non date-time text is returned as is.
+  function fmtTime12(v) {
+    if (typeof v !== 'string') return v;
+    const m = v.trim().match(/^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (!m) return v;
+    const h = parseInt(m[2], 10);
+    return `${m[1]} ${h % 12 || 12}:${m[3]}${m[4] ? ':' + m[4] : ''} ${h >= 12 ? 'PM' : 'AM'}`;
+  }
   let lastResultsJson = '';
   let lastQStatsJson = '';
   let resultsSortKey = 'default';
@@ -635,7 +644,7 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
           <td>${scoreCell}</td>
           <td>${pctCell}</td>
           <td>${statusBadge}</td>
-          <td class="text-sm text-muted">${r.submitted_at || '—'}</td>
+          <td class="text-sm text-muted">${fmtTime12(r.submitted_at) || '—'}</td>
           <td>${actionCell}</td>
         </tr>`;
       }).join('');
@@ -937,7 +946,7 @@ function generateResultsReport() {
         else if (r.status === 'ongoing') status = 'Ongoing';
         else if (r.pct !== null && r.pct >= passPct) status = 'Passed';
         else status = 'Failed';
-        const submitted = r.submitted_at || '—';
+        const submitted = fmtTime12(r.submitted_at) || '—';
         return [`"${r.full_name}"`, `"${score}"`, `"${pct}"`, `"${status}"`, `"${submitted}"`].join(',');
       });
       const csvContent = [csvHeader.join(','), ...csvRows].join('\n');

@@ -55,7 +55,7 @@
                 <span class="badge badge-red">Failed</span>
               {% endif %}
             </td>
-            <td class="text-sm text-muted">{{ log.logged_at }}</td>
+            <td class="text-sm text-muted">{{ log.logged_at|time12 }}</td>
           </tr>
           {% endfor %}
           <tr id="login-empty" style="display:none">
@@ -127,7 +127,7 @@
                 <span class="badge badge-gray">{{ log.event_type }}</span>
               {% endif %}
             </td>
-            <td class="text-sm text-muted font-mono">{{ log.logged_at }}</td>
+            <td class="text-sm text-muted font-mono">{{ log.logged_at|time12 }}</td>
           </tr>
           {% endfor %}
           <tr id="sus-empty" style="display:none">

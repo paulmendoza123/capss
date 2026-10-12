@@ -60,7 +60,7 @@
             {% else %}<span class="badge badge-blue">Completed</span>{% endif %}
           </td>
           <td class="font-mono text-sm">{{ exam.session_count }}</td>
-          <td class="text-sm text-muted">{{ exam.scheduled_at or '—' }}</td>
+          <td class="text-sm text-muted">{{ (exam.scheduled_at or '—')|time12 }}</td>
           <td>
             {% if exam.status == 'active' %}
             <button type="button" class="btn btn-ghost btn-sm" disabled

@@ -228,6 +228,22 @@ def sa_collect_form(form, name):
     """Read every input called `name` (primary + alternatives) from a form."""
     return sa_join_answers(form.getlist(name))
 
+@app.template_filter('time12')
+def time12_filter(value):
+    """Display 'YYYY-MM-DD HH:MM[:SS]' as 12-hour time with AM/PM.
+    Display only: stored values are unchanged. Anything that is not a
+    date-time string (None, '—', plain text) is returned untouched."""
+    if not isinstance(value, str):
+        return value
+    m = re.match(r'^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?', value.strip())
+    if not m:
+        return value
+    date_part, hh, mm, ss = m.group(1), int(m.group(2)), m.group(3), m.group(4)
+    suffix = 'PM' if hh >= 12 else 'AM'
+    h12 = hh % 12 or 12
+    return f"{date_part} {h12}:{mm}{':' + ss if ss else ''} {suffix}"
+
+
 @app.template_filter('sa_alts')
 def _sa_alts_filter(correct_answer):
     return sa_parse_answer(correct_answer)
@@ -387,6 +403,37 @@ def close_db(error=None):
     if db is not None:
         db.close()
 
+def _migrate_local_time_defaults(conn):
+    """One-time, idempotent. SQLite's CURRENT_TIMESTAMP is UTC, but the rest of
+    the app (exam schedule, timer, activated_at) uses local time. Switch the
+    column defaults of an existing database to local time. Only the schema
+    default changes: existing rows are NOT modified."""
+    try:
+        conn.commit()
+        conn.execute('BEGIN IMMEDIATE')
+        found = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' "
+            "AND sql LIKE '%DEFAULT CURRENT_TIMESTAMP%'").fetchone()[0]
+        if not found:
+            conn.execute('ROLLBACK')
+            return
+        ver = conn.execute('PRAGMA schema_version').fetchone()[0]
+        conn.execute('PRAGMA writable_schema=ON')
+        conn.execute(
+            "UPDATE sqlite_master SET sql = replace(sql, 'DEFAULT CURRENT_TIMESTAMP', "
+            "\"DEFAULT (datetime('now','localtime'))\") "
+            "WHERE type='table' AND sql LIKE '%DEFAULT CURRENT_TIMESTAMP%'")
+        conn.execute('PRAGMA schema_version=%d' % (ver + 1))
+        conn.execute('PRAGMA writable_schema=OFF')
+        conn.execute('COMMIT')
+    except Exception as e:
+        try:
+            conn.execute('ROLLBACK')
+        except Exception:
+            pass
+        print('[init_db] local-time default migration skipped:', e)
+
+
 def init_db():
     conn = get_db()
     cursor = conn.cursor()
@@ -399,14 +446,14 @@ def init_db():
             role TEXT NOT NULL CHECK(role IN ('admin', 'teacher', 'student')),
             program TEXT,
             year_level TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT (datetime('now','localtime'))
         );
 
         CREATE TABLE IF NOT EXISTS programs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             code TEXT UNIQUE NOT NULL,
             name TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT (datetime('now','localtime'))
         );
 
         CREATE TABLE IF NOT EXISTS classes (
@@ -419,7 +466,7 @@ def init_db():
             year_level TEXT NOT NULL,
             teacher_id INTEGER NOT NULL,
             is_active INTEGER DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (teacher_id) REFERENCES users(id)
         );
 
@@ -427,7 +474,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             class_id INTEGER NOT NULL,
             student_id INTEGER NOT NULL,
-            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            joined_at TIMESTAMP DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (class_id) REFERENCES classes(id),
             FOREIGN KEY (student_id) REFERENCES users(id),
             UNIQUE(class_id, student_id)
@@ -437,7 +484,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             class_id INTEGER NOT NULL,
             email TEXT NOT NULL,
-            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            added_at TIMESTAMP DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (class_id) REFERENCES classes(id),
             UNIQUE(class_id, email)
         );
@@ -455,7 +502,7 @@ def init_db():
             randomize_questions INTEGER DEFAULT 0,
             tab_switch_limit INTEGER DEFAULT 3,
             tab_switch_enabled INTEGER DEFAULT 1,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (class_id) REFERENCES classes(id)
         );
 
@@ -493,7 +540,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             exam_id INTEGER NOT NULL,
             student_id INTEGER NOT NULL,
-            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            started_at TIMESTAMP DEFAULT (datetime('now','localtime')),
             submitted_at TIMESTAMP,
             status TEXT DEFAULT 'ongoing' CHECK(status IN ('ongoing','submitted','terminated')),
             score REAL,
@@ -524,7 +571,7 @@ def init_db():
             student_id INTEGER NOT NULL,
             exam_id INTEGER NOT NULL,
             event_type TEXT NOT NULL,
-            logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            logged_at TIMESTAMP DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (session_id) REFERENCES exam_sessions(id)
         );
 
@@ -534,7 +581,7 @@ def init_db():
             email TEXT,
             success INTEGER DEFAULT 1,
             ip_address TEXT,
-            logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            logged_at TIMESTAMP DEFAULT (datetime('now','localtime'))
         );
 
         CREATE TABLE IF NOT EXISTS question_bank_groups (
@@ -543,7 +590,7 @@ def init_db():
             name TEXT NOT NULL,
             description TEXT,
             class_id INTEGER REFERENCES classes(id),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (teacher_id) REFERENCES users(id)
         );
 
@@ -816,6 +863,9 @@ def init_db():
         conn.commit()
     except Exception:
         pass  # Column already exists
+
+    # Migration: timestamp defaults use local time instead of UTC
+    _migrate_local_time_defaults(conn)
 
     # Migration: add case_sensitive toggle to questions (for short-answer grading)
     try:
@@ -1801,7 +1851,7 @@ def student_take_exam(exam_id):
         # Essay questions mean this submission's score isn't final yet — the
         # student sees "pending" until every essay answer has been graded.
         conn.execute('''
-            UPDATE exam_sessions SET status='submitted', submitted_at=CURRENT_TIMESTAMP,
+            UPDATE exam_sessions SET status='submitted', submitted_at=datetime('now','localtime'),
             score=?, total_points=?, needs_grading=? WHERE id=?
         ''', (score, total_points, 1 if has_essay else 0, sess_id))
         conn.commit()
@@ -2788,7 +2838,7 @@ def apply_essay_grade(conn, answer_id, criteria, criterion_scores, feedback, tea
         ''', (answer_id, crit['id'], given))
 
     conn.execute('''
-        UPDATE answers SET manual_score=?, feedback=?, graded_by=?, graded_at=CURRENT_TIMESTAMP
+        UPDATE answers SET manual_score=?, feedback=?, graded_by=?, graded_at=datetime('now','localtime')
         WHERE id=?
     ''', (total, feedback, teacher_id, answer_id))
     return total
@@ -4820,7 +4870,7 @@ def admin_reports():
         SELECT DATE(logged_at) as date,
                SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as success,
                SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) as failed
-        FROM login_logs WHERE logged_at >= DATE('now', '-7 days')
+        FROM login_logs WHERE logged_at >= DATE('now', 'localtime', '-7 days')
         GROUP BY DATE(logged_at) ORDER BY date DESC
     """).fetchall()
     sus_rows = conn.execute("SELECT event_type, COUNT(*) as cnt FROM suspicious_logs GROUP BY event_type").fetchall()
@@ -5134,7 +5184,7 @@ def log_suspicious():
         # Auto-terminate only when tab_switch_enabled is ON and limit is reached
         if exam and exam['tab_switch_enabled'] and exam['tab_switch_limit'] and new_count >= exam['tab_switch_limit']:
             total_points = conn.execute('SELECT COALESCE(SUM(points),0) FROM questions WHERE exam_id=?', (sess['exam_id'],)).fetchone()[0]
-            conn.execute("UPDATE exam_sessions SET status='terminated', submitted_at=CURRENT_TIMESTAMP, score=0, total_points=? WHERE id=?",
+            conn.execute("UPDATE exam_sessions SET status='terminated', submitted_at=datetime('now','localtime'), score=0, total_points=? WHERE id=?",
                          (total_points, session_id,))
             conn.commit()
             terminated = True
@@ -5157,7 +5207,7 @@ def api_exam_consent():
         return jsonify({'status': 'error', 'message': 'Exam session is not active.'}), 400
 
     conn.execute(
-        "UPDATE exam_sessions SET consent_given=1, consent_at=CURRENT_TIMESTAMP WHERE id=?",
+        "UPDATE exam_sessions SET consent_given=1, consent_at=datetime('now','localtime') WHERE id=?",
         (session_id,)
     )
     # Audit trail: consent is itself a suspicious_logs-style event so teachers/admins
@@ -5446,7 +5496,7 @@ def api_terminate_session(session_id):
         if exam and (exam['teacher_id'] == session['user_id'] or session.get('role') == 'admin'):
             total_points = conn.execute('SELECT COALESCE(SUM(points),0) FROM questions WHERE exam_id=?', (exam['id'],)).fetchone()[0]
             conn.execute(
-                "UPDATE exam_sessions SET status='terminated', submitted_at=CURRENT_TIMESTAMP, score=0, total_points=? WHERE id=?",
+                "UPDATE exam_sessions SET status='terminated', submitted_at=datetime('now','localtime'), score=0, total_points=? WHERE id=?",
                 (total_points, session_id,)
             )
             conn.commit()

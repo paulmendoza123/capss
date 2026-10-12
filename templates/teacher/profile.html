@@ -17,7 +17,7 @@
       <div class="form-group"><div class="form-label">Email</div><div class="font-mono">{{ user.email }}</div></div>
       <div class="divider"></div>
       <div class="form-group"><div class="form-label">Role</div><span class="badge badge-orange">Teacher</span></div>
-      <div class="form-group"><div class="form-label">Member Since</div><div class="text-muted text-sm">{{ user.created_at }}</div></div>
+      <div class="form-group"><div class="form-label">Member Since</div><div class="text-muted text-sm">{{ user.created_at|time12 }}</div></div>
       <button type="submit" class="btn btn-primary">Save Changes</button>
     </form>
   </div>
@@ -42,7 +42,7 @@
             <td>{% if h.status == 'active' %}<span class="badge badge-green">Active</span>{% elif h.status == 'completed' %}<span class="badge badge-blue">Completed</span>{% else %}<span class="badge badge-orange">Upcoming</span>{% endif %}</td>
             <td class="text-center">{{ h.total_takers or 0 }}</td>
             <td>{% if h.avg_score is not none and h.avg_score %}<span class="fw-600">{{ h.avg_score }}%</span>{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
-            <td class="text-muted text-xs">{{ h.created_at[:16] if h.created_at else '—' }}</td>
+            <td class="text-muted text-xs">{{ (h.created_at[:16]|time12) if h.created_at else '—' }}</td>
           </tr>
           {% endfor %}
         {% else %}

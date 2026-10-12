@@ -119,7 +119,7 @@
               <span class="badge badge-yellow text-xs" title="Has essay answers awaiting manual grading">⏳ Needs Grading</span>
             {% endif %}
           </td>
-          <td class="text-sm text-muted">{{ r.submitted_at or '—' }}</td>
+          <td class="text-sm text-muted">{{ (r.submitted_at or '—')|time12 }}</td>
           <td>
             {% if r.status == 'submitted' or r.status == 'terminated' %}
             <a href="{{ url_for('teacher_view_student_result', exam_id=exam.id, student_id=r.student_id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg> View Results</a>
@@ -244,7 +244,7 @@ function generateReport() {
       score: {{ (r.score|score_fmt ~ ' out of ' ~ r.total_points|string) | tojson if r.score is not none else '"—"' }},
       percentage: {{ (pct|string ~ '%') | tojson if r.score is not none and r.total_points else '"—"' }},
       status: {% if r.status == 'terminated' %}"Terminated"{% elif r.status == 'ongoing' %}"Ongoing"{% elif pct >= pass_pct %}"Passed"{% else %}"Failed"{% endif %},
-      submitted: {{ (r.submitted_at | string) | tojson if r.submitted_at else '"—"' }}
+      submitted: {{ ((r.submitted_at | string) | time12) | tojson if r.submitted_at else '"—"' }}
     }{% if not loop.last %},{% endif %}
     {% endfor %}
   ];
