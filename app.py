@@ -5328,12 +5328,10 @@ def api_monitoring(exam_id):
     # Results data
     passing_score = exam['passing_score'] if exam['passing_score'] is not None else 75
     results_rows = conn.execute('''
-        SELECT u.id as student_id, u.full_name, es.score, es.total_points, es.status, es.submitted_at
+        SELECT u.id as student_id, u.full_name, es.score, es.total_points, es.status, es.submitted_at, es.started_at
         FROM exam_sessions es JOIN users u ON es.student_id = u.id
         WHERE es.exam_id=?
-        ORDER BY
-            CASE es.status WHEN 'ongoing' THEN 0 WHEN 'submitted' THEN 1 ELSE 2 END,
-            es.score DESC
+        ORDER BY es.started_at ASC, es.id ASC
     ''', (exam_id,)).fetchall()
     results_list = []
     for r in results_rows:

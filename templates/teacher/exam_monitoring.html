@@ -511,6 +511,8 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
 
   // ── UPDATE RESULTS TAB ──
   let lastResultsData = null;
+  let lastResultsJson = '';
+  let lastQStatsJson = '';
   let resultsSortKey = 'default';
 
   function getResultStatusLabel(r, passPct) {
@@ -545,9 +547,12 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
           return a.pct - b.pct;
         });
         break;
-      case 'status':
-        sorted.sort((a, b) => getResultStatusLabel(a, passPct).localeCompare(getResultStatusLabel(b, passPct)));
+      case 'status': {
+        // Ongoing first, then Passed, Failed, Terminated
+        const statusRank = { 'Ongoing': 0, 'Passed': 1, 'Failed': 2, 'Terminated': 3 };
+        sorted.sort((a, b) => statusRank[getResultStatusLabel(a, passPct)] - statusRank[getResultStatusLabel(b, passPct)]);
         break;
+      }
       case 'submitted_new':
         sorted.sort((a, b) => (b.submitted_at || '').localeCompare(a.submitted_at || ''));
         break;
@@ -555,7 +560,16 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
         sorted.sort((a, b) => (a.submitted_at || '').localeCompare(b.submitted_at || ''));
         break;
       default:
-        break; // keep the server's default order (ongoing first, then by score)
+        // Default: order of entry. First student to enter the exam is at the
+        // top, last to enter at the bottom, regardless of status. Students
+        // with no start time sink to the bottom. Sort is stable.
+        sorted.sort((a, b) => {
+          if (!a.started_at && !b.started_at) return 0;
+          if (!a.started_at) return 1;
+          if (!b.started_at) return -1;
+          return String(a.started_at).localeCompare(String(b.started_at));
+        });
+        break;
     }
     return sorted;
   }
@@ -630,6 +644,7 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
       `<option value="${val}" ${resultsSortKey === val ? 'selected' : ''}>${label}</option>`
     ).join('');
 
+    const prevScroll = container.querySelector('.table-scroll-10')?.scrollTop || 0;
     container.innerHTML = `
       <div style="display:flex;gap:0.5rem;justify-content:flex-end;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;">
         <label for="results-sort" class="text-sm text-muted">Sort by:</label>
@@ -647,6 +662,8 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
           </table>
         </div>
       </div>`;
+    const newWrap = container.querySelector('.table-scroll-10');
+    if (newWrap) newWrap.scrollTop = prevScroll;
   }
 
   const QUESTION_TYPE_META = {
@@ -680,10 +697,17 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
     const ongoingEl = document.getElementById('res-ongoing');
     if (ongoingEl) ongoingEl.textContent = ongoingCount;
 
-    renderResultsTable();
+    const resultsJson = JSON.stringify(results) + '|' + passPct;
+    if (resultsJson !== lastResultsJson) {
+      lastResultsJson = resultsJson;
+      renderResultsTable();
+    }
 
     const qContainer = document.getElementById('question-stats-container');
-    if (qContainer) {
+    const qJson = JSON.stringify(questionStats) + '|' + totalSubmitted + '|' + passPct;
+    if (qContainer && qJson !== lastQStatsJson) {
+      lastQStatsJson = qJson;
+      const prevQScroll = qContainer.querySelector('.table-scroll-10')?.scrollTop || 0;
       if (questionStats.length > 0 && totalSubmitted > 0) {
         const qRows = questionStats.map(qs => {
           const barColor = qs.pct >= passPct ? 'var(--accent2)' : qs.pct >= 40 ? '#f7c94f' : 'var(--danger)';
@@ -720,6 +744,8 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
       } else {
         qContainer.innerHTML = '';
       }
+      const qWrap = qContainer.querySelector('.table-scroll-10');
+      if (qWrap) qWrap.scrollTop = prevQScroll;
     }
   }
 
@@ -898,7 +924,9 @@ function generateResultsReport() {
   fetch(`/api/results/${EXAM_ID}`)
     .then(r => r.json())
     .then(data => {
-      const results = data.results || [];
+      // CSV is always alphabetical by student name (A–Z)
+      const results = (data.results || []).slice().sort((a, b) =>
+        (a.full_name || '').localeCompare(b.full_name || '', undefined, { sensitivity: 'base' }));
       const csvHeader = ['Student', 'Score', 'Percentage', 'Status', 'Submitted'];
       const csvRows = results.map(r => {
         const score = r.score !== null && r.total_points
