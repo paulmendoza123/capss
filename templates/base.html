@@ -346,26 +346,36 @@ function showCodeError(msg) {
 
 <script>
 // ── THEME SYSTEM ──
+function themeIconSvg(name) {
+  return '<svg class="icon" aria-hidden="true"><use href="#i-' + name + '"/></svg>';
+}
 function applyTheme(theme) {
-  if (theme === 'dark') {
+  var isDark = theme === 'dark';
+  if (isDark) {
     document.documentElement.setAttribute('data-theme', 'dark');
-    var icon = document.getElementById('theme-toggle-icon');
-    if (icon) icon.textContent = '';
   } else {
     document.documentElement.removeAttribute('data-theme');
-    var icon = document.getElementById('theme-toggle-icon');
-    if (icon) icon.textContent = '';
+  }
+  // Show the icon of the mode you will SWITCH TO: sun while dark, moon while light
+  var label = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+  var icon = document.getElementById('theme-toggle-icon');
+  if (icon) icon.innerHTML = themeIconSvg(isDark ? 'sun' : 'moon');
+  var btn = document.getElementById('theme-toggle-btn');
+  if (btn) {
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('title', label);
   }
 }
 function toggleTheme() {
   var current = document.documentElement.getAttribute('data-theme');
   var next = current === 'dark' ? 'light' : 'dark';
-  localStorage.setItem('spark-theme', next);
+  try { localStorage.setItem('spark-theme', next); } catch (e) {}
   applyTheme(next);
 }
 // Sync icon on page load
 document.addEventListener('DOMContentLoaded', function() {
-  var saved = localStorage.getItem('spark-theme') || 'light';
+  var saved = 'light';
+  try { saved = localStorage.getItem('spark-theme') || 'light'; } catch (e) {}
   applyTheme(saved);
 });
 </script>
