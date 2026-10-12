@@ -12,9 +12,33 @@
 </div>
 
 {% if classes %}
+{% set teachers = [] %}
+{% set years = [] %}
+{% for cls in classes %}
+  {% if cls.teacher_name not in teachers %}{% set _ = teachers.append(cls.teacher_name) %}{% endif %}
+  {% if cls.year_level and cls.year_level not in years %}{% set _ = years.append(cls.year_level) %}{% endif %}
+{% endfor %}
+<!-- Search & Filter -->
+<div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
+  <input type="text" id="classSearch" class="form-control" placeholder="Search by subject, code, block or teacher..." style="flex:1 1 320px;min-width:200px" oninput="filterClasses()" autocomplete="off">
+  <select id="teacherFilter" class="form-select" style="flex:0 0 170px;width:170px" onchange="filterClasses()">
+    <option value="all">All Teachers</option>
+    {% for t in teachers | sort %}
+    <option value="{{ t | lower }}">{{ t }}</option>
+    {% endfor %}
+  </select>
+  <select id="yearFilter" class="form-select" style="flex:0 0 170px;width:170px" onchange="filterClasses()">
+    <option value="all">All Years</option>
+    {% for y in years | sort %}
+    <option value="{{ y | lower }}">{{ y }}</option>
+    {% endfor %}
+  </select>
+  <button type="button" id="clearFiltersBtn" class="btn btn-ghost" style="flex-shrink:0" onclick="clearClassFilters()">Clear filters</button>
+</div>
+
 <div class="cards-grid">
   {% for cls in classes %}
-  <div class="class-card">
+  <div class="class-card" data-search="{{ (cls.subject_name ~ ' ' ~ cls.subject_code ~ ' ' ~ cls.block_name ~ ' ' ~ cls.class_code ~ ' ' ~ cls.teacher_name) | lower }}" data-teacher="{{ cls.teacher_name | lower }}" data-year="{{ (cls.year_level or '') | lower }}">
     <a href="{{ url_for('student_class_detail', class_id=cls.id) }}" class="class-card-link" aria-label="Open {{ cls.subject_name }}"></a>
     <div class="card-menu">
       <button type="button" class="card-menu-btn" aria-label="Class options">⋮</button>
@@ -33,6 +57,38 @@
   </div>
   {% endfor %}
 </div>
+<div id="noResults" style="display:none" class="empty-state mt-2">
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg></div>
+  <div class="empty-state-title">No classes found</div>
+  <div class="empty-state-text">Try a different search or filter.</div>
+  <button type="button" class="btn btn-ghost mt-2" onclick="clearClassFilters()">Clear filters</button>
+</div>
+
+<script>
+function filterClasses() {
+  const q = document.getElementById('classSearch').value.trim().toLowerCase();
+  const teacher = document.getElementById('teacherFilter').value;
+  const year = document.getElementById('yearFilter').value;
+  const cards = document.querySelectorAll('.class-card');
+  let shown = 0;
+  cards.forEach(c => {
+    const show = (!q || c.dataset.search.includes(q))
+      && (teacher === 'all' || c.dataset.teacher === teacher)
+      && (year === 'all' || c.dataset.year === year);
+    c.style.display = show ? '' : 'none';
+    if (show) shown++;
+  });
+  document.getElementById('noResults').style.display = shown ? 'none' : 'block';
+  document.querySelector('.cards-grid').style.display = shown ? '' : 'none';
+}
+function clearClassFilters() {
+  document.getElementById('classSearch').value = '';
+  document.getElementById('teacherFilter').value = 'all';
+  document.getElementById('yearFilter').value = 'all';
+  filterClasses();
+}
+filterClasses();
+</script>
 {% else %}
 <div class="empty-state">
   <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></div>
