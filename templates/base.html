@@ -381,6 +381,47 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <script>
+// ── Tables with class .table-scroll-10: show exactly 10 rows, scroll the rest ──
+// Height is measured from the real row heights, so it is correct whether rows are
+// short (Question Analysis) or tall (rows with a "View Results" button).
+(function() {
+  var MAX_ROWS = 10;
+  var scheduled = false;
+  function fit() {
+    scheduled = false;
+    document.querySelectorAll('.table-wrap.table-scroll-10').forEach(function(w) {
+      var rows = w.querySelectorAll('tbody tr');
+      var head = w.querySelector('thead');
+      var cs = getComputedStyle(w);
+      if (rows.length <= MAX_ROWS) {
+        if (w.style.maxHeight !== 'none') w.style.maxHeight = 'none';
+        return;
+      }
+      if (!head || !head.offsetHeight || !rows[0].offsetHeight) return; // hidden tab: measure later
+      // exact (fractional) distance from top of header to bottom of the 10th row
+      var h = rows[MAX_ROWS - 1].getBoundingClientRect().bottom - head.getBoundingClientRect().top;
+      h += parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth) || 0;
+      var px = Math.ceil(h) + 'px';
+      if (w.style.maxHeight !== px) w.style.maxHeight = px;
+    });
+  }
+  function schedule() {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(fit);
+  }
+  document.addEventListener('DOMContentLoaded', function() {
+    fit();
+    // tables are re-rendered by live-refresh scripts, and tabs get shown/hidden
+    new MutationObserver(schedule).observe(document.body, {
+      childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden']
+    });
+    window.addEventListener('resize', schedule);
+  });
+})();
+</script>
+
+<script>
 // ── Preserve scroll position across form-submit page reloads ──
 // Pages like the Question Bank and Exam Editor submit plain <form> posts
 // (edit/delete question, etc.) which redirect back to the same page.

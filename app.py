@@ -323,6 +323,33 @@ def avg_essay_pct(conn, exam_id, question_id, points):
     total_pct = sum((r['manual_score'] / points) * 100 for r in rows)
     return round(total_pct / len(rows))
 
+def build_question_stats(conn, exam_id, questions_raw, total_submitted):
+    """Question Analysis rows, easiest first: for each question, how many of the
+    students who submitted got it RIGHT vs. not.
+    - A student counts as right only when the whole answer is right (for a
+      fill-in-the-blank, every blank must be right).
+    - Essay questions are left out: they are graded by hand, so there is no
+      simple right/wrong tally for them."""
+    gradable = [q for q in questions_raw if q['question_type'] != 'essay']
+    correct_counts = count_fully_correct(conn, exam_id, gradable)
+    stats = []
+    for q in gradable:
+        correct_count = correct_counts.get(q['id'], 0)
+        pct = round(correct_count / total_submitted * 100) if total_submitted else 0
+        stats.append({
+            'question_text': q['question_text'],
+            'question_type': q['question_type'],
+            'section_title': q['section_title'],
+            'correct_count': correct_count,
+            'total': total_submitted,
+            'pct': pct,
+        })
+    stats.sort(key=lambda x: x['pct'], reverse=True)
+    for i, qs in enumerate(stats, 1):
+        qs['number'] = i
+    return stats
+
+
 def pct_floor(score, total):
     """Whole-number percentage, multiplying BEFORE dividing so exact scores
     are not floored by float error (e.g. 58/100 must be 58, not 57)."""
@@ -2552,28 +2579,7 @@ def teacher_exam_monitoring(exam_id):
         ORDER BY s.order_index, q.order_index
     ''', (exam_id,)).fetchall()
 
-    question_stats = []
-    _correct_counts = count_fully_correct(conn, exam_id, questions_raw)
-    for q in questions_raw:
-        correct_count = _correct_counts.get(q['id'], 0)
-        if q['question_type'] == 'essay':
-            # Essays are rarely 100% correct — show the average score
-            # percentage across graded submissions instead of a binary rate.
-            _essay_pct = avg_essay_pct(conn, exam_id, q['id'], q['points'])
-            pct = _essay_pct if _essay_pct is not None else 0
-        else:
-            pct = round((correct_count / total_submitted * 100)) if total_submitted else 0
-        question_stats.append({
-            'question_text': q['question_text'],
-            'question_type': q['question_type'],
-            'section_title': q['section_title'],
-            'correct_count': correct_count,
-            'total': total_submitted,
-            'pct': pct,
-        })
-    question_stats.sort(key=lambda x: x['pct'], reverse=True)
-    for i, qs in enumerate(question_stats, 1):
-        qs['number'] = i
+    question_stats = build_question_stats(conn, exam_id, questions_raw, total_submitted)
 
     return render_template('teacher/exam_monitoring.html', exam=exam,
                            sessions=active_sessions, past_logs=past_logs, total_q=total_q,
@@ -2617,31 +2623,7 @@ def teacher_exam_results(exam_id):
     total_submitted = len(submitted_sessions)
     session_ids = [r['id'] for r in submitted_sessions]
 
-    question_stats = []
-    _correct_counts = count_fully_correct(conn, exam_id, questions_raw)
-    for q in questions_raw:
-        correct_count = _correct_counts.get(q['id'], 0)
-        if q['question_type'] == 'essay':
-            # Essays are rarely 100% correct — show the average score
-            # percentage across graded submissions instead of a binary rate.
-            _essay_pct = avg_essay_pct(conn, exam_id, q['id'], q['points'])
-            pct = _essay_pct if _essay_pct is not None else 0
-        else:
-            pct = round((correct_count / total_submitted * 100)) if total_submitted else 0
-        question_stats.append({
-            'question_text': q['question_text'],
-            'question_type': q['question_type'],
-            'section_title': q['section_title'],
-            'correct_count': correct_count,
-            'total': total_submitted,
-            'pct': pct,
-        })
-
-    # Sort by correct rate descending: #1 = easiest (most got right), last = hardest
-    question_stats.sort(key=lambda x: x['pct'], reverse=True)
-    # Assign rank AFTER sorting so number reflects difficulty order
-    for i, qs in enumerate(question_stats, 1):
-        qs['number'] = i
+    question_stats = build_question_stats(conn, exam_id, questions_raw, total_submitted)
 
     # Per-Section Analytics: aggregate the question stats above by exam section
     # (e.g. "Section A: Multiple Choice"), so a teacher can see which section
@@ -2649,6 +2631,8 @@ def teacher_exam_results(exam_id):
     section_order = []
     section_agg = {}
     for q in questions_raw:
+        if q['question_type'] == 'essay':
+            continue  # manually graded — not part of the auto-graded analytics
         title = q['section_title'] or 'Untitled Section'
         if title not in section_agg:
             section_agg[title] = {'section_title': title, 'question_count': 0, 'pct_sum': 0}
@@ -4997,7 +4981,7 @@ def admin_exam_analytics(exam_id):
         FROM questions q LEFT JOIN sections s ON q.section_id = s.id
         WHERE q.exam_id=? ORDER BY s.order_index, q.order_index
     """, (exam_id,)).fetchall()
-    correct_counts = count_fully_correct(conn, exam_id, q_rows)
+    correct_counts = count_fully_correct(conn, exam_id, [q for q in q_rows if q['question_type'] != 'essay'])
     answer_totals = {r['question_id']: r['n'] for r in conn.execute("""
         SELECT question_id, COUNT(*) as n FROM answers
         WHERE session_id IN (SELECT id FROM exam_sessions WHERE exam_id=? AND status='submitted')
@@ -5005,15 +4989,11 @@ def admin_exam_analytics(exam_id):
     """, (exam_id,)).fetchall()}
     hard_questions_list = []
     for q in q_rows:
+        if q['question_type'] == 'essay':
+            continue  # manually graded — no meaningful correct-rate
         total_ans = answer_totals.get(q['id'], 0)
         if total_ans > 0:
-            if q['question_type'] == 'essay':
-                # Essays are rarely 100% correct — show the average score
-                # percentage across graded submissions instead of a binary rate.
-                _essay_pct = avg_essay_pct(conn, exam_id, q['id'], q['points'])
-                rate = _essay_pct if _essay_pct is not None else 0
-            else:
-                rate = round((correct_counts[q['id']] / total_ans) * 100, 1)
+            rate = round((correct_counts[q['id']] / total_ans) * 100, 1)
             hard_questions_list.append({
                 'question_text': q['question_text'], 'question_type': q['question_type'],
                 'correct_count': correct_counts[q['id']], 'total_answers': total_ans,
@@ -5032,16 +5012,14 @@ def admin_exam_analytics(exam_id):
     section_order = []
     section_agg = {}
     for r in q_rows:
+        if r['question_type'] == 'essay':
+            continue  # manually graded — not part of the auto-graded analytics
         title = r['section_title'] or 'Untitled Section'
         if title not in section_agg:
             section_agg[title] = {'section_title': title, 'question_count': 0, 'pct_sum': 0}
             section_order.append(title)
         _tot = answer_totals.get(r['id'], 0)
-        if r['question_type'] == 'essay':
-            _essay_pct = avg_essay_pct(conn, exam_id, r['id'], r['points'])
-            pct = _essay_pct if _essay_pct is not None else 0
-        else:
-            pct = round((correct_counts[r['id']] / _tot) * 100) if _tot else 0
+        pct = round((correct_counts[r['id']] / _tot) * 100) if _tot else 0
         section_agg[title]['question_count'] += 1
         section_agg[title]['pct_sum'] += pct
     section_stats = []
@@ -5382,25 +5360,7 @@ def api_monitoring(exam_id):
         ORDER BY s.order_index, q.order_index
     ''', (exam_id,)).fetchall()
 
-    question_stats = []
-    _correct_counts = count_fully_correct(conn, exam_id, questions_raw)
-    for q in questions_raw:
-        correct_count = _correct_counts.get(q['id'], 0)
-        if q['question_type'] == 'essay':
-            _essay_pct = avg_essay_pct(conn, exam_id, q['id'], q['points'])
-            pct = _essay_pct if _essay_pct is not None else 0
-        else:
-            pct = round((correct_count / total_submitted * 100)) if total_submitted else 0
-        question_stats.append({
-            'question_text': q['question_text'],
-            'section_title': q['section_title'],
-            'correct_count': correct_count,
-            'total': total_submitted,
-            'pct': pct,
-        })
-    question_stats.sort(key=lambda x: x['pct'], reverse=True)
-    for i, qs in enumerate(question_stats, 1):
-        qs['number'] = i
+    question_stats = build_question_stats(conn, exam_id, questions_raw, total_submitted)
 
     return jsonify({
         'sessions': sessions_data,
@@ -5464,26 +5424,7 @@ def api_results(exam_id):
         ORDER BY s.order_index, q.order_index
     ''', (exam_id,)).fetchall()
 
-    question_stats = []
-    _correct_counts = count_fully_correct(conn, exam_id, questions_raw)
-    for q in questions_raw:
-        correct_count = _correct_counts.get(q['id'], 0)
-        if q['question_type'] == 'essay':
-            _essay_pct = avg_essay_pct(conn, exam_id, q['id'], q['points'])
-            pct = _essay_pct if _essay_pct is not None else 0
-        else:
-            pct = round((correct_count / total_submitted * 100)) if total_submitted else 0
-        question_stats.append({
-            'question_text': q['question_text'],
-            'section_title': q['section_title'],
-            'correct_count': correct_count,
-            'total': total_submitted,
-            'pct': pct,
-        })
-
-    question_stats.sort(key=lambda x: x['pct'], reverse=True)
-    for i, qs in enumerate(question_stats, 1):
-        qs['number'] = i
+    question_stats = build_question_stats(conn, exam_id, questions_raw, total_submitted)
 
     return jsonify({
         'results': results_list,

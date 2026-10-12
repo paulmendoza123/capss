@@ -1484,6 +1484,19 @@ div[style*="display: flex"][style*="gap"] .stat-card {
   box-shadow: 0 1px 0 var(--border);
 }
 
+/* ── Results / Question Analysis: show ~10 rows, scroll the rest (header stays visible) ── */
+.table-wrap.table-scroll-10 {
+  max-height: 50rem;
+  overflow-y: auto;
+}
+.table-wrap.table-scroll-10 thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--card);
+  box-shadow: 0 1px 0 var(--border);
+}
+
 
 /* ── OFFLINE SVG ICONS (replace emoji) ── */
 .icon {

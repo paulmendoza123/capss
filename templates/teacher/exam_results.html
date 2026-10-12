@@ -80,7 +80,7 @@
 </div>
 
 <div class="card" style="padding:0;overflow:visible">
-  <div class="table-wrap">
+  <div class="table-wrap table-scroll-10">
     <table style="min-width:540px">
       <thead>
         <tr>
@@ -171,17 +171,25 @@
 </div>
 {% endif %}
 {% if question_stats and total_submitted > 0 %}
+{% set qtype_meta = {
+  'multiple_choice': ['Multiple Choice', 'badge-blue'],
+  'true_false':      ['True / False',    'badge-green'],
+  'short_answer':    ['Short Answer',    'badge-orange'],
+  'fill_blank':      ['Fill in the Blank','badge-yellow'],
+  'essay':           ['Essay',           'badge-purple']
+} %}
 <div class="card mt-3" style="padding:0;overflow:visible">
   <div style="padding:1.25rem 1.25rem 0.75rem">
     <div class="card-title mb-1">Question Analysis</div>
-    <div class="text-sm text-muted mb-2">Sorted by most answered correctly — based on {{ total_submitted }} submission(s).</div>
+    <div class="text-sm text-muted mb-2">Sorted by most answered correctly — based on {{ total_submitted }} submission(s). Essays are excluded (graded manually). A student counts as correct only if the whole answer is right.</div>
   </div>
-  <div class="table-wrap">
-    <table style="min-width:480px">
+  <div class="table-wrap table-scroll-10">
+    <table style="min-width:600px">
       <thead>
         <tr>
           <th>#</th>
           <th>Question</th>
+          <th>Type</th>
           <th>Section</th>
           <th>Correct</th>
           <th>Rate</th>
@@ -192,6 +200,7 @@
         <tr>
           <td class="font-mono text-xs text-muted">{{ qs.number }}</td>
           <td style="max-width:320px">{{ qs.question_text }}</td>
+          <td class="text-sm">{% set qt = qtype_meta.get(qs.question_type, [qs.question_type or '—', 'badge-gray']) %}<span class="badge {{ qt[1] }}" style="white-space:nowrap">{{ qt[0] }}</span></td>
           <td class="text-sm text-muted">{{ qs.section_title or '—' }}</td>
           <td class="font-mono text-sm">{{ qs.correct_count }} / {{ qs.total }}</td>
           <td style="min-width:140px">
