@@ -88,7 +88,7 @@
           <td class="font-mono text-sm">{{ exam.session_count }}</td>
           <td class="text-sm text-muted">{{ exam.scheduled_at or '—' }}</td>
           <td>
-            <a href="{{ url_for('admin_exam_analytics', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">📊 Analytics</a>
+            <a href="{{ url_for('admin_exam_analytics', exam_id=exam.id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg> Analytics</a>
           </td>
         </tr>
         {% endfor %}
@@ -127,7 +127,7 @@
 </script>
 {% else %}
 <div class="empty-state">
-  <div class="empty-state-icon">📝</div>
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></div>
   {% if f_program or f_year_level or f_section %}
   <div class="empty-state-title">No exams match this filter</div>
   <div class="empty-state-text">Try a different program, year level, or section — or clear the filter above.</div>

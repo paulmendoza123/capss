@@ -61,7 +61,7 @@
       This account is locked out due to too many failed login attempts.
     </div>
     <form method="POST" action="{{ url_for('admin_unlock_user', user_id=user.id) }}">
-      <button type="submit" class="btn btn-primary btn-sm">🔓 Unlock Account</button>
+      <button type="submit" class="btn btn-primary btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-unlock"/></svg> Unlock Account</button>
     </form>
   </div>
   {% endif %}
@@ -95,7 +95,7 @@
           </div>
         </div>
       </div>
-      <button type="submit" class="btn btn-danger btn-sm">🔑 Save New Password</button>
+      <button type="submit" class="btn btn-danger btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> Save New Password</button>
     </form>
   </div>
   {% else %}

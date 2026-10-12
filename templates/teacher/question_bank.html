@@ -107,8 +107,8 @@
     <div class="page-subtitle">All questions across your exams and bank</div>
   </div>
   <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-    <button class="btn btn-ghost" onclick="openModal('modal-manage-groups')">🗂️ Manage Groups</button>
-    <button class="btn btn-ghost" onclick="openModal('modal-import-file')">📂 Import File</button>
+    <button class="btn btn-ghost" onclick="openModal('modal-manage-groups')"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg> Manage Groups</button>
+    <button class="btn btn-ghost" onclick="openModal('modal-import-file')"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg> Import File</button>
     <button class="btn btn-primary" onclick="openModal('modal-add-bank-q')">+ Add Question</button>
   </div>
 </div>
@@ -119,7 +119,7 @@
 <div class="modal-overlay" id="modal-manage-groups">
   <div class="modal" style="max-width:680px;width:95vw;max-height:88vh;display:flex;flex-direction:column;padding:1.75rem">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">
-      <div class="modal-title" style="margin-bottom:0;font-size:1.15rem">🗂️ Manage Groups</div>
+      <div class="modal-title" style="margin-bottom:0;font-size:1.15rem"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg> Manage Groups</div>
       <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-manage-groups')" style="padding:0.3rem 0.6rem;font-size:1.1rem;line-height:1">✕</button>
     </div>
 
@@ -185,16 +185,16 @@
           </div>
         </div>
         <div style="display:flex;gap:0.4rem;flex-shrink:0;margin-left:0.5rem">
-          <button type="button" class="btn btn-ghost btn-sm" onclick="toggleGroupEdit({{ g.id }})" title="Rename" style="padding:0.4rem 0.6rem">✏️</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="toggleGroupEdit({{ g.id }})" title="Rename" style="padding:0.4rem 0.6rem"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></button>
           <button type="button" class="btn btn-danger btn-sm" title="Delete" style="padding:0.4rem 0.6rem"
                   data-group-id="{{ g.id }}" data-group-name="{{ g.name }}" data-group-qcount="{{ qcount.n }}"
-                  onclick="confirmDeleteGroup(this.dataset.groupId, this.dataset.groupName, this.dataset.groupQcount)">🗑</button>
+                  onclick="confirmDeleteGroup(this.dataset.groupId, this.dataset.groupName, this.dataset.groupQcount)"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
         </div>
       </div>
       {% endfor %}
       {% else %}
       <div style="text-align:center;padding:3rem 1rem;color:var(--text3);font-size:0.9rem">
-        <div style="font-size:2rem;margin-bottom:0.75rem">🗂️</div>
+        <div style="font-size:2rem;margin-bottom:0.75rem"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg></div>
         No groups yet. Create one above.
       </div>
       {% endif %}
@@ -241,13 +241,13 @@
 <div class="modal-overlay" id="modal-import-file">
   <div class="modal" style="max-width:820px;width:95vw;max-height:90vh;overflow-y:auto">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
-      <div class="modal-title" style="margin-bottom:0">📂 Import Questions from File</div>
+      <div class="modal-title" style="margin-bottom:0"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg> Import Questions from File</div>
       <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-import-file')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
     </div>
 
     {# Format guide #}
     <div class="qb-modal-section" style="margin-bottom:1rem">
-      <div class="qb-modal-section-title">📋 Required File Format (.txt, .docx)</div>
+      <div class="qb-modal-section-title"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg> Required File Format (.txt, .docx)</div>
 
       {# Format box + vertical type selector, side by side #}
       <div style="display:flex;gap:0.75rem;align-items:stretch">
@@ -287,9 +287,12 @@
             <div style="color:var(--text3);font-weight:700;margin-bottom:0.35rem;font-family:inherit">Plain question:</div>
             <div>1. What is the brain of the computer?</div>
             <div>Answer: CPU</div>
+            <div style="margin-top:0.5rem">2. What device stores your files permanently?</div>
+            <div>Answer: Hard drive/HDD/SSD</div>
+            <div style="color:var(--text3);font-size:0.72rem;margin-top:0.35rem;font-family:inherit">Tip: separate alternative answers with <strong>/</strong>, just like Fill in the Blank — a student is correct if they match any one of them (question 2 accepts "Hard drive", "HDD" or "SSD").</div>
             <div style="margin:0.6rem 0;border-top:1px dashed var(--border)"></div>
             <div style="color:var(--text3);font-weight:700;margin-bottom:0.35rem;font-family:inherit">With a code block:</div>
-            <div>2. What will this code print?</div>
+            <div>3. What will this code print?</div>
             <div>'''</div>
             <div>for i in range(3):</div>
             <div>&nbsp;&nbsp;&nbsp;&nbsp;print(i)</div>
@@ -300,11 +303,17 @@
           {# ── Fill in the Blank ── #}
           <div class="import-format-panel" data-format-panel="fib" style="display:none">
             <div style="color:var(--text3);font-weight:700;margin-bottom:0.35rem;font-family:inherit">Plain question:</div>
-            <div>1. The ___ is the brain of the computer, and RAM stands for ___.</div>
+            <div>1. The ___ is the brain of the computer.</div>
+            <div>Answer: CPU</div>
+            <div style="margin-top:0.5rem">2. Files are stored permanently on a ___.</div>
+            <div>Answer: Hard drive/HDD/SSD</div>
+            <div style="color:var(--text3);font-size:0.72rem;margin-top:0.35rem;font-family:inherit">Tip: separate alternative answers for the same blank with <strong>/</strong> — a student is correct if they match any one of them (question 2 accepts "Hard drive", "HDD" or "SSD").</div>
+            <div style="margin-top:0.5rem">3. The ___ is the brain of the computer, and RAM stands for ___.</div>
             <div>Answer: CPU/Central Processing Unit | Random Access Memory/RAM</div>
+            <div style="color:var(--text3);font-size:0.72rem;margin-top:0.35rem;font-family:inherit">With more than one blank, separate each blank's answers with <strong>|</strong> (in the order the blanks appear).</div>
             <div style="margin:0.6rem 0;border-top:1px dashed var(--border)"></div>
             <div style="color:var(--text3);font-weight:700;margin-bottom:0.35rem;font-family:inherit">With a code block:</div>
-            <div>2. Study the code below.</div>
+            <div>4. Study the code below.</div>
             <div>'''</div>
             <div>x = 10</div>
             <div>y = 3</div>
@@ -351,16 +360,22 @@
                   onclick="showImportFormat('essay')" style="justify-content:flex-start">Essay</button>
 
           <div style="font-size:0.72rem;color:var(--text3);margin-top:0.5rem;line-height:1.5">
-            ℹ️ The group name will be taken from the filename automatically (e.g. <em>Chapter3.docx</em> → <strong>Chapter3</strong>).
+            <svg class="icon" aria-hidden="true"><use href="#i-info"/></svg> The group name will be taken from the filename automatically (e.g. <em>Chapter3.docx</em> → <strong>Chapter3</strong>).
           </div>
           <div style="font-size:0.72rem;color:var(--text3);line-height:1.5">
-            ℹ️ For Fill in the Blank: use <strong>___</strong> (three underscores) to mark each blank in the question. In the answer line, separate answers for <strong>different blanks</strong> with <strong>|</strong>, and separate <strong>alternate acceptable answers</strong> for the same blank with <strong>/</strong>.
+            <svg class="icon" aria-hidden="true"><use href="#i-info"/></svg> For Fill in the Blank: use <strong>___</strong> (three underscores) to mark each blank in the question. In the answer line, separate answers for <strong>different blanks</strong> with <strong>|</strong>, and separate <strong>alternate acceptable answers</strong> for the same blank with <strong>/</strong>.
           </div>
           <div style="font-size:0.72rem;color:var(--text3);line-height:1.5">
-            ℹ️ For Essay: add a <strong>Rubric:</strong> line after the question, then one <strong>- Criterion: points</strong> line per criterion. A rubric is required — essays with no valid rubric line are skipped.
+            <svg class="icon" aria-hidden="true"><use href="#i-info"/></svg> For Short Answer: you can accept more than one answer by separating the <strong>alternative answers</strong> with <strong>/</strong> (e.g. <strong>Answer: CPU/Processor</strong>), the same as Fill in the Blank. A student is marked correct if their answer matches any one of them. (If a single answer must contain a slash, such as <strong>TCP/IP</strong>, typing the whole <strong>TCP/IP</strong> is still accepted.)
           </div>
           <div style="font-size:0.72rem;color:var(--text3);line-height:1.5">
-            ℹ️ For a code block (any question type): wrap the code in <strong>```</strong>, <strong>'''</strong> or <strong>"""</strong> (any one of them, detected automatically) on its own line before and after. Indentation and blank lines inside the fence are kept exactly as typed.
+            <svg class="icon" aria-hidden="true"><use href="#i-info"/></svg> Maximum file size: <strong>10 MB</strong>. Supported files: <strong>.txt</strong> and <strong>.docx</strong>.
+          </div>
+          <div style="font-size:0.72rem;color:var(--text3);line-height:1.5">
+            <svg class="icon" aria-hidden="true"><use href="#i-info"/></svg> For Essay: add a <strong>Rubric:</strong> line after the question, then one <strong>- Criterion: points</strong> line per criterion. A rubric is required — essays with no valid rubric line are skipped.
+          </div>
+          <div style="font-size:0.72rem;color:var(--text3);line-height:1.5">
+            <svg class="icon" aria-hidden="true"><use href="#i-info"/></svg> For a code block (any question type): wrap the code in <strong>```</strong>, <strong>'''</strong> or <strong>"""</strong> (any one of them, detected automatically) on its own line before and after. Indentation and blank lines inside the fence are kept exactly as typed.
           </div>
         </div>
 
@@ -384,14 +399,15 @@
         <input type="file" name="import_file" accept=".txt,.docx" class="form-control"
                required style="padding:0.45rem 0.65rem;font-size:0.9rem" id="importFileInput"
                onchange="updateImportPreview(this)">
+        <div class="form-hint">Maximum file size: 10 MB</div>
         <div id="importFilename" style="font-size:0.78rem;color:var(--text3);margin-top:0.35rem;display:none">
-          📄 Group will be named: <strong id="importGroupName"></strong>
+          <svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> Group will be named: <strong id="importGroupName"></strong>
         </div>
       </div>
 
       <div class="modal-footer" style="padding-top:0.75rem;border-top:1px solid var(--border)">
         <button type="button" class="btn btn-ghost" onclick="closeModal('modal-import-file')">Cancel</button>
-        <button type="submit" class="btn btn-primary">📥 Import &amp; Generate Group</button>
+        <button type="submit" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Import &amp; Generate Group</button>
       </div>
     </form>
   </div>
@@ -423,19 +439,19 @@ function updateImportPreview(input) {
         <label class="form-label">Question Type</label>
         <div class="type-pills">
           <div class="type-pill" id="pill-mc" onclick="selectType('multiple_choice')">
-            🔘 Multiple Choice
+            <svg class="icon" aria-hidden="true"><use href="#i-radio"/></svg> Multiple Choice
           </div>
           <div class="type-pill" id="pill-tf" onclick="selectType('true_false')">
-            ⚖️ True / False
+            <svg class="icon" aria-hidden="true"><use href="#i-scale"/></svg> True / False
           </div>
           <div class="type-pill" id="pill-sa" onclick="selectType('short_answer')">
-            ✏️ Short Answer
+            <svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Short Answer
           </div>
           <div class="type-pill" id="pill-fib" onclick="selectType('fill_blank')">
             ▭ Fill in the Blank
           </div>
           <div class="type-pill" id="pill-essay" onclick="selectType('essay')">
-            📝 Essay
+            <svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> Essay
           </div>
         </div>
         <input type="hidden" name="question_type" id="bankQType">
@@ -511,8 +527,12 @@ function updateImportPreview(input) {
       <div id="bqShort" style="display:none">
         <div class="form-group">
           <label class="form-label">Expected Answer</label>
-          <input type="text" name="correct_answer_sa" id="bankSaAnswer"
-                 class="form-control" placeholder="The expected correct answer…">
+          <div class="alt-answers">
+            <div class="alt-row"><input type="text" name="correct_answer_sa" id="bankSaAnswer"
+                   class="form-control bank-sa-input" placeholder="The expected correct answer…"></div>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="addAltAnswer(this)" style="margin-top:0.4rem"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Add alternative answer</button>
+            <div class="form-hint">Students are marked correct if their answer matches any of these.</div>
+          </div>
         </div>
       </div>
 
@@ -778,7 +798,7 @@ document.addEventListener('input', function(e) {
     hint.textContent = `✓ ${blankCount} blank(s) matched.`;
     hint.style.color = 'var(--accent2)';
   } else {
-    hint.textContent = `⚠ ${blankCount} blank(s) in text, but ${ansCount} answer group(s) provided.`;
+    hint.textContent = `${blankCount} blank(s) in text, but ${ansCount} answer group(s) provided.`;
     hint.style.color = 'var(--danger)';
   }
 });
@@ -838,7 +858,8 @@ function bankSubmitValidate(e) {
     }
     ca.value = '';
   } else {
-    ca.value = document.getElementById('bankSaAnswer').value;
+    ca.value = Array.prototype.map.call(document.querySelectorAll('#bqShort input.bank-sa-input'), function (i) { return i.value.trim(); })
+      .filter(Boolean).join('/');
   }
   return true;
 }
@@ -923,7 +944,7 @@ function confirmDeleteGroup(id, name, qcount) {
 {% if questions %}
 {# ── Filters ── #}
 <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
-  <input type="text" id="qSearch" class="form-control" placeholder="🔍 Search questions…"
+  <input type="text" id="qSearch" class="form-control" placeholder="Search questions…"
          style="flex:1;min-width:160px;max-width:230px" oninput="filterQ()">
   <select id="qTypeFilter" class="form-select" style="width:160px;flex-shrink:0" onchange="filterQ()">
     <option value="all">All Types</option>
@@ -949,7 +970,7 @@ function confirmDeleteGroup(id, name, qcount) {
     {% if gqs %}
     <div class="q-group-block" data-group-id="g{{ g.id }}" style="margin-bottom:1.5rem">
       <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem;flex-wrap:wrap">
-        <span style="font-weight:700;font-size:0.95rem">🗂️ {{ g.name }}</span>
+        <span style="font-weight:700;font-size:0.95rem"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg> {{ g.name }}</span>
         <span class="badge badge-blue">{{ gqs|length }} question{{ 's' if gqs|length != 1 else '' }}</span>
         {% if g.subject_name %}
         <span class="badge badge-gray" style="font-size:0.75rem">{{ g.subject_name }} · {{ g.block_name }}</span>
@@ -977,11 +998,11 @@ function confirmDeleteGroup(id, name, qcount) {
               <td class="font-mono text-sm">{{ q.points }}</td>
               <td>
                 <div class="flex gap-1">
-                  <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')">✏️</button>
+                  <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></button>
                   <form method="POST" action="{{ url_for('teacher_delete_question', question_id=q.id) }}"
                         onsubmit="return confirm('Delete this question?')" style="display:inline">
                     <input type="hidden" name="redirect_to" value="bank">
-                    <button type="submit" class="btn btn-danger btn-sm">🗑</button>
+                    <button type="submit" class="btn btn-danger btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
                   </form>
                 </div>
               </td>
@@ -1002,7 +1023,7 @@ function confirmDeleteGroup(id, name, qcount) {
 {% if ungrouped %}
 <div class="q-group-block" data-group-id="ungrouped" style="margin-bottom:1.5rem">
   <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.5rem">
-    <span style="font-weight:700;font-size:0.95rem;color:var(--text2)">📄 Ungrouped</span>
+    <span style="font-weight:700;font-size:0.95rem;color:var(--text2)"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> Ungrouped</span>
     <span class="badge badge-gray">{{ ungrouped|length }} question{{ 's' if ungrouped|length != 1 else '' }}</span>
   </div>
   <div class="card" style="overflow:visible;padding:0">
@@ -1027,11 +1048,11 @@ function confirmDeleteGroup(id, name, qcount) {
           <td class="font-mono text-sm">{{ q.points }}</td>
           <td>
             <div class="flex gap-1">
-              <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')">✏️</button>
+              <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></button>
               <form method="POST" action="{{ url_for('teacher_delete_question', question_id=q.id) }}"
                     onsubmit="return confirm('Delete this question?')" style="display:inline">
                 <input type="hidden" name="redirect_to" value="bank">
-                <button type="submit" class="btn btn-danger btn-sm">🗑</button>
+                <button type="submit" class="btn btn-danger btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
               </form>
             </div>
           </td>
@@ -1045,7 +1066,7 @@ function confirmDeleteGroup(id, name, qcount) {
 {% endif %}
 
 <div id="noResults" style="display:none" class="empty-state mt-2">
-  <div class="empty-state-icon">🔍</div>
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg></div>
   <div class="empty-state-title">No questions found</div>
   <div class="empty-state-text">Try a different search or filter.</div>
 </div>
@@ -1055,7 +1076,7 @@ function confirmDeleteGroup(id, name, qcount) {
 <div class="modal-overlay" id="edit-bq-{{ q.id }}">
   <div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
-      <div class="modal-title" style="margin-bottom:0">✏️ Edit Question</div>
+      <div class="modal-title" style="margin-bottom:0"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Edit Question</div>
       <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('edit-bq-{{ q.id }}')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
     </div>
     <form method="POST" action="{{ url_for('teacher_edit_question', question_id=q.id) }}">
@@ -1152,7 +1173,16 @@ function confirmDeleteGroup(id, name, qcount) {
       {% else %}
       <div class="form-group">
         <label class="form-label">Expected Answer</label>
-        <input type="text" name="correct_answer" class="form-control" value="{{ q.correct_answer }}" placeholder="Expected answer">
+        <div class="alt-answers">
+          {% for alt in (q.correct_answer|sa_alts) or [''] %}
+          <div class="alt-row">
+            <input type="text" name="correct_answer" class="form-control" value="{{ alt }}" placeholder="{{ 'Expected answer' if loop.first else 'Alternative answer' }}">
+            {% if not loop.first %}<button type="button" class="btn btn-ghost btn-sm alt-remove" onclick="this.parentNode.remove()" aria-label="Remove alternative answer" title="Remove">✕</button>{% endif %}
+          </div>
+          {% endfor %}
+          <button type="button" class="btn btn-ghost btn-sm" onclick="addAltAnswer(this)" style="margin-top:0.4rem"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Add alternative answer</button>
+          <div class="form-hint">Students are marked correct if their answer matches any of these.</div>
+        </div>
       </div>
       <div class="form-group">
         <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
@@ -1193,7 +1223,7 @@ function filterQ() {
 
 {% else %}
 <div class="empty-state">
-  <div class="empty-state-icon">🗄️</div>
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg></div>
   <div class="empty-state-title">No questions yet</div>
   <div class="empty-state-text">Add questions directly to the bank, or create an exam and add questions there.</div>
 </div>

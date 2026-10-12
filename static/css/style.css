@@ -599,7 +599,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  background: linear-gradient(90deg, #1db885, #34d399);
 }
 .class-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--shadow); }
 .class-code {
@@ -1483,3 +1483,30 @@ div[style*="display: flex"][style*="gap"] .stat-card {
   background: var(--card);
   box-shadow: 0 1px 0 var(--border);
 }
+
+
+/* ── OFFLINE SVG ICONS (replace emoji) ── */
+.icon {
+  width: 1.1em; height: 1.1em;
+  display: inline-block;
+  vertical-align: -0.18em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+.icon-ok { color: var(--accent2); }
+.icon-warn { color: var(--warning); }
+.icon-danger { color: var(--danger); }
+.logo-icon .icon, .auth-logo-icon .icon { color: #fff; width: 1.3em; height: 1.3em; vertical-align: middle; }
+.nav-item .nav-icon .icon { width: 1.15em; height: 1.15em; vertical-align: middle; }
+.empty-state-icon .icon, .terminated-icon .icon { stroke-width: 1.5; }
+.ftb-icon .icon { vertical-align: middle; }
+
+
+/* ── Short answer alternative answers ── */
+.alt-row { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; }
+.alt-row .form-control { flex: 1; min-width: 0; }
+.alt-row .alt-remove { flex-shrink: 0; padding: 0.4rem 0.6rem; }

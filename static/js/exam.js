@@ -379,7 +379,7 @@
       el.style.border = '1px solid rgba(139,145,168,0.4)';
       el.style.color = '#b8bcc8';
     } else {
-      el.textContent = '⚠ Save failed – retrying…';
+      el.textContent = 'Save failed – retrying…';
       el.style.background = 'rgba(247,95,95,0.15)';
       el.style.border = '1px solid rgba(247,95,95,0.35)';
       el.style.color = '#f75f5f';

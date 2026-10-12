@@ -23,8 +23,8 @@
 </div>
 
 <div class="tabs">
-  <button class="tab-btn active" data-tab="questions">📝 Questions</button>
-  <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
+  <button class="tab-btn active" data-tab="questions"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> Questions</button>
+  <button class="tab-btn" data-tab="settings"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg> Settings</button>
 </div>
 
 <!-- QUESTIONS TAB -->
@@ -109,7 +109,7 @@
           {% elif q.question_type == 'true_false' %}
           <div class="text-sm text-muted mt-1">Answer: <span class="text-success fw-600">{{ q.correct_answer }}</span></div>
           {% elif q.question_type == 'short_answer' %}
-          <div class="text-sm text-muted mt-1">Answer: <span class="text-success fw-600">{{ q.correct_answer }}</span>
+          <div class="text-sm text-muted mt-1">Answer: {% for alt in q.correct_answer|sa_alts %}<span class="text-success fw-600">{{ alt }}</span>{% if not loop.last %} <span class="text-muted">or</span> {% endif %}{% else %}<span class="text-success fw-600">{{ q.correct_answer }}</span>{% endfor %}
             {% if q.case_sensitive %}<span class="badge badge-gray text-xs" style="margin-left:0.4rem" title="Exact case must match">Aa Case-sensitive</span>{% endif %}
           </div>
           {% elif q.question_type == 'fill_blank' %}
@@ -122,7 +122,7 @@
           </div>
           {% elif q.question_type == 'essay' %}
           <div class="text-sm text-muted mt-1">
-            📝 Manually graded · Rubric:
+            <svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> Manually graded · Rubric:
             {% for crit in q.rubric_criteria %}
             <span class="badge badge-gray text-xs" style="margin:0 0.15rem">{{ crit.criterion_text }} ({{ crit.max_points }} pt{{ 's' if crit.max_points != 1 else '' }})</span>
             {% endfor %}
@@ -222,7 +222,16 @@
             {% else %}
             <div class="form-group">
               <label class="form-label">Correct Answer</label>
-              <input type="text" name="correct_answer" class="form-control" value="{{ q.correct_answer }}" placeholder="Expected answer" />
+              <div class="alt-answers">
+                {% for alt in (q.correct_answer|sa_alts) or [''] %}
+                <div class="alt-row">
+                  <input type="text" name="correct_answer" class="form-control" value="{{ alt }}" placeholder="{{ 'Expected answer' if loop.first else 'Alternative answer' }}" />
+                  {% if not loop.first %}<button type="button" class="btn btn-ghost btn-sm alt-remove" onclick="this.parentNode.remove()" aria-label="Remove alternative answer" title="Remove">✕</button>{% endif %}
+                </div>
+                {% endfor %}
+                <button type="button" class="btn btn-ghost btn-sm" onclick="addAltAnswer(this)" style="margin-top:0.4rem"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Add alternative answer</button>
+                <div class="form-hint">Students are marked correct if their answer matches any of these.</div>
+              </div>
             </div>
             <div class="form-group">
               <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
@@ -310,7 +319,11 @@
           <div class="qtype-fields qtype-fields-sa" style="display:none">
             <div class="form-group">
               <label class="form-label">Correct Answer</label>
-              <input type="text" name="correct_answer_sa" class="form-control" placeholder="Expected answer" />
+              <div class="alt-answers">
+                <div class="alt-row"><input type="text" name="correct_answer_sa" class="form-control" placeholder="Expected answer" /></div>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="addAltAnswer(this)" style="margin-top:0.4rem"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Add alternative answer</button>
+                <div class="form-hint">Students are marked correct if their answer matches any of these.</div>
+              </div>
             </div>
             <div class="form-group">
               <label class="text-sm" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
@@ -365,9 +378,9 @@
     {% endfor %}
   {% else %}
   <div class="empty-state" id="empty-sections-state">
-    <div class="empty-state-icon">📝</div>
+    <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></div>
     <div class="empty-state-title">No sections yet</div>
-    <div class="empty-state-text">Use the ➕ button on the right to add your first section.</div>
+    <div class="empty-state-text">Use the <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> button on the right to add your first section.</div>
   </div>
   {% endif %}
 
@@ -378,7 +391,7 @@
   <div class="modal-overlay" id="modal-import-bank">
     <div class="modal" style="max-width:640px;width:95vw">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-        <div class="modal-title" style="margin-bottom:0">🗄️ Import from Question Bank</div>
+        <div class="modal-title" style="margin-bottom:0"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg> Import from Question Bank</div>
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-import-bank')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
       </div>
 
@@ -465,7 +478,7 @@
                   style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:0.45rem 0.65rem;background:var(--bg2);border:1px solid var(--border);border-radius:7px;cursor:pointer;text-align:left;color:inherit">
                   <span style="display:flex;flex-direction:column;gap:0.1rem">
                     {% if bq.group_name %}
-                    <span style="font-size:0.85rem;font-weight:700">🗂️ {{ bq.group_name }}</span>
+                    <span style="font-size:0.85rem;font-weight:700"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg> {{ bq.group_name }}</span>
                     {% if bq.exam_title or bq.group_subject or bq.subject_name %}
                     <span style="font-size:0.75rem;color:var(--text2)">
                       {%- if bq.exam_title %}{{ bq.exam_title }}{% endif %}
@@ -477,7 +490,7 @@
                     <span style="font-size:0.85rem;font-weight:700">{{ bq.exam_title }}</span>
                     <span style="font-size:0.75rem;color:var(--text2)">{{ bq.subject_name }} — {{ bq.block_name }} · Ungrouped</span>
                     {% else %}
-                    <span style="font-size:0.85rem;font-weight:700">📁 Question Bank</span>
+                    <span style="font-size:0.85rem;font-weight:700"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg> Question Bank</span>
                     <span style="font-size:0.75rem;color:var(--text2)">Ungrouped</span>
                     {% endif %}
                   </span>
@@ -543,13 +556,13 @@
 <!-- Floating Toolbar (Google Forms style) — only relevant on the Questions tab -->
 <div class="floating-toolbar" id="floatingToolbar">
   <button type="button" class="ftb-btn" data-tip="Add Section" onclick="ftbAddSection()">
-    <span class="ftb-icon">➕</span>
+    <span class="ftb-icon"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></span>
   </button>
   <button type="button" class="ftb-btn" data-tip="Add Question" onclick="ftbAddQuestion()">
-    <span class="ftb-icon">📝</span>
+    <span class="ftb-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></span>
   </button>
   <button type="button" class="ftb-btn" data-tip="Import from Bank" onclick="ftbImportFromBank()">
-    <span class="ftb-icon">🗄️</span>
+    <span class="ftb-icon"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg></span>
   </button>
 </div>
 
@@ -647,7 +660,7 @@
       <div class="flex gap-2" style="flex-wrap:wrap">
         <button type="submit" class="btn btn-primary btn-lg">Save Settings</button>
         <button type="submit" name="action" value="delete" class="btn btn-danger btn-lg"
-          onclick="return confirm('Delete this exam and ALL its data? This cannot be undone.')">🗑 Delete Exam</button>
+          onclick="return confirm('Delete this exam and ALL its data? This cannot be undone.')"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete Exam</button>
       </div>
     </form>
   </div>
@@ -1052,7 +1065,7 @@ document.addEventListener('input', function(e) {
     hint.textContent = `✓ ${blankCount} blank(s) matched.`;
     hint.style.color = 'var(--accent2)';
   } else {
-    hint.textContent = `⚠ ${blankCount} blank(s) in text, but ${ansCount} answer group(s) provided.`;
+    hint.textContent = `${blankCount} blank(s) in text, but ${ansCount} answer group(s) provided.`;
     hint.style.color = 'var(--danger)';
   }
 });

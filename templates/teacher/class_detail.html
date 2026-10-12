@@ -11,14 +11,14 @@
   </div>
   <div class="page-actions">
     <a href="{{ url_for('teacher_home') }}" class="btn btn-ghost">← Back</a>
-    <a href="{{ url_for('teacher_create_exam', class_id=cls.id) }}" class="btn btn-primary">➕ Create Exam</a>
+    <a href="{{ url_for('teacher_create_exam', class_id=cls.id) }}" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Create Exam</a>
   </div>
 </div>
 
 <div class="tabs">
-  <button class="tab-btn active" data-tab="exams">📝 Exams</button>
-  <button class="tab-btn" data-tab="students">👥 Students ({{ students|length }})</button>
-  <button class="tab-btn" data-tab="allowed-emails">🔒 Allowed Emails ({{ allowed_emails|length }})</button>
+  <button class="tab-btn active" data-tab="exams"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> Exams</button>
+  <button class="tab-btn" data-tab="students"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg> Students ({{ students|length }})</button>
+  <button class="tab-btn" data-tab="allowed-emails"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Allowed Emails ({{ allowed_emails|length }})</button>
 </div>
 
 <!-- EXAMS TAB -->
@@ -30,11 +30,11 @@
       <div>
         <a href="{{ url_for('teacher_exam_monitoring', exam_id=exam.id) }}" class="exam-card-title" style="text-decoration:none;color:inherit;">{{ exam.title }} →</a>
         <div class="exam-card-meta">
-          <span class="exam-meta-item">⏱ {{ exam.duration_minutes }} min</span>
-          {% if exam.scheduled_at %}<span class="exam-meta-item">📅 {{ exam.scheduled_at }}</span>{% endif %}
+          <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam.duration_minutes }} min</span>
+          {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at }}</span>{% endif %}
           <span class="exam-meta-item">Tab limit: {{ exam.tab_switch_limit }}</span>
           {% if exam.exam_code %}
-          <span class="exam-meta-item" style="font-family:monospace;font-weight:700;letter-spacing:0.15em;color:var(--accent);background:rgba(108,99,255,0.12);padding:0.1rem 0.5rem;border-radius:5px;border:1px solid rgba(108,99,255,0.3)">🔑 {{ exam.exam_code }}</span>
+          <span class="exam-meta-item" style="font-family:monospace;font-weight:700;letter-spacing:0.15em;color:var(--accent);background:rgba(108,99,255,0.12);padding:0.1rem 0.5rem;border-radius:5px;border:1px solid rgba(108,99,255,0.3)"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> {{ exam.exam_code }}</span>
           {% endif %}
         </div>
       </div>
@@ -45,17 +45,17 @@
         {% if exam.status != 'completed' %}
         <form method="POST" action="{{ url_for('teacher_toggle_exam_status', exam_id=exam.id) }}" style="display:inline;">
           {% if exam.status == 'active' %}
-            <button type="submit" class="btn btn-sm" style="background:#e74c3c;color:#fff;">🔒 Close</button>
+            <button type="submit" class="btn btn-sm" style="background:#e74c3c;color:#fff;"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Close</button>
           {% else %}
-            <button type="submit" class="btn btn-success btn-sm">🔓 Open</button>
+            <button type="submit" class="btn btn-success btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-unlock"/></svg> Open</button>
           {% endif %}
         </form>
         {% endif %}
         {% if exam.status == 'active' %}
         <button type="button" class="btn btn-ghost btn-sm" disabled
-                title="Close the exam before editing" style="opacity:0.5;cursor:not-allowed">✏️ Edit</button>
+                title="Close the exam before editing" style="opacity:0.5;cursor:not-allowed"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Edit</button>
         {% else %}
-        <a href="{{ url_for('teacher_exam_detail', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">✏️ Edit</a>
+        <a href="{{ url_for('teacher_exam_detail', exam_id=exam.id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Edit</a>
         {% endif %}
       </div>
     </div>
@@ -63,7 +63,7 @@
   {% endfor %}
   {% else %}
   <div class="empty-state">
-    <div class="empty-state-icon">📝</div>
+    <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></div>
     <div class="empty-state-title">No exams yet</div>
   </div>
   {% endif %}
@@ -93,7 +93,7 @@
   </div>
   {% else %}
   <div class="empty-state">
-    <div class="empty-state-icon">👥</div>
+    <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg></div>
     <div class="empty-state-title">No students enrolled yet</div>
     <div class="empty-state-text">Share the class code <span class="font-mono text-accent">{{ cls.class_code }}</span> with your students.</div>
   </div>
@@ -103,7 +103,7 @@
 <!-- ALLOWED EMAILS TAB -->
 <div class="tab-content" data-tab="allowed-emails" id="allowed-emails">
   <div class="card mb-2" style="padding:1.25rem">
-    <div class="fw-600" style="margin-bottom:0.35rem">🔒 Who can join with the class code?</div>
+    <div class="fw-600" style="margin-bottom:0.35rem"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Who can join with the class code?</div>
     {% if allowed_emails %}
     <div class="text-muted" style="font-size:0.85rem;margin-bottom:1rem">
       Only the <strong>{{ allowed_emails|length }}</strong> email{{ 's' if allowed_emails|length != 1 else '' }} listed below can join this class using
@@ -120,14 +120,14 @@
       <form method="POST" action="{{ url_for('teacher_add_allowed_emails', class_id=cls.id) }}" style="flex:1;min-width:260px">
         <label class="form-label" style="font-size:0.8rem">Add emails manually</label>
         <textarea name="emails" class="form-control" rows="3" placeholder="juan@psu.palawan.edu.ph, maria@psu.palawan.edu.ph&#10;(comma or new line separated)" style="font-size:0.85rem"></textarea>
-        <button type="submit" class="btn btn-primary btn-sm" style="margin-top:0.5rem">➕ Add to List</button>
+        <button type="submit" class="btn btn-primary btn-sm" style="margin-top:0.5rem"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Add to List</button>
       </form>
 
       <form method="POST" action="{{ url_for('teacher_import_allowed_emails', class_id=cls.id) }}" enctype="multipart/form-data" style="flex:1;min-width:260px">
         <label class="form-label" style="font-size:0.8rem">Or upload a file (.txt, .csv, .docx, .xlsx)</label>
         <input type="file" name="emails_file" accept=".txt,.csv,.docx,.xlsx" class="form-control" style="font-size:0.85rem;padding:0.4rem 0.6rem">
-        <div class="text-muted" style="font-size:0.72rem;margin-top:0.3rem">Any email-looking text in the file is picked up automatically — no special format needed.</div>
-        <button type="submit" class="btn btn-ghost btn-sm" style="margin-top:0.5rem">⬆️ Import File</button>
+        <div class="text-muted" style="font-size:0.72rem;margin-top:0.3rem">Any email-looking text in the file is picked up automatically — no special format needed. Maximum file size: 10 MB.</div>
+        <button type="submit" class="btn btn-ghost btn-sm" style="margin-top:0.5rem"><svg class="icon" aria-hidden="true"><use href="#i-arrow-up"/></svg> Import File</button>
       </form>
     </div>
   </div>
@@ -161,7 +161,7 @@
   </div>
   <div style="margin-top:1rem">
     <form method="POST" action="{{ url_for('teacher_clear_allowed_emails', class_id=cls.id) }}" onsubmit="return confirm('This removes the whole list. The class will become open — ANY student with the class code will be able to join. Continue?')">
-      <button type="submit" class="btn btn-ghost btn-sm" style="color:#e74c3c">🗑 Clear Entire List (reopen class to anyone)</button>
+      <button type="submit" class="btn btn-ghost btn-sm" style="color:#e74c3c"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Clear Entire List (reopen class to anyone)</button>
     </form>
   </div>
   {% endif %}

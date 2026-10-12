@@ -23,16 +23,16 @@
 </div>
 
 <div class="tabs">
-  <button class="tab-btn active" data-tab="live">🟢 Live Sessions</button>
-  <button class="tab-btn" data-tab="logs">📋 Activity Logs</button>
-  <button class="tab-btn" data-tab="results">📊 Results</button>
+  <button class="tab-btn active" data-tab="live"><svg class="icon icon-ok" aria-hidden="true"><use href="#i-dot"/></svg> Live Sessions</button>
+  <button class="tab-btn" data-tab="logs"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg> Activity Logs</button>
+  <button class="tab-btn" data-tab="results"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg> Results</button>
 </div>
 
 <!-- LIVE TAB -->
 <div class="tab-content active" data-tab="live">
   {% if exam.status != 'active' %}
   <div class="empty-state">
-    <div class="empty-state-icon">👁</div>
+    <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg></div>
     <div class="empty-state-title">Exam is not active</div>
     <div class="empty-state-text">Change the exam status to Active to start monitoring students.</div>
     <a href="{{ url_for('teacher_exam_detail', exam_id=exam.id) }}" class="btn btn-primary mt-2">Go to Settings</a>
@@ -118,7 +118,7 @@
       {% endfor %}
     {% else %}
       <div class="empty-state" id="empty-state">
-        <div class="empty-state-icon">👥</div>
+        <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg></div>
         <div class="empty-state-title">No active students yet</div>
         <div class="empty-state-text">Students will appear here once they start the exam.</div>
       </div>
@@ -133,7 +133,7 @@
 
   <!-- Filter bar -->
   <div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-bottom:1rem; align-items:center;">
-    <input type="text" id="log-filter-name" placeholder="🔍 Filter by student..." class="form-control"
+    <input type="text" id="log-filter-name" placeholder="Filter by student..." class="form-control"
            style="max-width:220px; padding:0.4rem 0.75rem; font-size:0.85rem;"
            oninput="applyLogFilters()" />
     <select id="log-filter-event" class="form-select"
@@ -178,7 +178,7 @@
     </div>
     {% else %}
     <div class="empty-state" id="logs-empty">
-      <div class="empty-state-icon">📋</div>
+      <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg></div>
       <div class="empty-state-title">No activity yet</div>
     </div>
     {% endif %}
@@ -234,7 +234,7 @@
   {% endfor %}
 
   <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-bottom:0.75rem;">
-    <button onclick="generateResultsReport()" class="btn btn-primary" style="font-size:0.85rem">📄 Generate Report</button>
+    <button onclick="generateResultsReport()" class="btn btn-primary" style="font-size:0.85rem"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> Generate Report</button>
   </div>
 
   <div class="card" style="padding:0;overflow:visible">
@@ -578,7 +578,7 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
     if (results.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
-          <div class="empty-state-icon">📊</div>
+          <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg></div>
           <div class="empty-state-title">No submissions yet</div>
           <div class="empty-state-text">Results will appear here once students submit the exam.</div>
         </div>`;
@@ -605,7 +605,7 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
         // to review (submitted or terminated) — teachers can always open it,
         // regardless of the exam's "Show Results to students" setting.
         const actionCell = (r.status === 'submitted' || r.status === 'terminated')
-          ? `<a href="/teacher/exam/${EXAM_ID}/student/${r.student_id}/result" class="btn btn-ghost btn-sm">👁 View Results</a>`
+          ? `<a href="/teacher/exam/${EXAM_ID}/student/${r.student_id}/result" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg> View Results</a>`
           : '<span class="text-muted text-sm">—</span>';
         return `<tr>
           <td class="fw-600">${name}</td>
@@ -628,7 +628,7 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
                 onchange="onResultsSortChange(this.value)">
           ${sortOptionsHtml}
         </select>
-        <button onclick="generateResultsReport()" class="btn btn-primary" style="font-size:0.85rem">📄 Export CSV</button>
+        <button onclick="generateResultsReport()" class="btn btn-primary" style="font-size:0.85rem"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> Export CSV</button>
       </div>
       <div class="card" style="padding:0">
         <div class="table-wrap">
@@ -729,7 +729,7 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
         if (!document.getElementById('empty-state')) {
           list.innerHTML = `
             <div class="empty-state" id="empty-state">
-              <div class="empty-state-icon">👥</div>
+              <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg></div>
               <div class="empty-state-title">No active students yet</div>
               <div class="empty-state-text">Students will appear here once they start the exam.</div>
             </div>`;
@@ -829,7 +829,7 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
     } catch (e) {
       console.error('refreshMonitoring error:', e);
       const statusEl = document.getElementById('refresh-status');
-      if (statusEl) statusEl.textContent = '⚠ Connection error';
+      if (statusEl) statusEl.textContent = 'Connection error';
     }
   }
 

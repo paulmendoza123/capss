@@ -125,7 +125,7 @@
     max-height:88vh;overflow-y:auto;
     box-shadow:var(--shadow-lg);
   ">
-    <div style="font-size:2.25rem;text-align:center;margin-bottom:0.5rem">🔒</div>
+    <div style="font-size:2.25rem;text-align:center;margin-bottom:0.5rem"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></div>
     <div style="color:var(--text);font-size:1.2rem;font-weight:700;text-align:center;margin-bottom:0.75rem">
       Consent to Exam Monitoring
     </div>
@@ -165,7 +165,7 @@
   flex-direction:column;gap:1rem;
   text-align:center;padding:1.5rem;
 ">
-  <div style="font-size:3rem">🖥️</div>
+  <div style="font-size:3rem"><svg class="icon" aria-hidden="true"><use href="#i-monitor"/></svg></div>
   <div style="color:#fff;font-size:1.3rem;font-weight:700">Fullscreen Mode Required</div>
   <div style="color:rgba(255,255,255,0.65);font-size:0.9rem;max-width:360px">
     This exam requires fullscreen mode. Click below to enter fullscreen and begin. Exiting fullscreen during the exam will be logged as a violation.
@@ -184,7 +184,7 @@
   flex-direction:column;gap:1rem;
   text-align:center;
 ">
-  <div style="font-size:3rem">⚠️</div>
+  <div style="font-size:3rem"><svg class="icon icon-warn" aria-hidden="true"><use href="#i-alert"/></svg></div>
   <div style="color:#f7c94f;font-size:1.3rem;font-weight:700">Return to your exam!</div>
   <div id="blur-reason" style="color:rgba(255,255,255,0.75);font-size:0.9rem;max-width:320px;margin-top:0.25rem">
     Window minimized or focus lost.
@@ -211,7 +211,7 @@
 ">
   <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;
     padding:2rem;max-width:360px;width:100%;text-align:center;box-shadow:var(--shadow-lg);">
-    <div style="font-size:2.5rem;margin-bottom:0.5rem">📝</div>
+    <div style="font-size:2.5rem;margin-bottom:0.5rem"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></div>
     <div style="color:var(--text);font-size:1.15rem;font-weight:700;margin-bottom:0.5rem">Submit your exam?</div>
     <div style="color:var(--text2);font-size:0.9rem;margin-bottom:1.5rem">
       This cannot be undone. Make sure you've answered everything you want to.
@@ -233,7 +233,7 @@
 ">
   <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;
     padding:2rem;max-width:360px;width:100%;text-align:center;box-shadow:var(--shadow-lg);">
-    <div style="font-size:2.5rem;margin-bottom:0.5rem">⏰</div>
+    <div style="font-size:2.5rem;margin-bottom:0.5rem"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg></div>
     <div style="color:var(--warning);font-size:1.15rem;font-weight:700;margin-bottom:0.5rem">10 Minutes Left!</div>
     <div style="color:var(--text2);font-size:0.9rem;margin-bottom:1.5rem">
       You have 10 minutes remaining on this exam. Please review your answers and submit before time runs out.
@@ -252,7 +252,7 @@
 ">
   <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;
     padding:2rem;max-width:380px;width:100%;text-align:center;box-shadow:var(--shadow-lg);">
-    <div style="font-size:3rem;margin-bottom:0.5rem">🚫</div>
+    <div style="font-size:3rem;margin-bottom:0.5rem"><svg class="icon icon-danger" aria-hidden="true"><use href="#i-ban"/></svg></div>
     <div style="color:var(--danger);font-size:1.2rem;font-weight:700;margin-bottom:0.75rem">Exam Terminated</div>
     <div id="terminated-modal-message" style="color:var(--text2);font-size:0.9rem;margin-bottom:1.5rem">
       Your exam has been terminated. You cannot retake this exam.
@@ -344,7 +344,7 @@
       <textarea name="answer_{{ q.id }}" class="auto-save fib-hidden" data-qid="{{ q.id }}"
                 style="display:none">{{ saved_map.get(q.id, '') }}</textarea>
       {% elif q.question_type == 'essay' %}
-      <div class="text-xs text-muted mb-1">📝 This question is manually graded by your teacher.</div>
+      <div class="text-xs text-muted mb-1"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> This question is manually graded by your teacher.</div>
       <textarea name="answer_{{ q.id }}" class="form-control auto-save"
                 data-qid="{{ q.id }}"
                 placeholder="Write your answer here..."

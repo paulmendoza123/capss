@@ -9,8 +9,8 @@
 </div>
 
 <div class="tabs">
-  <button class="tab-btn active" data-tab="login">🔐 Login History</button>
-  <button class="tab-btn" data-tab="suspicious">⚠️ Suspicious Activity</button>
+  <button class="tab-btn active" data-tab="login"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Login History</button>
+  <button class="tab-btn" data-tab="suspicious"><svg class="icon icon-warn" aria-hidden="true"><use href="#i-alert"/></svg> Suspicious Activity</button>
 </div>
 
 <!-- LOGIN LOGS -->
@@ -67,7 +67,7 @@
   </div>
   {% else %}
   <div class="empty-state">
-    <div class="empty-state-icon">🔐</div>
+    <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></div>
     <div class="empty-state-title">No login records yet</div>
   </div>
   {% endif %}
@@ -139,7 +139,7 @@
   </div>
   {% else %}
   <div class="empty-state">
-    <div class="empty-state-icon">⚠️</div>
+    <div class="empty-state-icon"><svg class="icon icon-warn" aria-hidden="true"><use href="#i-alert"/></svg></div>
     <div class="empty-state-title">No suspicious activity logged</div>
   </div>
   {% endif %}

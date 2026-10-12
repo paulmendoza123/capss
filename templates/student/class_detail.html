@@ -4,7 +4,7 @@
 <div class="page-header">
   <div>
     <div class="page-title">{{ cls.subject_name }}</div>
-    <div class="page-subtitle">{{ cls.subject_code }} · {{ cls.block_name }} · {{ cls.year_level }} · 👤 {{ cls.teacher_name }}</div>
+    <div class="page-subtitle">{{ cls.subject_code }} · {{ cls.block_name }} · {{ cls.year_level }} · <svg class="icon" aria-hidden="true"><use href="#i-user"/></svg> {{ cls.teacher_name }}</div>
   </div>
   <div class="page-actions">
     <a href="{{ url_for('student_home') }}" class="btn btn-ghost">← Back</a>
@@ -12,7 +12,7 @@
 </div>
 
 <div class="tabs" id="class-tabs">
-  <button class="tab-btn active" data-tab="exams">📝 Exams</button>
+  <button class="tab-btn active" data-tab="exams"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> Exams</button>
 </div>
 
 <!-- EXAMS TAB -->
@@ -33,13 +33,13 @@
   <!-- Active exams the student hasn't taken yet -->
   {% if active_exams %}
   <div class="mb-2">
-    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em">🟢 Active Now</div>
+    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon icon-ok" aria-hidden="true"><use href="#i-dot"/></svg> Active Now</div>
     {% for exam in active_exams %}
     <div class="exam-card mb-1">
       <div class="exam-card-title">{{ exam.title }}</div>
       <div class="exam-card-meta">
-        <span class="exam-meta-item">⏱ {{ exam.duration_minutes }} min</span>
-        {% if exam.scheduled_at %}<span class="exam-meta-item">📅 {{ exam.scheduled_at }}</span>{% endif %}
+        <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam.duration_minutes }} min</span>
+        {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at }}</span>{% endif %}
       </div>
       {% if exam.session_status == 'ongoing' %}
       <a href="{{ url_for('student_take_exam', exam_id=exam.id) }}" class="btn btn-success btn-sm">Continue →</a>
@@ -54,13 +54,13 @@
   <!-- Upcoming exams the student hasn't taken yet -->
   {% if upcoming %}
   <div class="mb-2">
-    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em">🕐 Upcoming</div>
+    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> Upcoming</div>
     {% for exam in upcoming %}
     <div class="exam-card mb-1">
       <div class="exam-card-title">{{ exam.title }}</div>
       <div class="exam-card-meta">
-        <span class="exam-meta-item">⏱ {{ exam.duration_minutes }} min</span>
-        {% if exam.scheduled_at %}<span class="exam-meta-item">📅 {{ exam.scheduled_at }}</span>{% endif %}
+        <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam.duration_minutes }} min</span>
+        {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at }}</span>{% endif %}
       </div>
       <span class="badge badge-gray">Not yet open</span>
     </div>
@@ -71,14 +71,14 @@
   <!-- Exams the student has finished (submitted or terminated) — always here regardless of exam status -->
   {% if my_done %}
   <div class="mb-2">
-    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em">✅ Completed</div>
+    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon icon-ok" aria-hidden="true"><use href="#i-check-circle"/></svg> Completed</div>
     {% for exam in my_done %}
     <div class="exam-card mb-1">
       <div class="flex items-center justify-between">
         <div>
           <div class="exam-card-title">{{ exam.title }}</div>
           <div class="exam-card-meta">
-            <span class="exam-meta-item">⏱ {{ exam.duration_minutes }} min</span>
+            <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam.duration_minutes }} min</span>
             {% if exam.score is not none and exam.total_points %}
             {% set ep = exam.passing_score if exam.passing_score is not none else 75 %}
             <span class="exam-meta-item fw-600 {% if (exam.score * 100 / exam.total_points) >= ep %}text-success{% else %}text-danger{% endif %}">
@@ -110,13 +110,13 @@
   <!-- Exams closed by teacher that the student never took -->
   {% if closed %}
   <div class="mb-2">
-    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em">🔒 Closed</div>
+    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Closed</div>
     {% for exam in closed %}
     <div class="exam-card mb-1">
       <div class="exam-card-title">{{ exam.title }}</div>
       <div class="exam-card-meta">
-        <span class="exam-meta-item">⏱ {{ exam.duration_minutes }} min</span>
-        {% if exam.scheduled_at %}<span class="exam-meta-item">📅 {{ exam.scheduled_at }}</span>{% endif %}
+        <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam.duration_minutes }} min</span>
+        {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at }}</span>{% endif %}
       </div>
       <span class="badge badge-gray">Closed</span>
     </div>
@@ -126,7 +126,7 @@
 
   {% if not exams %}
   <div class="empty-state">
-    <div class="empty-state-icon">📝</div>
+    <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></div>
     <div class="empty-state-title">No exams yet</div>
     <div class="empty-state-text">Your teacher hasn't created any exams for this class.</div>
   </div>

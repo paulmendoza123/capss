@@ -59,7 +59,7 @@
 
 {% if exam_session.status == 'terminated' %}
 <div class="result-header" style="margin-bottom:1rem">
-  <div style="font-size:3rem;margin-bottom:0.75rem">🚫</div>
+  <div style="font-size:3rem;margin-bottom:0.75rem"><svg class="icon icon-danger" aria-hidden="true"><use href="#i-ban"/></svg></div>
   <div style="font-size:1.2rem;font-weight:700;margin-bottom:0.5rem;color:var(--danger)">Exam Terminated</div>
   <div class="text-muted">{{ student.full_name }}'s exam was terminated. Score: <strong>{{ exam_session.score|score_fmt }} / {{ exam_session.total_points }}</strong></div>
 </div>
@@ -176,7 +176,7 @@
         </span>
         {% if not q.is_correct %}
         <br><span class="text-muted">Correct answer:</span>
-        <span class="text-success fw-600">{{ q.correct_answer }}</span>
+        <span class="text-success fw-600">{{ q.correct_answer|sa_display(q.question_type) }}</span>
         {% endif %}
       </div>
     {% endif %}

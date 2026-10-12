@@ -391,3 +391,66 @@ document.addEventListener('DOMContentLoaded', () => {
   const serverBad = document.querySelector('input.is-invalid, select.is-invalid');
   if (serverBad) serverBad.focus();
 });
+
+
+// ── Max upload size (10 MB) for every <input type="file"> ──
+(function () {
+  var MAX_MB = 10;
+  var MAX_BYTES = MAX_MB * 1024 * 1024;
+  document.addEventListener('change', function (e) {
+    var input = e.target;
+    if (!input || input.tagName !== 'INPUT' || input.type !== 'file') return;
+    var tooBig = Array.prototype.filter.call(input.files || [], function (f) { return f.size > MAX_BYTES; });
+    if (tooBig.length) {
+      alert((tooBig.length === 1 ? '"' + tooBig[0].name + '" is' : 'Some files are') +
+            ' too large. The maximum allowed size is ' + MAX_MB + ' MB.');
+      input.value = '';
+    }
+  });
+  // Safety net: block form submit if a file somehow slipped through.
+  document.addEventListener('submit', function (e) {
+    var inputs = e.target.querySelectorAll('input[type="file"]');
+    for (var i = 0; i < inputs.length; i++) {
+      var files = inputs[i].files || [];
+      for (var j = 0; j < files.length; j++) {
+        if (files[j].size > MAX_BYTES) {
+          e.preventDefault();
+          alert('"' + files[j].name + '" is too large. The maximum allowed size is ' + MAX_MB + ' MB.');
+          return;
+        }
+      }
+    }
+  }, true);
+})();
+
+
+// ── Short answer: alternative answers ──
+function addAltAnswer(btn) {
+  var wrap = btn.closest('.alt-answers');
+  if (!wrap) return;
+  var first = wrap.querySelector('input[type="text"]');
+  var row = document.createElement('div');
+  row.className = 'alt-row';
+  var input = document.createElement('input');
+  input.type = 'text';
+  input.name = first.name;
+  input.className = first.className;
+  input.removeAttribute('id');
+  input.placeholder = 'Alternative answer';
+  var remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'btn btn-ghost btn-sm alt-remove';
+  remove.title = 'Remove';
+  remove.setAttribute('aria-label', 'Remove alternative answer');
+  remove.textContent = '\u2715';
+  remove.onclick = function () { row.remove(); };
+  row.appendChild(input);
+  row.appendChild(remove);
+  wrap.insertBefore(row, btn);
+  input.focus();
+}
+// A form reset puts the box back to a single answer.
+document.addEventListener('reset', function (e) {
+  var extra = e.target.querySelectorAll ? e.target.querySelectorAll('.alt-answers .alt-row + .alt-row') : [];
+  Array.prototype.forEach.call(extra, function (r) { r.remove(); });
+});

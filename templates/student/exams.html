@@ -20,7 +20,7 @@
 {% endfor %}
 <!-- Search & Filter -->
 <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
-  <input type="text" id="examSearch" class="form-control" placeholder="🔍 Search exams..." style="flex:1;min-width:180px;max-width:260px" oninput="filterExams()">
+  <input type="text" id="examSearch" class="form-control" placeholder="Search exams..." style="flex:1;min-width:180px;max-width:260px" oninput="filterExams()">
   <select id="classFilter" class="form-select" style="width:200px;flex-shrink:0" onchange="filterExams()">
     <option value="all">All Classes</option>
     {% for class_key in classes | sort %}
@@ -29,24 +29,24 @@
   </select>
   <select id="examFilter" class="form-select" style="width:160px;flex-shrink:0" onchange="filterExams()">
     <option value="all">All Status</option>
-    <option value="active">🟢 Active</option>
-    <option value="upcoming">🕐 Upcoming</option>
-    <option value="completed">✅ Completed</option>
+    <option value="active">Active</option>
+    <option value="upcoming">Upcoming</option>
+    <option value="completed">Completed</option>
   </select>
 </div>
 {% endif %}
 
 {% if active_exams %}
 <div class="exam-section mb-3" data-section="active">
-  <div class="text-xs text-muted font-mono mb-2" style="text-transform:uppercase;letter-spacing:.1em">🟢 Active</div>
+  <div class="text-xs text-muted font-mono mb-2" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon icon-ok" aria-hidden="true"><use href="#i-dot"/></svg> Active</div>
   {% for exam in active_exams %}
   <div class="exam-card mb-1 exam-item" data-title="{{ exam.title | lower }}" data-subject="{{ exam.subject_name | lower }}" data-status="{{ exam.display_status }}" data-classkey="{{ (exam.subject_name ~ ' · ' ~ exam.block_name) | lower }}">
     <div class="flex items-center justify-between">
       <div>
         <div class="exam-card-title">{{ exam.title }}</div>
         <div class="exam-card-meta">
-          <span class="exam-meta-item">📚 {{ exam.subject_name }} · {{ exam.block_name }}</span>
-          <span class="exam-meta-item">⏱ {{ exam.duration_minutes }} min</span>
+          <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg> {{ exam.subject_name }} · {{ exam.block_name }}</span>
+          <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam.duration_minutes }} min</span>
         </div>
       </div>
       <div>
@@ -73,14 +73,14 @@
 
 {% if upcoming %}
 <div class="exam-section mb-3" data-section="upcoming">
-  <div class="text-xs text-muted font-mono mb-2" style="text-transform:uppercase;letter-spacing:.1em">🕐 Upcoming</div>
+  <div class="text-xs text-muted font-mono mb-2" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> Upcoming</div>
   {% for exam in upcoming %}
   <div class="exam-card mb-1 exam-item" data-title="{{ exam.title | lower }}" data-subject="{{ exam.subject_name | lower }}" data-status="{{ exam.display_status }}" data-classkey="{{ (exam.subject_name ~ ' · ' ~ exam.block_name) | lower }}">
     <div class="exam-card-title">{{ exam.title }}</div>
     <div class="exam-card-meta">
-      <span class="exam-meta-item">📚 {{ exam.subject_name }} · {{ exam.block_name }}</span>
-      <span class="exam-meta-item">⏱ {{ exam.duration_minutes }} min</span>
-      {% if exam.scheduled_at %}<span class="exam-meta-item">📅 {{ exam.scheduled_at }}</span>{% endif %}
+      <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg> {{ exam.subject_name }} · {{ exam.block_name }}</span>
+      <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam.duration_minutes }} min</span>
+      {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at }}</span>{% endif %}
     </div>
     <span class="badge badge-gray">Not yet open</span>
   </div>
@@ -90,14 +90,14 @@
 
 {% if completed %}
 <div class="exam-section mb-3" data-section="completed">
-  <div class="text-xs text-muted font-mono mb-2" style="text-transform:uppercase;letter-spacing:.1em">✅ Completed</div>
+  <div class="text-xs text-muted font-mono mb-2" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon icon-ok" aria-hidden="true"><use href="#i-check-circle"/></svg> Completed</div>
   {% for exam in completed %}
   <div class="exam-card mb-1 exam-item" data-title="{{ exam.title | lower }}" data-subject="{{ exam.subject_name | lower }}" data-status="{{ exam.display_status }}" data-classkey="{{ (exam.subject_name ~ ' · ' ~ exam.block_name) | lower }}">
     <div class="flex items-center justify-between">
       <div>
         <div class="exam-card-title">{{ exam.title }}</div>
         <div class="exam-card-meta">
-          <span class="exam-meta-item">📚 {{ exam.subject_name }}</span>
+          <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg> {{ exam.subject_name }}</span>
           {% if exam.session_status == 'submitted' and exam.score is not none %}
           <span class="exam-meta-item fw-600 {% if exam.total_points and (exam.score * 100 / exam.total_points) >= (exam.passing_score if exam.passing_score is not none else 75) %}text-success{% else %}text-danger{% endif %}">
             {{ exam.score|score_fmt }}/{{ exam.total_points }} ({{ (exam.score * 100 / exam.total_points)|int if exam.total_points else 0 }}%)
@@ -127,7 +127,7 @@
 
 {% if not exams %}
 <div class="empty-state">
-  <div class="empty-state-icon">📝</div>
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></div>
   <div class="empty-state-title">No exams yet</div>
   <div class="empty-state-text">Join a class first to see your exams here.</div>
 </div>
@@ -135,7 +135,7 @@
 
 
 <div id="noResults" style="display:none" class="empty-state">
-  <div class="empty-state-icon">🔍</div>
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg></div>
   <div class="empty-state-title">No exams found</div>
   <div class="empty-state-text">Try a different search or filter.</div>
 </div>

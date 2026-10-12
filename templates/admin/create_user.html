@@ -55,7 +55,7 @@
       </select>
     </div>
     <div id="admin-warning" class="alert alert-error" style="display:{{ 'block' if form.get('role') == 'admin' else 'none' }};margin-bottom:1rem">
-      ⚠️ Admin accounts have full system access (manage users, exams, and system settings).
+      <svg class="icon icon-warn" aria-hidden="true"><use href="#i-alert"/></svg> Admin accounts have full system access (manage users, exams, and system settings).
       Only create this if the person genuinely needs administrative privileges.
     </div>
     <div id="student-fields" style="display:{{ 'block' if form.get('role') == 'student' else 'none' }}">

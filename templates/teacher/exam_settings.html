@@ -74,14 +74,14 @@
           <option value="active" selected>Open (Active)</option>
           <option value="upcoming">Close (Upcoming)</option>
         </select>
-        <div class="form-hint">⚠️ You can close the exam here. To reopen it, use the 🔓 Open button on the class page.</div>
+        <div class="form-hint"><svg class="icon icon-warn" aria-hidden="true"><use href="#i-alert"/></svg> You can close the exam here. To reopen it, use the <svg class="icon" aria-hidden="true"><use href="#i-unlock"/></svg> Open button on the class page.</div>
       {% elif exam.status == 'upcoming' %}
         {# Exam is closed — status is read-only here; open/close via the class page button #}
         <select name="status" class="form-select" disabled>
           <option value="upcoming" selected>Closed (Upcoming)</option>
         </select>
         <input type="hidden" name="status" value="upcoming" />
-        <div class="form-hint">To open this exam, use the 🔓 Open button on the class page{% if exam.scheduled_at %}, or it will auto-open at the scheduled time{% endif %}.</div>
+        <div class="form-hint">To open this exam, use the <svg class="icon" aria-hidden="true"><use href="#i-unlock"/></svg> Open button on the class page{% if exam.scheduled_at %}, or it will auto-open at the scheduled time{% endif %}.</div>
       {% else %}
         {# Completed #}
         <select name="status" class="form-select" disabled>
@@ -113,14 +113,14 @@
     <div class="flex gap-2" style="flex-wrap:wrap">
       <button type="submit" class="btn btn-primary btn-lg">Save Settings</button>
       <button type="submit" name="action" value="delete" class="btn btn-danger btn-lg"
-        onclick="return confirm('Delete this exam and ALL its data? This cannot be undone.')">🗑 Delete Exam</button>
+        onclick="return confirm('Delete this exam and ALL its data? This cannot be undone.')"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete Exam</button>
     </div>
   </form>
 </div>
 
 <!-- Exam Code Card -->
 <div class="card" style="max-width:580px;margin-top:1.25rem">
-  <div class="card-title mb-1">🔑 Exam Access Code</div>
+  <div class="card-title mb-1"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> Exam Access Code</div>
   <div class="text-muted text-sm mb-2">Share this code with your students so they can enter the exam directly.</div>
   <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
     <div id="exam-code-display" style="
@@ -133,10 +133,10 @@
       user-select:all;
     ">{{ exam.exam_code or '——' }}</div>
     <div style="display:flex;flex-direction:column;gap:0.4rem">
-      <button onclick="copyCode()" class="btn btn-ghost btn-sm" id="copy-btn">📋 Copy Code</button>
+      <button onclick="copyCode()" class="btn btn-ghost btn-sm" id="copy-btn"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg> Copy Code</button>
       <form method="POST" action="{{ url_for('teacher_regenerate_exam_code', exam_id=exam.id) }}"
             onsubmit="return confirm('Generate a new code? The old code will stop working.')">
-        <button type="submit" class="btn btn-ghost btn-sm">🔄 New Code</button>
+        <button type="submit" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg> New Code</button>
       </form>
     </div>
   </div>
@@ -151,7 +151,7 @@ function copyCode() {
   navigator.clipboard.writeText(code).then(() => {
     const btn = document.getElementById('copy-btn');
     btn.textContent = '✓ Copied!';
-    setTimeout(() => { btn.textContent = '📋 Copy Code'; }, 2000);
+    setTimeout(() => { btn.textContent = 'Copy Code'; }, 2000);
   }).catch(() => {
     prompt('Copy this code:', code);
   });

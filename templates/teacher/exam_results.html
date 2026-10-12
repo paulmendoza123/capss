@@ -10,10 +10,10 @@
     {% set has_essays = question_stats | selectattr('question_type', 'eq', 'essay') | list %}
     {% if has_essays %}
     <a href="{{ url_for('teacher_export_essays', exam_id=exam.id) }}" class="btn btn-ghost" style="font-size:0.85rem">⬇️ Export Essays for Grading</a>
-    <button type="button" onclick="document.getElementById('importEssaysModal').style.display='flex'" class="btn btn-ghost" style="font-size:0.85rem">⬆️ Import Graded Essays</button>
+    <button type="button" onclick="document.getElementById('importEssaysModal').style.display='flex'" class="btn btn-ghost" style="font-size:0.85rem"><svg class="icon" aria-hidden="true"><use href="#i-arrow-up"/></svg> Import Graded Essays</button>
     {% endif %}
     {% if results %}
-    <button onclick="generateReport()" class="btn btn-primary" style="font-size:0.85rem">📄 Generate Report</button>
+    <button onclick="generateReport()" class="btn btn-primary" style="font-size:0.85rem"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> Generate Report</button>
     {% endif %}
     <a href="{{ url_for('teacher_class_detail', class_id=exam.class_id) }}" class="btn btn-ghost">← Back to Class</a>
   </div>
@@ -23,13 +23,14 @@
 {% if has_essays %}
 <div id="importEssaysModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999;align-items:center;justify-content:center">
   <div class="card" style="max-width:480px;width:90%;padding:1.5rem">
-    <div class="fw-600" style="font-size:1.05rem;margin-bottom:0.5rem">⬆️ Import Graded Essays</div>
+    <div class="fw-600" style="font-size:1.05rem;margin-bottom:0.5rem"><svg class="icon" aria-hidden="true"><use href="#i-arrow-up"/></svg> Import Graded Essays</div>
     <p class="text-muted" style="font-size:0.85rem;margin-bottom:1rem">
       Upload the same .xlsx file you exported, after filling in rubric scores and feedback offline.
       This will apply every score in the file and recompute affected students' totals — no need to stay connected to the Raspberry Pi.
     </p>
     <form method="POST" action="{{ url_for('teacher_import_essays', exam_id=exam.id) }}" enctype="multipart/form-data">
-      <input type="file" name="essay_file" accept=".xlsx" required style="margin-bottom:1rem;width:100%">
+      <input type="file" name="essay_file" accept=".xlsx" required style="width:100%">
+      <div class="form-hint" style="margin-bottom:1rem">Maximum file size: 10 MB</div>
       <div style="display:flex;gap:0.5rem;justify-content:flex-end">
         <button type="button" onclick="document.getElementById('importEssaysModal').style.display='none'" class="btn btn-ghost">Cancel</button>
         <button type="submit" class="btn btn-primary">Upload &amp; Apply Grades</button>
@@ -121,7 +122,7 @@
           <td class="text-sm text-muted">{{ r.submitted_at or '—' }}</td>
           <td>
             {% if r.status == 'submitted' or r.status == 'terminated' %}
-            <a href="{{ url_for('teacher_view_student_result', exam_id=exam.id, student_id=r.student_id) }}" class="btn btn-ghost btn-sm">👁 View Results</a>
+            <a href="{{ url_for('teacher_view_student_result', exam_id=exam.id, student_id=r.student_id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg> View Results</a>
             {% else %}
             <span class="text-muted text-sm">—</span>
             {% endif %}
@@ -215,7 +216,7 @@
 
 {% else %}
 <div class="empty-state">
-  <div class="empty-state-icon">📊</div>
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg></div>
   <div class="empty-state-title">No submissions yet</div>
   <div class="empty-state-text">Results will appear here once students submit the exam.</div>
 </div>

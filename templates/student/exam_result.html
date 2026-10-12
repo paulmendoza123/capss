@@ -107,7 +107,7 @@
 
 {% if exam_session.status == 'terminated' and not exam_closed %}
 <div class="result-header">
-  <div style="font-size:3rem;margin-bottom:0.75rem">🚫</div>
+  <div style="font-size:3rem;margin-bottom:0.75rem"><svg class="icon icon-danger" aria-hidden="true"><use href="#i-ban"/></svg></div>
   <div style="font-size:1.2rem;font-weight:700;margin-bottom:0.5rem;color:var(--danger)">Exam Terminated</div>
   <div class="text-muted">Your exam was terminated. Your score is <strong>0</strong>.</div>
 </div>
@@ -203,7 +203,7 @@
         </span>
         {% if not q.is_correct %}
         <br><span class="text-muted">Correct answer:</span>
-        <span class="text-success fw-600">{{ q.correct_answer }}</span>
+        <span class="text-success fw-600">{{ q.correct_answer|sa_display(q.question_type) }}</span>
         {% endif %}
       </div>
     {% endif %}

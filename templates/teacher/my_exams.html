@@ -15,7 +15,7 @@
   {% if class_key not in classes %}{% set _ = classes.append(class_key) %}{% endif %}
 {% endfor %}
 <div class="flex gap-1 mb-3" style="flex-wrap:wrap;align-items:center">
-  <input type="text" id="examSearch" class="form-control" placeholder="🔍 Search exams or class..." style="max-width:260px" oninput="filterExams()">
+  <input type="text" id="examSearch" class="form-control" placeholder="Search exams or class..." style="max-width:260px" oninput="filterExams()">
   <select id="classFilter" class="form-select" style="max-width:200px" onchange="filterExams()">
     <option value="all">All Classes</option>
     {% for class_key in classes | sort %}
@@ -78,7 +78,7 @@
 </div>
 
 <div id="noResults" style="display:none" class="empty-state mt-2">
-  <div class="empty-state-icon">🔍</div>
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg></div>
   <div class="empty-state-title">No exams found</div>
   <div class="empty-state-text">Try a different search or filter.</div>
 </div>
@@ -104,7 +104,7 @@ function filterExams() {
 
 {% else %}
 <div class="empty-state">
-  <div class="empty-state-icon">📝</div>
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></div>
   <div class="empty-state-title">No exams yet</div>
   <div class="empty-state-text">Create a class first, then add exams inside it.</div>
   <a href="{{ url_for('teacher_home') }}" class="btn btn-primary mt-2">Go to Classes</a>

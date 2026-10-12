@@ -7,7 +7,7 @@
     <div class="page-subtitle">Classes you are managing</div>
   </div>
   <div class="page-actions">
-    <a href="{{ url_for('teacher_create_class') }}" class="btn btn-primary btn-sm">➕ Create Class</a>
+    <a href="{{ url_for('teacher_create_class') }}" class="btn btn-primary btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Create Class</a>
   </div>
 </div>
 
@@ -19,19 +19,19 @@
     <div class="card-menu">
       <button type="button" class="card-menu-btn" aria-label="Class options">⋮</button>
       <div class="card-menu-dropdown">
-        <button type="button" class="card-menu-item" onclick="openModal('modal-edit-class-{{ cls.id }}')">✏️ Edit Class</button>
+        <button type="button" class="card-menu-item" onclick="openModal('modal-edit-class-{{ cls.id }}')"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Edit Class</button>
         <form method="POST" action="{{ url_for('teacher_copy_class', class_id=cls.id) }}" onsubmit="return confirm('Copy \'{{ cls.subject_name }}\'? This will duplicate the class and all its exams.');">
-          <button type="submit" class="card-menu-item">📄 Copy Class</button>
+          <button type="submit" class="card-menu-item"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> Copy Class</button>
         </form>
         <form method="POST" action="{{ url_for('teacher_delete_class', class_id=cls.id) }}" onsubmit="return confirm('Delete \'{{ cls.subject_name }}\' and all its exams? This cannot be undone.');">
-          <button type="submit" class="card-menu-item danger">🗑️ Delete Class</button>
+          <button type="submit" class="card-menu-item danger"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete Class</button>
         </form>
       </div>
     </div>
     <div class="class-code">{{ cls.class_code }}</div>
     <div class="class-name">{{ cls.subject_name }}</div>
     <div class="class-meta">{{ cls.subject_code }} · {{ cls.block_name }} · {{ cls.year_level }}</div>
-    <div class="class-meta mt-1">👥 {{ cls.student_count }} student(s)</div>
+    <div class="class-meta mt-1"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg> {{ cls.student_count }} student(s)</div>
   </div>
 
   {# ══════════════════════════════════════════════════
@@ -40,7 +40,7 @@
   <div class="modal-overlay" id="modal-edit-class-{{ cls.id }}">
     <div class="modal" style="max-width:520px;width:95vw">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
-        <div class="modal-title" style="margin-bottom:0">✏️ Edit Class</div>
+        <div class="modal-title" style="margin-bottom:0"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Edit Class</div>
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-edit-class-{{ cls.id }}')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
       </div>
       <form method="POST" action="{{ url_for('teacher_edit_class', class_id=cls.id) }}">
@@ -90,7 +90,7 @@
 </div>
 {% else %}
 <div class="empty-state">
-  <div class="empty-state-icon">📚</div>
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></div>
   <div class="empty-state-title">No classes yet</div>
   <div class="empty-state-text">Create your first class to get started.</div>
 </div>

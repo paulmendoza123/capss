@@ -6,7 +6,7 @@
     <div class="page-title">All Users</div>
     <div class="page-subtitle">{{ users|length }} total accounts</div>
   </div>
-  <a href="{{ url_for('admin_create_user') }}" class="btn btn-primary">➕ Create User</a>
+  <a href="{{ url_for('admin_create_user') }}" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Create User</a>
 </div>
 
 <!-- Search & Filter Bar -->
@@ -69,7 +69,7 @@
           <td class="text-sm text-muted">{{ u.created_by_name or 'Self-registered' }}</td>
           <td>
             <div class="flex gap-1">
-              <a href="{{ url_for('admin_edit_user', user_id=u.id) }}" class="btn btn-ghost btn-sm">✏️ Edit</a>
+              <a href="{{ url_for('admin_edit_user', user_id=u.id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Edit</a>
               {% if u.id == session.user_id %}
               <span class="text-xs text-muted" style="padding:0.3rem">This is you</span>
               {% elif u.role == 'admin' and admin_count <= 1 %}

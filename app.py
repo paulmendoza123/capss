@@ -20,6 +20,29 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 
+# ── Upload limit: 10 MB per imported file ──
+MAX_UPLOAD_MB = 10
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+# Hard cap on the whole request (file + form fields overhead) so oversized
+# uploads are rejected before they are fully read into memory.
+app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_BYTES + 512 * 1024
+
+
+def _upload_too_large(file_storage):
+    """True if an uploaded file is bigger than MAX_UPLOAD_MB."""
+    stream = file_storage.stream
+    pos = stream.tell()
+    stream.seek(0, os.SEEK_END)
+    size = stream.tell()
+    stream.seek(pos)
+    return size > MAX_UPLOAD_BYTES
+
+
+@app.errorhandler(413)
+def _file_too_large(_e):
+    flash(f'File is too large. The maximum allowed size is {MAX_UPLOAD_MB} MB.', 'error')
+    return redirect(request.referrer or '/')
+
 _PW_ALPHABET = string.ascii_letters + string.digits
 INSTANCE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
 
@@ -177,6 +200,46 @@ def fib_grade(student_answer, correct_answer, case_sensitive=False):
             correct_count += 1
     return correct_count, total
 
+# ─── Short Answer helpers ───────────────────────────────────────────────────
+# A short_answer question's correct_answer column may hold several acceptable
+# (alternative) answers, separated by '/' — the same way Fill in the Blank
+# does it:   "CPU/Processor/Central Processing Unit"
+# A student is correct if their answer matches ANY of them. A single answer with
+# no '/' behaves exactly as before. (An answer that itself contains a slash,
+# e.g. "TCP/IP", is split into alternatives too, but the whole text "TCP/IP" is
+# still accepted as a match so existing questions keep working.)
+
+def sa_parse_answer(correct_answer):
+    """'CPU/Processor' -> ['CPU', 'Processor'] (blank pieces dropped)."""
+    return [a.strip() for a in (correct_answer or '').split('/') if a.strip()]
+
+def sa_join_answers(values):
+    """Join one or more answer strings into the stored 'a/b/c' form,
+    dropping blanks and exact duplicates while keeping the order."""
+    out = []
+    for v in values:
+        for piece in (v or '').split('/'):
+            piece = piece.strip()
+            if piece and piece not in out:
+                out.append(piece)
+    return '/'.join(out)
+
+def sa_collect_form(form, name):
+    """Read every input called `name` (primary + alternatives) from a form."""
+    return sa_join_answers(form.getlist(name))
+
+@app.template_filter('sa_alts')
+def _sa_alts_filter(correct_answer):
+    return sa_parse_answer(correct_answer)
+
+@app.template_filter('sa_display')
+def _sa_display_filter(correct_answer, question_type=''):
+    """Readable form of a correct answer: short answers show 'A or B'."""
+    if question_type == 'short_answer':
+        return ' or '.join(sa_parse_answer(correct_answer)) or (correct_answer or '')
+    return correct_answer
+
+
 def _q_get(q, key, default=None):
     """Read a column from a sqlite3.Row or dict, tolerating a missing column."""
     try:
@@ -209,6 +272,13 @@ def question_credit(q, answer, manual_score=None):
         return (got / total) if total else 0.0
     if not ans:
         return 0.0  # an unanswered question never earns credit
+    if qtype == 'short_answer':
+        alts = sa_parse_answer(correct) or [correct]
+        if correct not in alts:
+            alts.append(correct)  # the whole text also counts, e.g. "TCP/IP"
+        if case_sensitive:
+            return 1.0 if any(ans == a for a in alts) else 0.0
+        return 1.0 if any(ans.lower() == a.lower() for a in alts) else 0.0
     if qtype == 'multiple_choice' or qtype == 'true_false':
         return 1.0 if ans.upper() == correct.upper() else 0.0
     if case_sensitive:
@@ -530,6 +600,15 @@ def init_db():
                 conn.commit()
         except Exception:
             pass  # Table already gone
+
+    # Migration: short-answer alternatives are now separated by '/' (like Fill in
+    # the Blank). Convert the ' | ' form written by an earlier build. Idempotent.
+    try:
+        conn.execute("UPDATE questions SET correct_answer = REPLACE(correct_answer, ' | ', '/') "
+                     "WHERE question_type = 'short_answer' AND correct_answer LIKE '% | %'")
+        conn.commit()
+    except Exception:
+        pass
 
     # Migration: add tab_switch_enabled if it doesn't exist yet
     try:
@@ -2132,6 +2211,10 @@ def teacher_import_allowed_emails(class_id):
         flash('No file selected.', 'error')
         return redirect(url_for('teacher_class_detail', class_id=class_id) + '#allowed-emails')
 
+    if _upload_too_large(uploaded):
+        flash(f'File is too large. The maximum allowed size is {MAX_UPLOAD_MB} MB.', 'error')
+        return redirect(url_for('teacher_class_detail', class_id=class_id) + '#allowed-emails')
+
     raw_name = uploaded.filename
     ext = raw_name.rsplit('.', 1)[-1].lower() if '.' in raw_name else ''
     if ext not in ('txt', 'csv', 'docx', 'xlsx'):
@@ -2950,6 +3033,9 @@ def teacher_import_essays(exam_id):
     if not file or not file.filename:
         flash('Please choose the filled-in Excel file to upload.', 'error')
         return redirect(url_for('teacher_exam_results', exam_id=exam_id))
+    if _upload_too_large(file):
+        flash(f'File is too large. The maximum allowed size is {MAX_UPLOAD_MB} MB.', 'error')
+        return redirect(url_for('teacher_exam_results', exam_id=exam_id))
     if not file.filename.lower().endswith('.xlsx'):
         flash('Please upload the .xlsx file exported from this exam — other formats are not supported.', 'error')
         return redirect(url_for('teacher_exam_results', exam_id=exam_id))
@@ -3459,7 +3545,7 @@ def teacher_add_question(section_id):
     elif q_type == 'essay':
         correct = None  # essay questions have no single "correct answer"
     else:
-        correct = request.form.get('correct_answer_sa', '').strip()
+        correct = sa_collect_form(request.form, 'correct_answer_sa')
     case_sensitive = 1 if request.form.get('case_sensitive') else 0
     if not q_text:
         if _wants_json():
@@ -3609,6 +3695,8 @@ def teacher_edit_question(question_id):
         return locked
     q_text = request.form.get('question_text', '').strip()
     correct = request.form.get('correct_answer', '').strip()
+    if q['question_type'] == 'short_answer':
+        correct = sa_collect_form(request.form, 'correct_answer')  # primary + alternatives
     points = request.form.get('points', 1, type=int)
     bank_group_id = request.form.get('bank_group_id') or None
     case_sensitive = 1 if request.form.get('case_sensitive') else 0
@@ -3804,6 +3892,8 @@ def teacher_bank_add_question():
     q_type = request.form.get('question_type', '').strip()
     points = request.form.get('points', 1, type=int)
     correct = request.form.get('correct_answer', '').strip()
+    if q_type == 'short_answer':
+        correct = sa_join_answers([correct])  # normalise 'A/B' alternatives
     bank_group_id = request.form.get('bank_group_id') or None
     case_sensitive = 1 if request.form.get('case_sensitive') else 0
 
@@ -3881,6 +3971,10 @@ def teacher_bank_import_file():
     uploaded = request.files.get('import_file')
     if not uploaded or uploaded.filename == '':
         flash('No file selected.', 'error')
+        return redirect(url_for('teacher_question_bank'))
+
+    if _upload_too_large(uploaded):
+        flash(f'File is too large. The maximum allowed size is {MAX_UPLOAD_MB} MB.', 'error')
         return redirect(url_for('teacher_question_bank'))
 
     raw_name = uploaded.filename
@@ -4164,7 +4258,7 @@ def teacher_bank_import_file():
             parsed.append({
                 'type': 'short_answer',
                 'text': q_text,
-                'answer': answer_raw,
+                'answer': sa_join_answers([answer_raw]),  # 'A/B' = alternative answers
             })
 
     if not parsed:
@@ -4363,8 +4457,6 @@ def teacher_profile():
                SUM(CASE
                    WHEN q.question_type = 'multiple_choice'
                         AND UPPER(TRIM(a.answer_text)) = UPPER(TRIM(q.correct_answer)) THEN 1
-                   WHEN q.question_type = 'short_answer'
-                        AND LOWER(TRIM(a.answer_text)) = LOWER(TRIM(q.correct_answer)) THEN 1
                    ELSE 0
                END) as correct_count
         FROM exams e
@@ -4376,6 +4468,18 @@ def teacher_profile():
         GROUP BY e.id, q.id
         ORDER BY e.created_at DESC, q.order_index
     ''', (session['user_id'],)).fetchall()
+    # Short answers can have alternative answers / case-sensitivity, which plain
+    # SQL can't evaluate, so count those with the shared grading helper instead.
+    sa_correct = {}
+    _sa_by_exam = {}
+    for _r in question_stats:
+        if _r['question_type'] == 'short_answer':
+            _sa_by_exam.setdefault(_r['exam_id'], []).append(_r['q_id'])
+    for _eid, _qids in _sa_by_exam.items():
+        _qs = conn.execute(
+            'SELECT id, question_type, correct_answer, case_sensitive, points FROM questions WHERE id IN (%s)'
+            % ','.join('?' * len(_qids)), _qids).fetchall()
+        sa_correct.update(count_fully_correct(conn, _eid, _qs))
     exam_questions = {}
     for row in question_stats:
         eid = row['exam_id']
@@ -4384,7 +4488,8 @@ def teacher_profile():
         exam_questions[eid]['questions'].append({
             'text': row['question_text'][:60],
             'total': row['total_answered'] or 0,
-            'correct': row['correct_count'] or 0,
+            'correct': (sa_correct.get(row['q_id'], 0) if row['question_type'] == 'short_answer'
+                        else (row['correct_count'] or 0)),
         })
     return render_template('teacher/profile.html', user=user, exam_history=exam_history, exam_questions=exam_questions,
                            form=form, errors=errors, profile_errors=profile_errors)
