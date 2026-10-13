@@ -85,6 +85,7 @@
 <div id="exam-timer" class="exam-timer">{{ "%02d"|format(exam.duration_minutes) }}:00</div>
 {% endblock %}
 {% block content %}
+{% set warn_min = exam.time_warning_minutes if exam.time_warning_minutes is not none else 5 %}
 
 <script>
 // ── Compensate for the topbar switching to position:fixed on this page ──
@@ -223,7 +224,7 @@
   </div>
 </div>
 
-<!-- Time Warning Modal — shown once when 10 minutes remain -->
+<!-- Time Warning Modal — shown once when the teacher-set warning time remains (default 5 min) -->
 <div id="time-warning-modal" style="
   display:none;
   position:fixed;inset:0;z-index:10001;
@@ -234,9 +235,9 @@
   <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;
     padding:2rem;max-width:360px;width:100%;text-align:center;box-shadow:var(--shadow-lg);">
     <div style="font-size:2.5rem;margin-bottom:0.5rem"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg></div>
-    <div style="color:var(--warning);font-size:1.15rem;font-weight:700;margin-bottom:0.5rem">10 Minutes Left!</div>
-    <div style="color:var(--text2);font-size:0.9rem;margin-bottom:1.5rem">
-      You have 10 minutes remaining on this exam. Please review your answers and submit before time runs out.
+    <div id="time-warning-title" style="color:var(--warning);font-size:1.15rem;font-weight:700;margin-bottom:0.5rem">{{ warn_min }} {{ 'Minute' if warn_min == 1 else 'Minutes' }} Left!</div>
+    <div id="time-warning-text" style="color:var(--text2);font-size:0.9rem;margin-bottom:1.5rem">
+      You have {{ warn_min }} {{ 'minute' if warn_min == 1 else 'minutes' }} remaining on this exam. Please review your answers and submit before time runs out.
     </div>
     <button type="button" id="time-warning-dismiss-btn" class="btn btn-primary" style="width:100%">Got it</button>
   </div>
@@ -266,6 +267,7 @@
 <input type="hidden" id="exam-id" value="{{ exam.id }}" />
 <input type="hidden" id="exam-class-id" value="{{ exam.class_id }}" />
 <input type="hidden" id="exam-duration" value="{{ exam.duration_minutes }}" />
+<input type="hidden" id="time-warning-minutes" value="{{ warn_min }}" />
 <input type="hidden" id="time-remaining" value="{{ time_remaining_seconds }}" />
 <input type="hidden" id="tab-limit" value="{{ exam.tab_switch_limit }}" />
 <input type="hidden" id="tab-switch-enabled" value="{{ '1' if exam.tab_switch_enabled else '0' }}" />

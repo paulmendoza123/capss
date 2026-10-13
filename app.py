@@ -744,6 +744,14 @@ def init_db():
     except Exception:
         pass  # Column already exists
 
+    # Migration: teacher-set "time left" warning (minutes before the end of the
+    # exam). Defaults to 5; 0 turns the popup off.
+    try:
+        conn.execute('ALTER TABLE exams ADD COLUMN time_warning_minutes INTEGER DEFAULT 5')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
     # Migration: add fullscreen_exit_count / lost_focus_count as their own
     # counters, separate from tab_switch_count — only tab_switch_count drives
     # auto-termination; these two are informational-only for teacher monitoring.
@@ -1235,6 +1243,21 @@ def validate_password_strength(password):
         return ('Password must contain at least 3 of the following: lowercase letters, '
                 'uppercase letters, numbers.')
     return None
+
+DEFAULT_TIME_WARNING_MINUTES = 5
+
+def clean_time_warning(raw, duration):
+    """Minutes before the end at which students get the "time left" popup.
+
+    Blank/invalid falls back to the default (5). 0 turns the popup off. It can't
+    be longer than the exam itself (otherwise it would pop up the moment the
+    exam starts), so it is capped at duration - 1.
+    """
+    try:
+        minutes = int(raw)
+    except (TypeError, ValueError):
+        minutes = DEFAULT_TIME_WARNING_MINUTES
+    return max(0, min(minutes, max((duration or 0) - 1, 0)))
 
 def handle_profile_update(conn, user, with_year_level=False):
     """Update the editable parts of a profile (name, and year level for students).
@@ -2436,11 +2459,13 @@ def teacher_copy_class(class_id):
         ecur = conn.execute('''
             INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, activated_at, status,
                                 show_results, randomize_questions, tab_switch_limit, tab_switch_enabled,
-                                manually_closed, passing_score, exam_code, fullscreen_required)
-            VALUES (?, ?, ?, NULL, NULL, 'upcoming', ?, ?, ?, ?, 0, ?, ?, ?)
+                                manually_closed, passing_score, exam_code, fullscreen_required,
+                                time_warning_minutes)
+            VALUES (?, ?, ?, NULL, NULL, 'upcoming', ?, ?, ?, ?, 0, ?, ?, ?, ?)
         ''', (exam['title'], new_class_id, exam['duration_minutes'],
               exam['show_results'], exam['randomize_questions'], exam['tab_switch_limit'], exam['tab_switch_enabled'],
-              exam['passing_score'], new_exam_code, exam['fullscreen_required']))
+              exam['passing_score'], new_exam_code, exam['fullscreen_required'],
+              exam['time_warning_minutes'] if exam['time_warning_minutes'] is not None else DEFAULT_TIME_WARNING_MINUTES))
         new_exam_id = ecur.lastrowid
 
         section_id_map = {}
@@ -2497,14 +2522,15 @@ def teacher_create_exam(class_id):
         tab_limit = request.form.get('tab_switch_limit', 3, type=int) if tab_switch_enabled else 0
         fullscreen_required = 1 if request.form.get('fullscreen_required') else 0
         passing_score = request.form.get('passing_score', 50, type=int)
+        time_warning = clean_time_warning(request.form.get('time_warning_minutes'), duration)
         if not title or not duration:
             flash('Title and duration are required.', 'error')
             return render_template('teacher/create_exam.html', cls=cls)
         exam_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         cur = conn.execute('''
-            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, show_results, randomize_questions, tab_switch_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code))
+            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, show_results, randomize_questions, tab_switch_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning_minutes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning))
         exam_id = cur.lastrowid
 
         conn.commit()
@@ -3350,6 +3376,9 @@ def teacher_exam_settings(exam_id):
                 randomize_questions=?, tab_switch_limit=?, tab_switch_enabled=?, fullscreen_required=?, status=?, passing_score=?,
                 manually_closed=? WHERE id=?
             ''', (title, duration, new_scheduled_at, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, status, passing_score, manually_closed_val, exam_id))
+        conn.execute('UPDATE exams SET time_warning_minutes=? WHERE id=?',
+                     (clean_time_warning(request.form.get('time_warning_minutes'),
+                                         duration or exam['duration_minutes']), exam_id))
         conn.commit()
         flash('Settings saved.', 'success')
         redirect_to = request.form.get('redirect_to')

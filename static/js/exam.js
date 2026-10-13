@@ -4,6 +4,10 @@
   const EXAM_ID = parseInt(document.getElementById('exam-id')?.value);
   const CLASS_ID = parseInt(document.getElementById('exam-class-id')?.value);
   const DURATION_SECONDS = parseInt(document.getElementById('exam-duration')?.value) * 60;
+  // Teacher-set "time left" warning (minutes before the end). 0 = no popup; default 5.
+  const _warnRaw = parseInt(document.getElementById('time-warning-minutes')?.value);
+  const WARNING_MINUTES = Number.isNaN(_warnRaw) ? 5 : Math.max(0, _warnRaw);
+  const WARNING_SECONDS = WARNING_MINUTES * 60;
   const TAB_LIMIT = parseInt(document.getElementById('tab-limit')?.value);
   const TAB_SWITCH_ENABLED = document.getElementById('tab-switch-enabled')?.value === '1';
   const FULLSCREEN_REQUIRED = document.getElementById('fullscreen-required')?.value === '1';
@@ -21,7 +25,7 @@
 
   // ── EXAM TIMER — counts down from the teacher-set duration and auto-submits at 0 ──
   const timerDisplayEl = document.getElementById('exam-timer');
-  let timeWarningShown = false; // "10 minutes left" modal fires once
+  let timeWarningShown = false; // "time left" modal fires once
   function formatTime(totalSeconds) {
     const s = Math.max(0, totalSeconds);
     const mm = Math.floor(s / 60);
@@ -34,14 +38,14 @@
     if (timerSeconds <= 60) timerDisplayEl.classList.add('timer-warning');
   }
   function maybeShowTimeWarning() {
-    if (timeWarningShown || terminated || autoSubmitted) return;
-    if (timerSeconds <= 600 && timerSeconds > 0) {
+    if (WARNING_SECONDS <= 0 || timeWarningShown || terminated || autoSubmitted) return;
+    if (timerSeconds <= WARNING_SECONDS && timerSeconds > 0) {
       timeWarningShown = true;
       showTimeWarningModal();
     }
   }
   renderTimer(); // show the correct time immediately, don't wait for the first tick
-  maybeShowTimeWarning(); // covers reloading the page after the 10-min mark has already passed
+  maybeShowTimeWarning(); // covers reloading the page after the warning mark has already passed
   const timerIntervalId = setInterval(() => {
     if (terminated) { clearInterval(timerIntervalId); return; }
     if (timerSeconds <= 0) {
@@ -58,10 +62,15 @@
     maybeShowTimeWarning();
   }, 1000);
 
-  // ── "10 MINUTES LEFT" MODAL — shown once as the exam nears its time limit ──
+  // ── "TIME LEFT" MODAL — shown once as the exam nears its time limit ──
   function showTimeWarningModal() {
     const modal = document.getElementById('time-warning-modal');
     if (!modal) return;
+    const unit = WARNING_MINUTES === 1 ? 'Minute' : 'Minutes';
+    const title = document.getElementById('time-warning-title');
+    const text = document.getElementById('time-warning-text');
+    if (title) title.textContent = WARNING_MINUTES + ' ' + unit + ' Left!';
+    if (text) text.textContent = 'You have ' + WARNING_MINUTES + ' ' + unit.toLowerCase() + ' remaining on this exam. Please review your answers and submit before time runs out.';
     modal.style.display = 'flex';
   }
   function hideTimeWarningModal() {
