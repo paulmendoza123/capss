@@ -702,7 +702,7 @@
   content:''; position:absolute; height:18px; width:18px; left:3px; bottom:3px;
   background:#fff; border-radius:50%; transition:.2s;
 }
-input:checked + .toggle-slider { background:var(--primary,#6c63ff); }
+input:checked + .toggle-slider { background:var(--accent); }
 input:checked + .toggle-slider:before { transform:translateX(20px); }
 
 /* ── Inline question edit (fade in place — no zoom/scale, no overlay) ── */
@@ -731,7 +731,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 }
 .drag-handle:hover { background:var(--bg3); color:var(--text); }
 .question-block.dragging { opacity:0.4; }
-.question-block.drag-over-target { box-shadow:0 0 0 2px var(--primary,#6c63ff) inset; border-radius:8px; }
+.question-block.drag-over-target { box-shadow:0 0 0 2px var(--accent) inset; border-radius:8px; }
 .questions-list { min-height:4px; }
 .questions-list.drop-target-active { background:var(--bg2); border-radius:8px; }
 
@@ -739,7 +739,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 .section-group { position:relative; }
 .section-tag {
   display:inline-block;
-  background:var(--primary,#6c63ff);
+  background:var(--accent);
   color:#fff;
   font-size:0.72rem;
   font-weight:700;
@@ -810,9 +810,9 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 /* Briefly highlight a target when the toolbar scrolls to it */
 .ftb-highlight { animation: ftbPulse 1.1s ease; }
 @keyframes ftbPulse {
-  0% { box-shadow: 0 0 0 0 rgba(59,125,232,0.45); }
-  70% { box-shadow: 0 0 0 10px rgba(59,125,232,0); }
-  100% { box-shadow: 0 0 0 0 rgba(59,125,232,0); }
+  0% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb),0.45); }
+  70% { box-shadow: 0 0 0 10px rgba(var(--accent-rgb),0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb),0); }
 }
 
 @media (max-width: 720px) {

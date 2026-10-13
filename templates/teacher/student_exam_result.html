@@ -96,13 +96,13 @@
       <div class="choices-list" style="gap:0.35rem">
         {% for choice in q.choices %}
         <div class="choice-item" style="pointer-events:none;
-          {% if choice.choice_label == q.correct_answer and q.is_correct %}background:rgba(56,217,169,0.15);border-color:var(--accent2);border-width:2px
-          {% elif choice.choice_label == q.correct_answer and not q.is_correct %}background:rgba(100,149,237,0.12);border-color:#6495ed;border-width:2px{% endif %}
+          {% if choice.choice_label == q.correct_answer and q.is_correct %}background:rgba(var(--accent2-rgb),0.15);border-color:var(--accent2);border-width:2px
+          {% elif choice.choice_label == q.correct_answer and not q.is_correct %}background:rgba(var(--accent-rgb),0.10);border-color:var(--accent);border-width:2px;border-style:dashed{% endif %}
           {% if choice.choice_label == q.student_answer and not q.is_correct %}background:rgba(247,95,95,0.08);border-color:var(--danger){% endif %}">
           <span class="choice-label-badge">{{ choice.choice_label }}</span>
           <span>{{ choice.choice_text }}</span>
           {% if choice.choice_label == q.correct_answer and q.is_correct %}<span class="text-success text-sm">✓ Correct</span>
-          {% elif choice.choice_label == q.correct_answer %}<span class="text-sm" style="color:#6495ed">● Correct answer</span>{% endif %}
+          {% elif choice.choice_label == q.correct_answer %}<span class="text-sm" style="color:var(--accent)">● Correct answer</span>{% endif %}
           {% if choice.choice_label == q.student_answer and not q.is_correct %}<span class="text-danger text-sm">✗ {{ student.full_name }}'s answer</span>{% endif %}
         </div>
         {% endfor %}

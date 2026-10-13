@@ -344,7 +344,7 @@
 .monitor-card.flash-new { animation: flashNew 1.2s ease; }
 .monitor-card.flash-alert { animation: flashAlert 0.6s ease; }
 @keyframes flashNew {
-  0% { background: rgba(56,217,169,0.15); border-color: var(--accent2); }
+  0% { background: rgba(var(--accent2-rgb),0.15); border-color: var(--accent2); }
   100% { background: var(--card); border-color: var(--border); }
 }
 @keyframes flashAlert {

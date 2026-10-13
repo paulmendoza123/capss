@@ -52,10 +52,15 @@
         </form>
       </div>
     </div>
-    <div class="class-code">{{ cls.class_code }}</div>
-    <div class="class-name">{{ cls.subject_name }}</div>
-    <div class="class-meta">{{ cls.subject_code }} · {{ cls.block_name }} · {{ cls.year_level }}</div>
-    <div class="class-meta mt-1"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg> {{ cls.student_count }} student(s)</div>
+    <div class="cc-head">
+      <div class="cc-code">{{ cls.subject_code }}</div>
+      <div class="cc-title">{{ cls.subject_name }}</div>
+      <span class="cc-badge">{{ cls.class_code }}</span>
+    </div>
+    <div class="cc-body">
+      <div class="cc-meta">{{ cls.block_name }} · {{ cls.year_level }}</div>
+      <span class="cc-pill"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg> {{ cls.student_count }} student(s)</span>
+    </div>
   </div>
 
   {# ══════════════════════════════════════════════════

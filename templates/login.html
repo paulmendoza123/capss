@@ -4,26 +4,27 @@
 <style>
   /* Force light mode on login page regardless of user theme preference */
   html, html[data-theme="dark"] {
-    --bg: #f0f2f7;
+    --bg: #f1f7f3;
     --bg2: #ffffff;
-    --bg3: #e8ebf2;
-    --border: #d4d8e8;
-    --border2: #b8bed4;
-    --accent: #3b7de8;
-    --accent2: #1db885;
-    --accent3: #e07c30;
-    --danger: #e04545;
+    --bg3: #e4efe7;
+    --border: #d2e3d7;
+    --border2: #b1cdb9;
+    --accent: #1e8a4c;
+    --accent2: #2fb26d;
+    --accent3: #d9822b;
+    --danger: #dc4a4a;
     --warning: #d4a017;
-    --text: #1a1d2e;
-    --text2: #4a5068;
-    --text3: #8890aa;
+    --text: #12261a;
+    --text2: #455d4e;
+    --text3: #86a08f;
     --card: #ffffff;
-    --card2: #f5f7fc;
-    --shadow: 0 4px 24px rgba(0,0,0,0.08);
-    --shadow-lg: 0 8px 48px rgba(0,0,0,0.14);
+    --card2: #f5faf6; --accent-hover: #17703d; --accent-rgb: 30,138,76; --accent2-rgb: 47,178,109; --primary: #1e8a4c; --shadow-accent: 0 6px 18px rgba(30,138,76,0.28);
+    --shadow: 0 4px 24px rgba(20,70,40,0.08);
+    --shadow-lg: 0 8px 48px rgba(20,70,40,0.16);
   }
   /* Also hide the theme toggle button on the login page */
   .theme-toggle-btn { display: none !important; }
+  html[data-theme="dark"] .btn-primary, html[data-theme="dark"] .auth-logo-icon, html[data-theme="dark"] .auth-logo-icon .icon { color: #fff; }
 </style>
 {% endblock %}
 {% block content %}
