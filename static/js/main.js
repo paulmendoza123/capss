@@ -454,3 +454,27 @@ document.addEventListener('reset', function (e) {
   var extra = e.target.querySelectorAll ? e.target.querySelectorAll('.alt-answers .alt-row + .alt-row') : [];
   Array.prototype.forEach.call(extra, function (r) { r.remove(); });
 });
+
+// Profile cards: fields are read-only until the pen icon is clicked.
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('form.profile-form').forEach(function (form) {
+    var btn = document.querySelector('[data-profile-edit="' + form.id + '"]');
+    var cancel = form.querySelector('[data-profile-cancel]');
+    var fields = form.querySelectorAll('input[data-editable], select[data-editable]');
+    var original = {};
+    fields.forEach(function (f) { original[f.name] = f.value; });
+    function setEditing(on) {
+      form.classList.toggle('is-editing', on);
+      if (btn) { btn.classList.toggle('is-active', on); btn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+      fields.forEach(function (f) { f.disabled = !on; });
+      if (on && fields[0]) { fields[0].focus(); if (fields[0].select) fields[0].select(); }
+    }
+    if (btn) btn.addEventListener('click', function () { setEditing(!form.classList.contains('is-editing')); if (!form.classList.contains('is-editing')) fields.forEach(function (f) { f.value = original[f.name]; }); });
+    if (cancel) cancel.addEventListener('click', function () {
+      fields.forEach(function (f) { f.value = original[f.name]; f.classList.remove('is-invalid'); });
+      setEditing(false);
+    });
+    setEditing(form.classList.contains('is-editing'));
+    if (!form.classList.contains('is-editing')) fields.forEach(function (f) { f.disabled = true; });
+  });
+});

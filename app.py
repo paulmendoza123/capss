@@ -1591,6 +1591,7 @@ def student_home():
         JOIN class_enrollments ce ON c.id = ce.class_id
         JOIN users u ON c.teacher_id = u.id
         WHERE ce.student_id = ?
+        ORDER BY ce.joined_at DESC, ce.id DESC
     ''', (session['user_id'],)).fetchall()
     return render_template('student/classes.html', classes=classes)
 
@@ -2108,6 +2109,7 @@ def teacher_home():
         LEFT JOIN class_enrollments ce ON c.id = ce.class_id
         WHERE c.teacher_id = ?
         GROUP BY c.id
+        ORDER BY c.id DESC
     ''', (session['user_id'],)).fetchall()
     programs = conn.execute('SELECT * FROM programs ORDER BY code').fetchall()
     return render_template('teacher/classes.html', classes=classes, programs=programs)
@@ -4801,9 +4803,15 @@ def admin_settings():
 def admin_profile():
     conn = get_db()
     user = conn.execute('SELECT * FROM users WHERE id=?', (session['user_id'],)).fetchone()
-    form, errors = {}, {}
+    form, errors, profile_errors = {}, {}, {}
 
-    if request.method == 'POST':
+    if request.method == 'POST' and request.form.get('action') == 'update_profile':
+        ok, profile_errors = handle_profile_update(conn, user)
+        if ok:
+            return redirect(url_for('admin_profile'))
+        user = dict(user)
+        user['full_name'] = request.form.get('full_name', '')
+    elif request.method == 'POST':
         current_password = request.form.get('current_password', '')
         new_password = request.form.get('new_password', '')
         confirm_password = request.form.get('confirm_password', '')
@@ -4839,7 +4847,7 @@ def admin_profile():
                 flash('Password updated successfully.', 'success')
                 return redirect(url_for('admin_home' if was_forced else 'admin_profile'))
 
-    return render_template('admin/profile.html', user=user, form=form, errors=errors)
+    return render_template('admin/profile.html', user=user, form=form, errors=errors, profile_errors=profile_errors)
 
 
 

@@ -1884,3 +1884,19 @@ html[data-theme="dark"] .sidebar-logo .logo-icon .icon { color: #17703d; }
   .sidebar-footer { background: #17703d; }
   html[data-theme="dark"] .sidebar-footer { background: #0d4727; }
 }
+
+/* ── Profile edit mode (pen icon) ── */
+.profile-card-head { display:flex; align-items:center; justify-content:space-between; gap:0.5rem; }
+.profile-edit-btn { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; }
+.profile-edit-btn { background:var(--accent); color:#fff; border-color:var(--accent); }
+.profile-edit-btn .icon { width:16px; height:16px; stroke:#fff; }
+.profile-edit-btn:hover { background:var(--accent-hover); color:#fff; border-color:var(--accent-hover); }
+.profile-edit-btn.is-active { background:var(--accent-hover); color:#fff; border-color:var(--accent-hover); box-shadow:0 0 0 3px rgba(var(--accent-rgb),0.25); }
+.profile-form:not(.is-editing) .form-control,
+.profile-form:not(.is-editing) .form-select {
+  background:transparent; border-color:transparent; padding-left:0; box-shadow:none;
+  opacity:1; -webkit-text-fill-color:currentColor; color:var(--text);
+  -webkit-appearance:none; appearance:none; background-image:none; cursor:default; font-weight:600;
+}
+.profile-form:not(.is-editing) .profile-actions { display:none; }
+.profile-form.is-editing .profile-actions { display:flex; gap:0.5rem; }

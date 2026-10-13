@@ -17,8 +17,10 @@
     <div class="form-group">
       <label class="form-label">Enter Class Code</label>
       <input type="text" name="class_code" class="form-control font-mono"
-             placeholder="e.g. CS101-AB123" style="font-size:1.1rem;letter-spacing:0.08em" required />
-      <div class="form-hint">Class codes are provided by your teacher. They are case-insensitive.</div>
+             placeholder="e.g. CS101-AB123" autocomplete="off" autocapitalize="characters" spellcheck="false"
+             style="font-size:1.1rem;letter-spacing:0.08em;text-transform:uppercase"
+             oninput="this.value=this.value.toUpperCase()" required />
+      <div class="form-hint">Class codes are provided by your teacher. They are automatically capitalized.</div>
     </div>
     <button type="submit" class="btn btn-primary btn-block">Join Class</button>
   </form>

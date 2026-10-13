@@ -8,25 +8,35 @@
 <div class="cards-grid profile-grid">
   <!-- Profile Info -->
   <div class="card">
-    <div class="card-title mb-2">Account Information</div>
-    <div class="form-group">
-      <div class="form-label">Full Name</div>
-      <div class="fw-600">{{ user.full_name }}</div>
+    <div class="profile-card-head mb-2">
+      <div class="card-title">Account Information</div>
+      <button type="button" class="btn btn-ghost btn-sm profile-edit-btn" data-profile-edit="profile-form" title="Edit profile" aria-label="Edit profile" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></button>
     </div>
-    <div class="divider"></div>
-    <div class="form-group">
-      <div class="form-label">Email</div>
-      <div class="font-mono">{{ user.email }}</div>
-    </div>
-    <div class="divider"></div>
-    <div class="form-group">
-      <div class="form-label">Role</div>
-      <span class="badge badge-red">Administrator</span>
-    </div>
-    <div class="form-group">
-      <div class="form-label">Member Since</div>
-      <div class="text-muted text-sm">{{ user.created_at|time12 }}</div>
-    </div>
+    <form method="POST" id="profile-form" class="profile-form{% if profile_errors %} is-editing{% endif %}" action="{{ url_for('admin_profile') }}">
+      <input type="hidden" name="action" value="update_profile" />
+      <div class="form-group">
+        <label class="form-label" for="full_name">Full Name</label>
+        <input type="text" id="full_name" name="full_name" data-editable class="form-control{% if profile_errors.get('full_name') %} is-invalid{% endif %}" value="{{ user.full_name }}" maxlength="100" required />
+      </div>
+      <div class="divider"></div>
+      <div class="form-group">
+        <div class="form-label">Email</div>
+        <div class="font-mono">{{ user.email }}</div>
+      </div>
+      <div class="divider"></div>
+      <div class="form-group">
+        <div class="form-label">Role</div>
+        <span class="badge badge-red">Administrator</span>
+      </div>
+      <div class="form-group">
+        <div class="form-label">Member Since</div>
+        <div class="text-muted text-sm">{{ user.created_at|time12 }}</div>
+      </div>
+      <div class="profile-actions">
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+        <button type="button" class="btn btn-ghost" data-profile-cancel>Cancel</button>
+      </div>
+    </form>
   </div>
 
   <!-- Change Password -->
