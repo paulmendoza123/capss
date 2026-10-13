@@ -19,7 +19,7 @@
   {% if class_key not in classes %}{% set _ = classes.append(class_key) %}{% endif %}
 {% endfor %}
 <!-- Search & Filter -->
-<div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
+<div class="filter-bar" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
   <input type="text" id="examSearch" class="form-control" placeholder="Search by exam title or subject..." style="flex:1 1 320px;min-width:200px" oninput="filterExams()" autocomplete="off">
   <select id="classFilter" class="form-select" style="flex:0 0 200px;width:200px" onchange="filterExams()">
     <option value="all">All Classes</option>

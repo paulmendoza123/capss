@@ -1900,3 +1900,36 @@ html[data-theme="dark"] .sidebar-logo .logo-icon .icon { color: #17703d; }
 }
 .profile-form:not(.is-editing) .profile-actions { display:none; }
 .profile-form.is-editing .profile-actions { display:flex; gap:0.5rem; }
+
+/* ── Search & filter bars: mobile layout ──
+   Applies to every page with a search box / filter dropdowns (.filter-bar).
+   Search goes full width, dropdowns share rows two-per-line, Clear is full width.
+   !important is needed to beat the fixed widths set inline on those elements. */
+@media (max-width: 768px) {
+  .filter-bar { gap: 0.5rem !important; align-items: stretch !important; }
+  .filter-bar > input,
+  .filter-bar > .form-control {
+    flex: 1 1 100% !important; width: 100% !important;
+    max-width: 100% !important; min-width: 0 !important;
+  }
+  .filter-bar > select,
+  .filter-bar > .form-select {
+    flex: 1 1 calc(50% - 0.25rem) !important; width: auto !important;
+    max-width: 100% !important; min-width: 0 !important;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .filter-bar > .btn,
+  .filter-bar > a.btn {
+    flex: 1 1 100% !important; justify-content: center; text-align: center;
+  }
+  .filter-bar > span { flex: 1 1 100%; }
+  /* 16px stops iOS Safari zooming the page when a field is focused;
+     44px is a comfortable touch target. */
+  .filter-bar input,
+  .filter-bar select,
+  .filter-bar .btn { min-height: 44px; font-size: 16px !important; }
+}
+@media (max-width: 340px) {
+  .filter-bar > select,
+  .filter-bar > .form-select { flex-basis: 100% !important; }
+}

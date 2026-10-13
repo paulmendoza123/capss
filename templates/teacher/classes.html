@@ -19,7 +19,7 @@
   {% if cls.program and cls.program not in progs %}{% set _ = progs.append(cls.program) %}{% endif %}
 {% endfor %}
 <!-- Search & Filter -->
-<div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
+<div class="filter-bar" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
   <input type="text" id="classSearch" class="form-control" placeholder="Search by subject, code, block or class code..." style="flex:1 1 320px;min-width:200px" oninput="filterClasses()" autocomplete="off">
   <select id="programFilter" class="form-select" style="flex:0 0 170px;width:170px" onchange="filterClasses()">
     <option value="all">All Programs</option>

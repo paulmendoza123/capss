@@ -943,7 +943,7 @@ function confirmDeleteGroup(id, name, qcount) {
 
 {% if questions %}
 {# ── Filters ── #}
-<div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
+<div class="filter-bar" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
   <input type="text" id="qSearch" class="form-control" placeholder="Search questions…"
          style="flex:1;min-width:160px;max-width:230px" oninput="filterQ()">
   <select id="qTypeFilter" class="form-select" style="width:160px;flex-shrink:0" onchange="filterQ()">

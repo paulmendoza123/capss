@@ -11,7 +11,7 @@
 <!-- Separation of Results: filter which exams' results are shown, by program / year level / section -->
 <div class="card mb-2">
   <div class="text-xs text-muted mb-1 fw-600">Filter Results</div>
-  <form method="GET" class="flex gap-2" style="flex-wrap:wrap;align-items:center">
+  <form method="GET" class="flex gap-2 filter-bar" style="flex-wrap:wrap;align-items:center">
     <select name="program" class="form-select" style="width:auto;min-width:160px" onchange="this.form.submit()">
       <option value="">All Programs</option>
       {% for p in programs %}

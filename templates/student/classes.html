@@ -19,7 +19,7 @@
   {% if cls.year_level and cls.year_level not in years %}{% set _ = years.append(cls.year_level) %}{% endif %}
 {% endfor %}
 <!-- Search & Filter -->
-<div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
+<div class="filter-bar" style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:1rem">
   <input type="text" id="classSearch" class="form-control" placeholder="Search by subject, code, block or teacher..." style="flex:1 1 320px;min-width:200px" oninput="filterClasses()" autocomplete="off">
   <select id="teacherFilter" class="form-select" style="flex:0 0 170px;width:170px" onchange="filterClasses()">
     <option value="all">All Teachers</option>
