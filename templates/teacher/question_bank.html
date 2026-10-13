@@ -777,8 +777,6 @@ function selectType(type) {
   // Points is hidden for essays, so let Group span the full row instead of the 100px Points column
   document.getElementById('bqPointsGroupRow').style.gridTemplateColumns = type === 'essay' ? '1fr' : '100px 1fr';
   document.getElementById('bankSubmitBtn').disabled = false;
-  const qTypeFilter = document.getElementById('qTypeFilter');
-  if (qTypeFilter) { qTypeFilter.value = type; filterQ(); }
 }
 
 /* ── Correct answer for MC ── */
