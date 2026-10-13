@@ -3214,6 +3214,8 @@ def teacher_toggle_exam_status(exam_id):
         conn.execute("UPDATE exams SET status=?, manually_closed=1, activated_at=NULL WHERE id=?", (new_status, exam_id))
     conn.commit()
     flash(f"Exam is now {'Open' if new_status == 'active' else 'Closed'}.", 'success')
+    if request.form.get('next') == 'monitoring':
+        return redirect(url_for('teacher_exam_monitoring', exam_id=exam_id))
     return redirect(url_for('teacher_class_detail', class_id=class_id))
 
 @app.route('/teacher/exam/<int:exam_id>/finish-editing', methods=['POST'])

@@ -34,8 +34,15 @@
   <div class="empty-state">
     <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg></div>
     <div class="empty-state-title">Exam is not active</div>
-    <div class="empty-state-text">Change the exam status to Active to start monitoring students.</div>
-    <a href="{{ url_for('teacher_exam_detail', exam_id=exam.id) }}" class="btn btn-primary mt-2">Go to Settings</a>
+    {% if exam.status == 'upcoming' %}
+    <div class="empty-state-text">The exam is closed. Open it to start monitoring students.</div>
+    <form method="POST" action="{{ url_for('teacher_toggle_exam_status', exam_id=exam.id) }}" style="display:inline;">
+      <input type="hidden" name="next" value="monitoring">
+      <button type="submit" class="btn btn-primary mt-2"><svg class="icon" aria-hidden="true"><use href="#i-unlock"/></svg> Open Exam</button>
+    </form>
+    {% else %}
+    <div class="empty-state-text">This exam is completed and can no longer be monitored live.</div>
+    {% endif %}
   </div>
   {% else %}
 
