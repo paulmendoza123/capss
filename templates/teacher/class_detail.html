@@ -71,12 +71,22 @@
 
 <!-- STUDENTS TAB -->
 <div class="tab-content" data-tab="students">
+  {% if reset_notice %}
+  <div class="card mb-2" style="padding:1.25rem;border:1px solid var(--accent)">
+    <div class="fw-600" style="margin-bottom:0.4rem"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> Temporary password for {{ reset_notice.name }}</div>
+    <div class="font-mono" style="font-size:1.4rem;letter-spacing:0.08em;margin:0.5rem 0;user-select:all">{{ reset_notice.password }}</div>
+    <div class="text-muted" style="font-size:0.85rem">
+      Give this to the student ({{ reset_notice.email }}). It is shown <strong>only once</strong> — leaving or refreshing this page hides it.
+      They will be required to set a new password right after logging in.
+    </div>
+  </div>
+  {% endif %}
   {% if students %}
   <div class="card">
     <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Name</th><th>Email</th><th>Program</th><th>Year</th></tr>
+        <tr><th>Name</th><th>Email</th><th>Program</th><th>Year</th><th>Actions</th></tr>
       </thead>
       <tbody>
         {% for s in students %}
@@ -85,6 +95,14 @@
           <td class="font-mono text-sm">{{ s.email }}</td>
           <td>{{ s.program or '—' }}</td>
           <td>{{ s.year_level or '—' }}</td>
+          <td>
+            <form method="POST" action="{{ url_for('teacher_reset_student_password', class_id=cls.id, student_id=s.id) }}" style="display:inline" onsubmit="return confirm('Reset the password of {{ s.full_name }}? A temporary password will be generated, and they must change it the next time they log in.')">
+              <button type="submit" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> Reset Password</button>
+            </form>
+            <form method="POST" action="{{ url_for('teacher_remove_student', class_id=cls.id, student_id=s.id) }}" style="display:inline" onsubmit="return confirm('Remove {{ s.full_name }} from this class? They can rejoin later with the class code{{ ' (if allowed on the list)' if cls.restrict_join else '' }}.')">
+              <button type="submit" class="btn btn-ghost btn-sm" style="color:#e74c3c">✕ Remove</button>
+            </form>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -104,15 +122,35 @@
 <div class="tab-content" data-tab="allowed-emails" id="allowed-emails">
   <div class="card mb-2" style="padding:1.25rem">
     <div class="fw-600" style="margin-bottom:0.35rem"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Who can join with the class code?</div>
-    {% if allowed_emails %}
-    <div class="text-muted" style="font-size:0.85rem;margin-bottom:1rem">
-      Only the <strong>{{ allowed_emails|length }}</strong> email{{ 's' if allowed_emails|length != 1 else '' }} listed below can join this class using
-      <span class="font-mono text-accent">{{ cls.class_code }}</span>. Anyone else will be blocked at sign-up.
+
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin:0.6rem 0 0.75rem">
+      <form method="POST" action="{{ url_for('teacher_toggle_class_restriction', class_id=cls.id) }}" style="display:inline">
+        <button type="submit" class="btn btn-sm {{ 'btn-ghost' if cls.restrict_join else 'btn-primary' }}" style="border-radius:8px 0 0 8px">
+          <svg class="icon" aria-hidden="true"><use href="#i-unlock"/></svg> Open to Anyone
+        </button>
+      </form>
+      <form method="POST" action="{{ url_for('teacher_toggle_class_restriction', class_id=cls.id) }}" style="display:inline;margin-left:-0.5rem">
+        <button type="submit" class="btn btn-sm {{ 'btn-primary' if cls.restrict_join else 'btn-ghost' }}" style="border-radius:0 8px 8px 0">
+          <svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Restricted to Allowed List
+        </button>
+      </form>
     </div>
+
+    {% if cls.restrict_join %}
+      {% if allowed_emails %}
+      <div class="text-muted" style="font-size:0.85rem;margin-bottom:1rem">
+        Only the <strong>{{ allowed_emails|length }}</strong> email{{ 's' if allowed_emails|length != 1 else '' }} listed below can join this class using
+        <span class="font-mono text-accent">{{ cls.class_code }}</span>. Anyone else will be blocked at sign-up.
+      </div>
+      {% else %}
+      <div class="text-muted" style="font-size:0.85rem;margin-bottom:1rem;color:#e67e22">
+        <svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg> Restricted mode is on, but the list is empty — <strong>no one</strong> can join right now. Add emails below.
+      </div>
+      {% endif %}
     {% else %}
     <div class="text-muted" style="font-size:0.85rem;margin-bottom:1rem">
-      No list set yet — <strong>anyone</strong> with the class code <span class="font-mono text-accent">{{ cls.class_code }}</span> can join right now.
-      Add emails below to restrict joining to only your students.
+      <strong>Anyone</strong> with the class code <span class="font-mono text-accent">{{ cls.class_code }}</span> can join right now.
+      {% if allowed_emails %}Switch to "Restricted" above to start enforcing the {{ allowed_emails|length }} email{{ 's' if allowed_emails|length != 1 else '' }} already on your list.{% else %}Add emails below and switch to "Restricted" to limit joining to only your students.{% endif %}
     </div>
     {% endif %}
 
@@ -160,8 +198,8 @@
     </div>
   </div>
   <div style="margin-top:1rem">
-    <form method="POST" action="{{ url_for('teacher_clear_allowed_emails', class_id=cls.id) }}" onsubmit="return confirm('This removes the whole list. The class will become open — ANY student with the class code will be able to join. Continue?')">
-      <button type="submit" class="btn btn-ghost btn-sm" style="color:#e74c3c"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Clear Entire List (reopen class to anyone)</button>
+    <form method="POST" action="{{ url_for('teacher_clear_allowed_emails', class_id=cls.id) }}" onsubmit="return confirm('This removes the whole list.{{ ' Since the class is currently Restricted, no one will be able to join until you add emails back.' if cls.restrict_join else '' }} Continue?')">
+      <button type="submit" class="btn btn-ghost btn-sm" style="color:#e74c3c"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Clear Entire List</button>
     </form>
   </div>
   {% endif %}

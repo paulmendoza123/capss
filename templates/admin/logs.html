@@ -11,6 +11,7 @@
 <div class="tabs">
   <button class="tab-btn active" data-tab="login"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Login History</button>
   <button class="tab-btn" data-tab="suspicious"><svg class="icon icon-warn" aria-hidden="true"><use href="#i-alert"/></svg> Suspicious Activity</button>
+  <button class="tab-btn" data-tab="pw-resets"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> Password Resets</button>
 </div>
 
 <!-- LOGIN LOGS -->
@@ -141,6 +142,37 @@
   <div class="empty-state">
     <div class="empty-state-icon"><svg class="icon icon-warn" aria-hidden="true"><use href="#i-alert"/></svg></div>
     <div class="empty-state-title">No suspicious activity logged</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- PASSWORD RESETS (done by teachers for their students) -->
+<div class="tab-content" data-tab="pw-resets">
+  {% if pw_resets %}
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Student</th><th>Email</th><th>Reset By (Teacher)</th><th>Class</th><th>Time</th></tr>
+        </thead>
+        <tbody>
+          {% for r in pw_resets %}
+          <tr>
+            <td class="fw-600">{{ r.student_name or '—' }}</td>
+            <td class="font-mono text-sm">{{ r.student_email or '—' }}</td>
+            <td>{{ r.teacher_name or '—' }}</td>
+            <td class="text-sm">{% if r.subject_name %}{{ r.subject_name }} ({{ r.block_name }}){% else %}—{% endif %}</td>
+            <td class="text-sm text-muted">{{ r.reset_at|time12 }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg></div>
+    <div class="empty-state-title">No password resets yet</div>
   </div>
   {% endif %}
 </div>

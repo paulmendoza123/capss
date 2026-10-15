@@ -575,6 +575,14 @@ def init_db():
             FOREIGN KEY (session_id) REFERENCES exam_sessions(id)
         );
 
+        CREATE TABLE IF NOT EXISTS password_reset_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            teacher_id INTEGER NOT NULL,
+            class_id INTEGER,
+            reset_at TIMESTAMP DEFAULT (datetime('now','localtime'))
+        );
+
         CREATE TABLE IF NOT EXISTS login_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -1122,6 +1130,25 @@ def init_db():
     except Exception:
         pass  # Column already exists
 
+    # classes.restrict_join: explicit "Open to Anyone" vs "Restricted to
+    # Allowed List" switch for joining by class code. Previously this was
+    # only ever *implied* by whether class_allowed_emails had any rows,
+    # which meant a teacher couldn't prepare an allow-list in advance (or
+    # temporarily open the class) without permanently losing/clearing it.
+    try:
+        conn.execute('ALTER TABLE classes ADD COLUMN restrict_join INTEGER DEFAULT 0')
+        conn.commit()
+        # One-time backfill for existing classes: anything that already has
+        # allowed emails was, under the old implicit rule, already
+        # restricted — keep that behavior unchanged for those classes.
+        conn.execute('''
+            UPDATE classes SET restrict_join = 1
+            WHERE id IN (SELECT DISTINCT class_id FROM class_allowed_emails)
+        ''')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
 
 def get_maintenance_db():
     """Standalone sqlite connection for the background maintenance thread, which
@@ -1330,6 +1357,7 @@ def handle_password_change(conn, user):
             conn.execute('UPDATE users SET password=?, must_change_password=0 WHERE id=?',
                          (hash_password(new_password), user['id']))
             conn.commit()
+            session.pop('must_change_pw', None)  # lift the forced-change lock
             flash('Password updated successfully.', 'success')
             return {}, {}, True
     return form, errors, False
@@ -1376,9 +1404,10 @@ def force_password_change():
     """While the account is flagged, the only pages allowed are the profile
     page (to change the password), logout, and static files."""
     if session.get('user_id') and session.get('must_change_pw'):
-        if request.endpoint not in ('admin_profile', 'logout', 'static'):
-            flash('For security, you must change the default password before continuing.', 'error')
-            return redirect(url_for('admin_profile'))
+        profile_endpoint = f"{session.get('role')}_profile"
+        if request.endpoint not in (profile_endpoint, 'logout', 'static'):
+            flash('For security, you must change your temporary password before continuing.', 'error')
+            return redirect(url_for(profile_endpoint))
 
 def login_required(f):
     @wraps(f)
@@ -1630,13 +1659,12 @@ def student_join_class():
         if not cls:
             flash('Invalid or inactive class code.', 'error')
         else:
-            # If the teacher has uploaded an allowed-emails list for this
-            # class, only students whose email is on it may join — a class
-            # with no list configured stays open to anyone with the code.
-            allowed_count = conn.execute(
-                'SELECT COUNT(*) as c FROM class_allowed_emails WHERE class_id=?', (cls['id'],)
-            ).fetchone()['c']
-            if allowed_count > 0:
+            # The teacher controls this explicitly via the "Open to Anyone" /
+            # "Restricted to Allowed List" switch on the class's Allowed
+            # Emails tab. When restricted, only students whose email is on
+            # the list may join (an empty list while restricted means no one
+            # can join yet — correct, if unhelpful, until emails are added).
+            if cls['restrict_join']:
                 student_email = (session.get('email') or '').strip().lower()
                 is_allowed = conn.execute(
                     'SELECT 1 FROM class_allowed_emails WHERE class_id=? AND email=?',
@@ -2246,8 +2274,15 @@ def teacher_class_detail(class_id):
     for a in allowed_emails:
         allowed_emails_view.append({'email': a['email'], 'joined': a['email'].lower() in enrolled_emails})
 
+    # One-time notice carrying a freshly generated temporary password. Kept
+    # out of flash() because flash alerts auto-dismiss after a few seconds,
+    # and the teacher needs time to read it out to the student.
+    reset_notice = session.pop('reset_notice', None)
+    if reset_notice and reset_notice.get('class_id') != class_id:
+        reset_notice = None
+
     return render_template('teacher/class_detail.html', cls=cls, students=students, exams=exams,
-                           allowed_emails=allowed_emails_view)
+                           allowed_emails=allowed_emails_view, reset_notice=reset_notice)
 
 def _get_owned_class(conn, class_id):
     """Fetch a class only if it belongs to the currently logged-in teacher."""
@@ -2387,8 +2422,9 @@ def teacher_remove_allowed_email(class_id):
 @app.route('/teacher/class/<int:class_id>/allowed-emails/clear', methods=['POST'])
 @role_required('teacher')
 def teacher_clear_allowed_emails(class_id):
-    """Clears the whole allow-list, which re-opens the class so ANY student
-    with the class code can join (the original, unrestricted behavior)."""
+    """Empties the allow-list (just the emails — does not change whether the
+    class is currently set to Open or Restricted). Handy for starting a
+    fresh list without re-uploading everyone, or clearing out a stale one."""
     conn = get_db()
     cls = _get_owned_class(conn, class_id)
     if not cls:
@@ -2396,8 +2432,103 @@ def teacher_clear_allowed_emails(class_id):
         return redirect(url_for('teacher_home'))
     conn.execute('DELETE FROM class_allowed_emails WHERE class_id=?', (class_id,))
     conn.commit()
-    flash('Cleared the allowed-emails list. This class is now open to anyone with the class code.', 'success')
+    flash('Cleared the allowed-emails list.', 'success')
     return redirect(url_for('teacher_class_detail', class_id=class_id) + '#allowed-emails')
+
+
+@app.route('/teacher/class/<int:class_id>/allowed-emails/toggle', methods=['POST'])
+@role_required('teacher')
+def teacher_toggle_class_restriction(class_id):
+    """Explicit switch between 'Open to Anyone with the code' and
+    'Restricted to the allowed-emails list'. Kept separate from the list
+    itself, so a teacher can prep an allow-list in advance, or temporarily
+    reopen a class, without losing it."""
+    conn = get_db()
+    cls = _get_owned_class(conn, class_id)
+    if not cls:
+        flash('Class not found.', 'error')
+        return redirect(url_for('teacher_home'))
+    new_state = 0 if cls['restrict_join'] else 1
+    conn.execute('UPDATE classes SET restrict_join=? WHERE id=?', (new_state, class_id))
+    conn.commit()
+    if new_state:
+        flash('This class is now restricted — only emails on the allowed list can join.', 'success')
+    else:
+        flash('This class is now open — anyone with the class code can join.', 'success')
+    return redirect(url_for('teacher_class_detail', class_id=class_id) + '#allowed-emails')
+
+
+@app.route('/teacher/class/<int:class_id>/students/remove/<int:student_id>', methods=['POST'])
+@role_required('teacher')
+def teacher_remove_student(class_id, student_id):
+    """Removes one student's enrollment from this class (does not touch the
+    allowed-emails list). The student can rejoin later with the class code —
+    immediately if the class is open, or only if their email is still on the
+    allowed list if it's restricted."""
+    conn = get_db()
+    cls = _get_owned_class(conn, class_id)
+    if not cls:
+        flash('Class not found.', 'error')
+        return redirect(url_for('teacher_home'))
+    student = conn.execute('SELECT full_name FROM users WHERE id=?', (student_id,)).fetchone()
+    conn.execute('DELETE FROM class_enrollments WHERE class_id=? AND student_id=?', (class_id, student_id))
+    conn.commit()
+    name = student['full_name'] if student else 'Student'
+    flash(f'{name} was removed from the class.', 'success')
+    return redirect(url_for('teacher_class_detail', class_id=class_id) + '#students')
+
+
+def _generate_temp_password():
+    """Random temporary password that always satisfies the app's strength
+    rules (upper + lower + number + special). Avoids look-alike characters
+    (0/O, 1/l/I) since the teacher may read it out loud to the student."""
+    upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+    lower = 'abcdefghijkmnpqrstuvwxyz'
+    digits = '23456789'
+    special = '!@#$%&*?'
+    chars = [secrets.choice(upper), secrets.choice(lower),
+             secrets.choice(digits), secrets.choice(special)]
+    pool = upper + lower + digits
+    chars += [secrets.choice(pool) for _ in range(6)]
+    secrets.SystemRandom().shuffle(chars)
+    return ''.join(chars)
+
+
+@app.route('/teacher/class/<int:class_id>/students/reset-password/<int:student_id>', methods=['POST'])
+@role_required('teacher')
+def teacher_reset_student_password(class_id, student_id):
+    """A teacher can reset the password of a student enrolled in one of THEIR
+    classes (so a student who forgot their password mid-semester doesn't need
+    the admin). Generates a one-time temporary password, forces the student to
+    change it at next login, clears any lockout, and writes an audit row."""
+    conn = get_db()
+    cls = _get_owned_class(conn, class_id)
+    if not cls:
+        flash('Class not found.', 'error')
+        return redirect(url_for('teacher_home'))
+    student = conn.execute(
+        '''SELECT u.* FROM users u
+           JOIN class_enrollments ce ON ce.student_id = u.id
+           WHERE ce.class_id=? AND u.id=? AND u.role='student' ''',
+        (class_id, student_id)
+    ).fetchone()
+    if not student:
+        flash('That student is not enrolled in this class.', 'error')
+        return redirect(url_for('teacher_class_detail', class_id=class_id) + '#students')
+    temp_password = _generate_temp_password()
+    conn.execute(
+        '''UPDATE users SET password=?, must_change_password=1,
+           failed_login_attempts=0, locked_until=NULL WHERE id=?''',
+        (hash_password(temp_password), student_id)
+    )
+    conn.execute(
+        'INSERT INTO password_reset_logs (student_id, teacher_id, class_id) VALUES (?,?,?)',
+        (student_id, session['user_id'], class_id)
+    )
+    conn.commit()
+    session['reset_notice'] = {'class_id': class_id, 'name': student['full_name'],
+                               'email': student['email'], 'password': temp_password}
+    return redirect(url_for('teacher_class_detail', class_id=class_id) + '#students')
 
 
 @app.route('/teacher/class/<int:class_id>/delete', methods=['POST'])
@@ -4778,7 +4909,17 @@ def admin_logs():
                                 'window_blur', 'fullscreen_exit')
         ORDER BY sl.logged_at DESC LIMIT 100
     ''').fetchall()
-    return render_template('admin/logs.html', login_logs=login_logs, suspicious=suspicious)
+    pw_resets = conn.execute('''
+        SELECT pr.reset_at, s.full_name AS student_name, s.email AS student_email,
+               t.full_name AS teacher_name, c.subject_name, c.block_name
+        FROM password_reset_logs pr
+        LEFT JOIN users s ON pr.student_id = s.id
+        LEFT JOIN users t ON pr.teacher_id = t.id
+        LEFT JOIN classes c ON pr.class_id = c.id
+        ORDER BY pr.reset_at DESC, pr.id DESC LIMIT 100
+    ''').fetchall()
+    return render_template('admin/logs.html', login_logs=login_logs, suspicious=suspicious,
+                           pw_resets=pw_resets)
 
 @app.route('/admin/settings', methods=['GET', 'POST'])
 @role_required('admin')
