@@ -67,12 +67,43 @@
 
   </div>
 
-  <!-- Student cards — refreshed every 2s -->
+  <!-- Live session filters (client-side, re-applied on every refresh) -->
+  <div class="filter-bar" id="live-filter-bar" style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-bottom:1rem; align-items:center;">
+    <input type="text" id="live-filter-name" placeholder="Search student..." class="form-control"
+           style="max-width:220px; padding:0.4rem 0.75rem; font-size:0.85rem;"
+           oninput="applyLiveFilters()" />
+    <select id="live-filter-status" class="form-select"
+            style="max-width:200px; padding:0.4rem 0.75rem; font-size:0.85rem;"
+            onchange="applyLiveFilters()">
+      <option value="">All Students</option>
+      <option value="connected">Connected</option>
+      <option value="disconnected">Disconnected</option>
+      <option value="flagged">Has Violations</option>
+      <option value="nearlimit">Near / At Tab Limit</option>
+    </select>
+    <select id="live-sort" class="form-select"
+            style="max-width:210px; padding:0.4rem 0.75rem; font-size:0.85rem;"
+            onchange="applyLiveFilters()">
+      <option value="default">Sort: Order started</option>
+      <option value="name">Name (A–Z)</option>
+      <option value="progress_asc">Progress (lowest first)</option>
+      <option value="progress_desc">Progress (highest first)</option>
+      <option value="tabs_desc">Most tab switches</option>
+      <option value="violations_desc">Most violations</option>
+    </select>
+    <button class="btn btn-ghost btn-sm" onclick="clearLiveFilters()" style="font-size:0.82rem;">✕ Clear</button>
+    <span id="live-filter-count" class="text-xs text-muted" style="align-self:center;"></span>
+  </div>
+
+  <!-- Student cards — refreshed every 3s -->
   <div id="monitor-list">
     {% if sessions %}
       {% for s in sessions %}
       {% set pct = ((s.answered / total_q) * 100)|int if total_q > 0 else 0 %}
-      <div class="monitor-card mb-1" id="sess-{{ s.id }}" data-connected="true">
+      <div class="monitor-card mb-1" id="sess-{{ s.id }}" data-connected="true"
+           data-sid="{{ s.id }}" data-name="{{ s.full_name|lower }}"
+           data-tabs="{{ s.tab_switch_count or 0 }}" data-fs="{{ s.fullscreen_exit_count or 0 }}"
+           data-lf="{{ s.lost_focus_count or 0 }}" data-pct="{{ pct }}">
         <div class="monitor-name">
           <span class="connection-dot connected" title="Connected"></span>
           {{ s.full_name }}
@@ -131,6 +162,10 @@
       </div>
     {% endif %}
   </div>
+  <div class="empty-state" id="live-filter-empty" style="display:none;">
+    <div class="empty-state-title">No students match your filters</div>
+    <div class="empty-state-text">Try a different search or click Clear.</div>
+  </div>
 
   {% endif %}
 </div>
@@ -142,10 +177,10 @@
   <div class="filter-bar" style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-bottom:1rem; align-items:center;">
     <input type="text" id="log-filter-name" placeholder="Filter by student..." class="form-control"
            style="max-width:220px; padding:0.4rem 0.75rem; font-size:0.85rem;"
-           oninput="applyLogFilters()" />
+           oninput="onLogFilterChange(true)" />
     <select id="log-filter-event" class="form-select"
             style="max-width:200px; padding:0.4rem 0.75rem; font-size:0.85rem;"
-            onchange="applyLogFilters()">
+            onchange="onLogFilterChange(false)">
       <option value="">All Events</option>
       <option value="tab_switch">Tab Switch</option>
       <option value="window_minimize">Lost Focus</option>
@@ -189,6 +224,10 @@
       <div class="empty-state-title">No activity yet</div>
     </div>
     {% endif %}
+  </div>
+  <div id="log-more-wrap" style="display:none; text-align:center; margin-top:0.75rem;">
+    <button class="btn btn-ghost btn-sm" id="log-more-btn" onclick="loadMoreLogs()">Load more</button>
+    <div id="log-more-note" class="text-xs text-muted" style="display:none; margin-top:0.4rem;"></div>
   </div>
 </div>
 
@@ -431,7 +470,9 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
 
     const safeName = s.full_name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return `
-      <div class="monitor-card mb-1 flash-new${isConnected ? '' : ' disconnected-card'}" id="sess-${s.id}" data-connected="${isConnected}">
+      <div class="monitor-card mb-1 flash-new${isConnected ? '' : ' disconnected-card'}" id="sess-${s.id}" data-connected="${isConnected}"
+           data-sid="${s.id}" data-name="${s.full_name.toLowerCase().replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}"
+           data-tabs="${sw}" data-fs="${fe}" data-lf="${lf}" data-pct="${pct}">
         <div class="monitor-name">
           <span class="connection-dot ${dotClass}" title="${isConnected ? 'Connected' : 'Disconnected'}"></span>
           ${safeName}
@@ -470,7 +511,7 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
   }
 
   // ── UPDATE LOGS TABLE ──
-  function updateLogs(logs) {
+  function updateLogs(logs, total) {
     let tbody = document.getElementById('logs-tbody');
     if (!tbody) {
       const container = document.getElementById('logs-container');
@@ -486,8 +527,10 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
         </div>`;
       tbody = document.getElementById('logs-tbody');
     }
+    const filtersOn = !!(getLogFilters().student || getLogFilters().event);
     if (!logs || !logs.length) {
-      tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted text-sm" style="padding:1rem">No activity yet</td></tr>';
+      tbody.innerHTML = `<tr><td colspan="3" class="text-center text-muted text-sm" style="padding:1rem">${filtersOn ? 'No events match your filters' : 'No activity yet'}</td></tr>`;
+      renderLogMeta(0, total || 0, filtersOn);
       return;
     }
     tbody.innerHTML = logs.map(log => {
@@ -513,7 +556,7 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
         <td class="text-sm text-muted font-mono">${fmtTime12(log.logged_at)}</td>
       </tr>`;
     }).join('');
-    applyLogFilters();
+    renderLogMeta(logs.length, total == null ? logs.length : total, filtersOn);
   }
 
   // ── UPDATE RESULTS TAB ──
@@ -768,9 +811,13 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
   // ── MAIN REFRESH — every 2s ──
   async function refreshMonitoring() {
     try {
-      const res = await fetch(`/api/monitoring/${EXAM_ID}`);
+      const query = logQueryString();
+      const res = await fetch(`/api/monitoring/${EXAM_ID}?${query}`);
       if (!res.ok) throw new Error('Bad response');
       const data = await res.json();
+      // The log filters changed while this request was in flight: drop the
+      // stale reply (a fresh request for the new filters is already on its way).
+      if (query !== logQueryString()) return;
 
       const sessions = data.sessions || [];
       const totalQ = data.total_q || 0;
@@ -849,6 +896,13 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
               lfEl.className = 'monitor-stat-val lost-focus-count ' + (lf > 0 ? 'text-accent' : 'text-success');
             }
 
+            // Keep filter/sort data attributes in sync
+            card.dataset.connected = String(isConnected);
+            card.dataset.tabs = sw;
+            card.dataset.fs = fe;
+            card.dataset.lf = lf;
+            card.dataset.pct = pct;
+
             // Update connection dot instantly
             const dot = card.querySelector('.connection-dot');
             if (dot) {
@@ -884,7 +938,8 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
       }
       } // end if (list)
 
-      updateLogs(data.logs);
+      applyLiveFilters(true);
+      updateLogs(data.logs, data.logs_total);
       updateResults(data);
 
       const statusEl = document.getElementById('refresh-status');
@@ -904,24 +959,35 @@ refreshMonitoring();
 // monitoring view feeling live without hammering the server every second.
 setInterval(refreshMonitoring, 3000);
 
-// ── LOG FILTERS ──
-function applyLogFilters() {
-  const nameVal = (document.getElementById('log-filter-name')?.value || '').toLowerCase().trim();
-  const eventVal = (document.getElementById('log-filter-event')?.value || '').trim();
-  const rows = document.querySelectorAll('#logs-tbody tr');
-  let visible = 0;
-  rows.forEach(row => {
-    const nameMatch = !nameVal || (row.dataset.name || '').includes(nameVal);
-    const eventMatch = !eventVal || row.dataset.event === eventVal;
-    const show = nameMatch && eventMatch;
-    row.style.display = show ? '' : 'none';
-    if (show) visible++;
-  });
-  const countEl = document.getElementById('log-filter-count');
-  if (countEl) {
-    countEl.textContent = rows.length > 0
-      ? `Showing ${visible} of ${rows.length} events`
-      : '';
+// ── LOG FILTERS (server-side: searches the entire activity log) ──
+let logLimit = 100;
+const LOG_PAGE = 100;
+const LOG_MAX = 500;
+let logFilterTimer = null;
+
+function getLogFilters() {
+  return {
+    student: (document.getElementById('log-filter-name')?.value || '').trim(),
+    event: (document.getElementById('log-filter-event')?.value || '').trim(),
+  };
+}
+
+function logQueryString() {
+  const f = getLogFilters();
+  const q = new URLSearchParams();
+  if (f.student) q.set('log_student', f.student);
+  if (f.event) q.set('log_event', f.event);
+  q.set('log_limit', logLimit);
+  return q.toString();
+}
+
+function onLogFilterChange(debounce) {
+  logLimit = LOG_PAGE;
+  clearTimeout(logFilterTimer);
+  if (debounce) {
+    logFilterTimer = setTimeout(refreshMonitoring, 300);
+  } else {
+    refreshMonitoring();
   }
 }
 
@@ -930,7 +996,114 @@ function clearLogFilters() {
   const eventEl = document.getElementById('log-filter-event');
   if (nameEl) nameEl.value = '';
   if (eventEl) eventEl.value = '';
-  applyLogFilters();
+  logLimit = LOG_PAGE;
+  refreshMonitoring();
+}
+
+function loadMoreLogs() {
+  logLimit = Math.min(logLimit + LOG_PAGE, LOG_MAX);
+  refreshMonitoring();
+}
+
+function renderLogMeta(shown, total, filtersOn) {
+  const countEl = document.getElementById('log-filter-count');
+  if (countEl) {
+    countEl.textContent = total > 0
+      ? `Showing ${shown} of ${total} ${filtersOn ? 'matching ' : ''}event${total === 1 ? '' : 's'}`
+      : '';
+  }
+  const wrap = document.getElementById('log-more-wrap');
+  const btn = document.getElementById('log-more-btn');
+  const note = document.getElementById('log-more-note');
+  if (!wrap) return;
+  const remaining = total - shown;
+  if (remaining > 0 && logLimit < LOG_MAX) {
+    wrap.style.display = '';
+    btn.style.display = '';
+    btn.textContent = `Load more (${remaining} older)`;
+    note.style.display = 'none';
+  } else if (remaining > 0) {
+    wrap.style.display = '';
+    btn.style.display = 'none';
+    note.style.display = '';
+    note.textContent = `Showing the latest ${LOG_MAX} events. Use the filters to narrow down older ones.`;
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
+// ── LIVE SESSION FILTERS + SORT (client-side, re-applied every refresh) ──
+function liveCardMetrics(card) {
+  const d = card.dataset;
+  const tabs = parseInt(d.tabs) || 0, fs = parseInt(d.fs) || 0, lf = parseInt(d.lf) || 0;
+  return {
+    sid: parseInt(d.sid) || 0,
+    name: d.name || '',
+    connected: d.connected !== 'false',
+    tabs, fs, lf,
+    violations: tabs + fs + lf,
+    pct: parseInt(d.pct) || 0,
+  };
+}
+
+function applyLiveFilters(fromRefresh) {
+  const list = document.getElementById('monitor-list');
+  if (!list) return;
+  const q = (document.getElementById('live-filter-name')?.value || '').toLowerCase().trim();
+  const status = document.getElementById('live-filter-status')?.value || '';
+  const sort = document.getElementById('live-sort')?.value || 'default';
+  const cards = Array.from(list.querySelectorAll('.monitor-card'));
+
+  // 1) Filter (show/hide)
+  let visible = 0;
+  cards.forEach(card => {
+    const m = liveCardMetrics(card);
+    let show = !q || m.name.includes(q);
+    if (show && status === 'connected') show = m.connected;
+    else if (show && status === 'disconnected') show = !m.connected;
+    else if (show && status === 'flagged') show = m.violations > 0;
+    else if (show && status === 'nearlimit') show = TAB_LIMIT > 0 && m.tabs >= Math.max(1, TAB_LIMIT - 1);
+    card.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+
+  // 2) Sort. Skipped during an auto-refresh while the pointer is over a card,
+  //    so a card never jumps out from under the Terminate button mid-click.
+  const hovering = fromRefresh && list.querySelector('.monitor-card:hover');
+  if (!hovering) {
+    const byName = (a, b) => a.name.localeCompare(b.name);
+    const cmp = {
+      default: (a, b) => a.sid - b.sid,
+      name: byName,
+      progress_asc: (a, b) => a.pct - b.pct || byName(a, b),
+      progress_desc: (a, b) => b.pct - a.pct || byName(a, b),
+      tabs_desc: (a, b) => b.tabs - a.tabs || byName(a, b),
+      violations_desc: (a, b) => b.violations - a.violations || byName(a, b),
+    }[sort] || ((a, b) => a.sid - b.sid);
+    const items = cards.map(card => ({ card, ...liveCardMetrics(card) })).sort(cmp);
+    const changed = items.some((it, i) => it.card !== cards[i]);
+    if (changed) items.forEach(it => list.appendChild(it.card));
+  }
+
+  // 3) Count + empty state
+  const countEl = document.getElementById('live-filter-count');
+  if (countEl) {
+    countEl.textContent = cards.length > 0
+      ? (visible === cards.length ? `${cards.length} student${cards.length === 1 ? '' : 's'}` : `Showing ${visible} of ${cards.length} students`)
+      : '';
+  }
+  const emptyEl = document.getElementById('live-filter-empty');
+  if (emptyEl) emptyEl.style.display = (cards.length > 0 && visible === 0) ? '' : 'none';
+}
+
+function clearLiveFilters() {
+  const n = document.getElementById('live-filter-name');
+  const st = document.getElementById('live-filter-status');
+  const so = document.getElementById('live-sort');
+  if (n) n.value = '';
+  if (st) st.value = '';
+  if (so) so.value = 'default';
+  applyLiveFilters(false);
 }
 
 

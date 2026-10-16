@@ -5493,6 +5493,26 @@ def api_monitoring(exam_id):
 
     total_q = conn.execute('SELECT COUNT(*) FROM questions WHERE exam_id=?', (exam_id,)).fetchone()[0]
 
+    # ── Activity-log filters (applied in SQL so they search the WHOLE log, not
+    #    just the most recent rows the page happens to have loaded) ──
+    #   ?log_student=<name fragment>  ?log_event=<event_type>  ?log_limit=<1..500>
+    log_student = (request.args.get('log_student') or '').strip().lower()[:100]
+    log_event = (request.args.get('log_event') or '').strip()[:50]
+    try:
+        log_limit = int(request.args.get('log_limit', 100))
+    except (TypeError, ValueError):
+        log_limit = 100
+    log_limit = max(1, min(log_limit, 500))
+    log_where = 'sl.exam_id=?'
+    log_params = [exam_id]
+    if log_student:
+        like = log_student.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        log_where += " AND LOWER(u.full_name) LIKE ? ESCAPE '\\'"
+        log_params.append('%' + like + '%')
+    if log_event:
+        log_where += ' AND sl.event_type=?'
+        log_params.append(log_event)
+
     active_sessions = conn.execute('''
         SELECT es.id, u.full_name, es.tab_switch_count, es.fullscreen_exit_count, es.lost_focus_count, es.status,
                COUNT(DISTINCT CASE WHEN TRIM(COALESCE(a.answer_text,'')) != '' THEN a.question_id END) as answered,
@@ -5548,12 +5568,15 @@ def api_monitoring(exam_id):
             row['connected'] = True
         sessions_data.append(row)
 
-    recent_logs = conn.execute('''
-        SELECT sl.*, u.full_name FROM suspicious_logs sl
-        JOIN users u ON sl.student_id = u.id
-        WHERE sl.exam_id=?
-        ORDER BY sl.logged_at DESC LIMIT 50
-    ''', (exam_id,)).fetchall()
+    logs_total = conn.execute(
+        'SELECT COUNT(*) FROM suspicious_logs sl JOIN users u ON sl.student_id = u.id WHERE ' + log_where,
+        log_params).fetchone()[0]
+    recent_logs = conn.execute(
+        'SELECT sl.*, u.full_name FROM suspicious_logs sl '
+        'JOIN users u ON sl.student_id = u.id '
+        'WHERE ' + log_where + ' '
+        'ORDER BY sl.logged_at DESC, sl.id DESC LIMIT ?',
+        log_params + [log_limit]).fetchall()
 
     # Results data
     passing_score = exam['passing_score'] if exam['passing_score'] is not None else 75
@@ -5596,6 +5619,7 @@ def api_monitoring(exam_id):
         'tab_limit': exam['tab_switch_limit'],
         'tab_switch_enabled': bool(exam['tab_switch_enabled']),
         'logs': [dict(l) for l in recent_logs],
+        'logs_total': logs_total,
         'results': results_list,
         'question_stats': question_stats,
         'total_submitted': total_submitted,
