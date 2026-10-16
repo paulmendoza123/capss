@@ -295,7 +295,7 @@
             <div class="form-group">
               <label class="form-label">Correct Answer</label>
               <select name="correct_answer_mc" class="form-select">
-                {% for lbl in mc_labels %}
+                {% for lbl in mc_labels[:4] %}
                 <option value="{{ lbl }}">{{ lbl }}</option>
                 {% endfor %}
               </select>
@@ -1320,6 +1320,9 @@ function refreshQuestionsTab(focusSectionId, reopenAddQuestionSectionId) {
         oldContent.innerHTML = newContent.innerHTML;
         initDragAndDrop();
         document.querySelectorAll('.qtype-select').forEach(toggleQtypeFields);
+        // The swapped-in HTML has a fresh Correct Answer dropdown listing
+        // every letter A-Z; re-run the init so it matches the visible choices (A-D).
+        document.querySelectorAll('.mc-choice-grid').forEach(mcInitGrid);
       }
       // Keep the "Add Question" panel open for the section just added to,
       // so the teacher can keep adding questions without re-clicking it.
