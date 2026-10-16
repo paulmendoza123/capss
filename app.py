@@ -2232,6 +2232,7 @@ def teacher_class_detail(class_id):
         SELECT u.* FROM users u
         JOIN class_enrollments ce ON u.id = ce.student_id
         WHERE ce.class_id = ?
+        ORDER BY LOWER(u.full_name)
     ''', (class_id,)).fetchall()
     exams_raw = conn.execute(
         'SELECT * FROM exams WHERE class_id = ? ORDER BY scheduled_at',

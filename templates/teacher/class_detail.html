@@ -82,15 +82,24 @@
   </div>
   {% endif %}
   {% if students %}
+  <div class="student-filters" style="display:flex;flex-wrap:wrap;gap:0.6rem;margin-bottom:0.9rem;align-items:center">
+    <input type="search" id="stuSearch" class="form-control" placeholder="Search name or email..." style="flex:1 1 220px;max-width:340px" autocomplete="off" />
+    <select id="stuSort" class="form-select" style="width:auto" aria-label="Sort students">
+      <option value="first-asc">First name A → Z</option>
+      <option value="first-desc">First name Z → A</option>
+      <option value="last-asc">Last name A → Z</option>
+      <option value="last-desc">Last name Z → A</option>
+    </select>
+  </div>
   <div class="card">
     <div class="table-wrap">
     <table>
       <thead>
         <tr><th>Name</th><th>Email</th><th>Program</th><th>Year</th><th>Actions</th></tr>
       </thead>
-      <tbody>
+      <tbody id="stuBody">
         {% for s in students %}
-        <tr>
+        <tr class="stu-row" data-name="{{ s.full_name|lower }}" data-email="{{ s.email|lower }}">
           <td class="fw-600">{{ s.full_name }}</td>
           <td class="font-mono text-sm">{{ s.email }}</td>
           <td>{{ s.program or '—' }}</td>
@@ -107,6 +116,7 @@
         {% endfor %}
       </tbody>
     </table>
+    <div id="stuNoMatch" class="text-muted" style="display:none;padding:1.25rem;text-align:center">No students match your search.</div>
     </div>
   </div>
   {% else %}
@@ -204,4 +214,50 @@
   </div>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const body = document.getElementById('stuBody');
+  if (!body) return;
+  const sortSel = document.getElementById('stuSort');
+  const search = document.getElementById('stuSearch');
+  const noMatch = document.getElementById('stuNoMatch');
+  const rows = Array.from(body.querySelectorAll('.stu-row'));
+  const cmp = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  // Surname prefixes that belong to the last name (e.g. "Dela Cruz", "De Leon").
+  const PARTICLES = new Set(['de', 'del', 'dela', 'delos', 'delas', 'da', 'di', 'van', 'von', 'san', 'santa', 'mac', 'mc']);
+
+  function splitName(full) {
+    const parts = full.trim().split(/\s+/);
+    if (parts.length === 1) return { first: parts[0], last: parts[0] };
+    let i = parts.length - 1;
+    while (i > 1 && PARTICLES.has(parts[i - 1])) i--;
+    return { first: parts.slice(0, i).join(' '), last: parts.slice(i).join(' ') };
+  }
+  rows.forEach(r => { r._n = splitName(r.dataset.name); });
+
+  function apply() {
+    const [key, dir] = sortSel.value.split('-');
+    const other = key === 'first' ? 'last' : 'first';
+    rows.sort((a, b) => {
+      const r = cmp(a._n[key], b._n[key]) || cmp(a._n[other], b._n[other]);
+      return dir === 'desc' ? -r : r;
+    });
+    const q = search.value.trim().toLowerCase();
+    let shown = 0;
+    rows.forEach(r => {
+      const ok = !q || r.dataset.name.includes(q) || r.dataset.email.includes(q);
+      r.style.display = ok ? '' : 'none';
+      if (ok) shown++;
+      body.appendChild(r);
+    });
+    noMatch.style.display = shown ? 'none' : 'block';
+  }
+  search.addEventListener('input', apply);
+  sortSel.addEventListener('change', apply);
+  apply();
+})();
+</script>
 {% endblock %}
