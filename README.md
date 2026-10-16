@@ -1,6 +1,6 @@
 # ⚡ SPARK — Exam Monitoring System v2.0
 
-A Flask-based online exam system with role-based access for **Admin**, **Teacher**, and **Student**.
+A Flask-based offline exam system with role-based access for **Admin**, **Teacher**, and **Student**.
 
 ---
 
