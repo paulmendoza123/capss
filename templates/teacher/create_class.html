@@ -7,6 +7,7 @@
 </div>
 <div class="card" style="max-width:520px">
   <form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Subject Code</label>

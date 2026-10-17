@@ -45,9 +45,11 @@
       <div class="card-menu-dropdown">
         <button type="button" class="card-menu-item" onclick="openModal('modal-edit-class-{{ cls.id }}')"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Edit Class</button>
         <form method="POST" action="{{ url_for('teacher_copy_class', class_id=cls.id) }}" onsubmit="return confirm('Copy \'{{ cls.subject_name }}\'? This will duplicate the class and all its exams.');">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="card-menu-item"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> Copy Class</button>
         </form>
         <form method="POST" action="{{ url_for('teacher_delete_class', class_id=cls.id) }}" onsubmit="return confirm('Delete \'{{ cls.subject_name }}\' and all its exams? This cannot be undone.');">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="card-menu-item danger"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete Class</button>
         </form>
       </div>
@@ -73,6 +75,7 @@
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-edit-class-{{ cls.id }}')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
       </div>
       <form method="POST" action="{{ url_for('teacher_edit_class', class_id=cls.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Subject Code</label>

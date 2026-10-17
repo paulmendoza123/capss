@@ -29,6 +29,7 @@
       This will apply every score in the file and recompute affected students' totals — no need to stay connected to the Raspberry Pi.
     </p>
     <form method="POST" action="{{ url_for('teacher_import_essays', exam_id=exam.id) }}" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="file" name="essay_file" accept=".xlsx" required style="width:100%">
       <div class="form-hint" style="margin-bottom:1rem">Maximum file size: 10 MB</div>
       <div style="display:flex;gap:0.5rem;justify-content:flex-end">

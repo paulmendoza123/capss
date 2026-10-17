@@ -77,6 +77,7 @@
               {% else %}
               <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}"
                     onsubmit="return confirm('{% if u.role == "admin" %}Revoke admin access for {{ u.full_name }}? They will lose all system access.{% else %}Delete {{ u.full_name }}? This cannot be undone.{% endif %}')" style="margin:0">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-danger btn-sm">{% if u.role == 'admin' %}Revoke Admin{% else %}Delete{% endif %}</button>
               </form>
               {% endif %}

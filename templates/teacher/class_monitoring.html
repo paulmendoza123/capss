@@ -40,6 +40,7 @@
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
         {% if exam.status != 'completed' %}
         <form method="POST" action="{{ url_for('teacher_toggle_exam_status', exam_id=exam.id) }}" style="display:inline;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           {% if exam.status == 'active' %}
             <button type="submit" class="btn btn-sm" style="background:#e74c3c;color:#fff;"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Close</button>
           {% else %}

@@ -10,6 +10,7 @@
   <div class="card">
     <div class="card-title mb-2">Add New Program</div>
     <form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="add" />
       <div class="form-group">
         <label class="form-label">Program Code</label>
@@ -34,6 +35,7 @@
         <div class="text-sm text-muted">{{ p.name }}</div>
       </div>
       <form method="POST" onsubmit="return confirm('Delete program {{ p.code }}?')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="delete" />
         <input type="hidden" name="program_id" value="{{ p.id }}" />
         <button type="submit" class="btn btn-danger btn-sm">Delete</button>

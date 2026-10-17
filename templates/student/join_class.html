@@ -14,6 +14,7 @@
 <div class="card" style="max-width:440px">
   <div class="card-title mb-2">Class Code</div>
   <form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-group">
       <label class="form-label">Enter Class Code</label>
       <input type="text" name="class_code" class="form-control font-mono"

@@ -44,6 +44,7 @@
         {% else %}<span class="badge badge-blue">Completed</span>{% endif %}
         {% if exam.status != 'completed' %}
         <form method="POST" action="{{ url_for('teacher_toggle_exam_status', exam_id=exam.id) }}" style="display:inline;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           {% if exam.status == 'active' %}
             <button type="submit" class="btn btn-sm" style="background:#e74c3c;color:#fff;"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Close</button>
           {% else %}
@@ -106,9 +107,11 @@
           <td>{{ s.year_level or '—' }}</td>
           <td>
             <form method="POST" action="{{ url_for('teacher_reset_student_password', class_id=cls.id, student_id=s.id) }}" style="display:inline" onsubmit="return confirm('Reset the password of {{ s.full_name }}? A temporary password will be generated, and they must change it the next time they log in.')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> Reset Password</button>
             </form>
             <form method="POST" action="{{ url_for('teacher_remove_student', class_id=cls.id, student_id=s.id) }}" style="display:inline" onsubmit="return confirm('Remove {{ s.full_name }} from this class? They can rejoin later with the class code{{ ' (if allowed on the list)' if cls.restrict_join else '' }}.')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-ghost btn-sm" style="color:#e74c3c">✕ Remove</button>
             </form>
           </td>
@@ -135,11 +138,13 @@
 
     <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin:0.6rem 0 0.75rem">
       <form method="POST" action="{{ url_for('teacher_toggle_class_restriction', class_id=cls.id) }}" style="display:inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-sm {{ 'btn-ghost' if cls.restrict_join else 'btn-primary' }}" style="border-radius:8px 0 0 8px">
           <svg class="icon" aria-hidden="true"><use href="#i-unlock"/></svg> Open to Anyone
         </button>
       </form>
       <form method="POST" action="{{ url_for('teacher_toggle_class_restriction', class_id=cls.id) }}" style="display:inline;margin-left:-0.5rem">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-sm {{ 'btn-primary' if cls.restrict_join else 'btn-ghost' }}" style="border-radius:0 8px 8px 0">
           <svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Restricted to Allowed List
         </button>
@@ -166,12 +171,14 @@
 
     <div style="display:flex;gap:1rem;flex-wrap:wrap">
       <form method="POST" action="{{ url_for('teacher_add_allowed_emails', class_id=cls.id) }}" style="flex:1;min-width:260px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="form-label" style="font-size:0.8rem">Add emails manually</label>
         <textarea name="emails" class="form-control" rows="3" placeholder="juan@psu.palawan.edu.ph, maria@psu.palawan.edu.ph&#10;(comma or new line separated)" style="font-size:0.85rem"></textarea>
         <button type="submit" class="btn btn-primary btn-sm" style="margin-top:0.5rem"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Add to List</button>
       </form>
 
       <form method="POST" action="{{ url_for('teacher_import_allowed_emails', class_id=cls.id) }}" enctype="multipart/form-data" style="flex:1;min-width:260px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="form-label" style="font-size:0.8rem">Or upload a file (.txt, .csv, .docx, .xlsx)</label>
         <input type="file" name="emails_file" accept=".txt,.csv,.docx,.xlsx" class="form-control" style="font-size:0.85rem;padding:0.4rem 0.6rem">
         <div class="text-muted" style="font-size:0.72rem;margin-top:0.3rem">Any email-looking text in the file is picked up automatically — no special format needed. Maximum file size: 10 MB.</div>
@@ -197,6 +204,7 @@
             </td>
             <td>
               <form method="POST" action="{{ url_for('teacher_remove_allowed_email', class_id=cls.id) }}" style="display:inline" onsubmit="return confirm('Remove {{ a.email }} from the allowed list?')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="email" value="{{ a.email }}">
                 <button type="submit" class="btn btn-ghost btn-sm" style="color:#e74c3c">✕ Remove</button>
               </form>
@@ -209,6 +217,7 @@
   </div>
   <div style="margin-top:1rem">
     <form method="POST" action="{{ url_for('teacher_clear_allowed_emails', class_id=cls.id) }}" onsubmit="return confirm('This removes the whole list.{{ ' Since the class is currently Restricted, no one will be able to join until you add emails back.' if cls.restrict_join else '' }} Continue?')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-ghost btn-sm" style="color:#e74c3c"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Clear Entire List</button>
     </form>
   </div>

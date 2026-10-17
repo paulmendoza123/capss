@@ -127,6 +127,7 @@
     <div class="qb-modal-section" style="padding:1.25rem;margin-bottom:1.25rem">
       <div class="qb-modal-section-title" style="margin-bottom:0.85rem;font-size:0.75rem">Create New Group</div>
       <form method="POST" action="{{ url_for('teacher_create_bank_group') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group" style="margin-bottom:0.75rem">
           <label class="form-label" style="font-size:0.82rem">Group Name</label>
           <input type="text" name="name" class="form-control" placeholder="e.g. Chapter 3, Midterm 2025…" required style="font-size:0.9rem;padding:0.55rem 0.75rem">
@@ -167,6 +168,7 @@
           <div class="inline-edit-row" id="edit-grp-{{ g.id }}" style="margin-top:0.75rem">
             <form method="POST" action="{{ url_for('teacher_rename_bank_group', group_id=g.id) }}"
                   style="display:flex;gap:0.45rem;flex:1;flex-wrap:wrap;align-items:center">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="text" name="name" class="form-control" value="{{ g.name }}"
                      style="flex:1;min-width:130px;padding:0.45rem 0.65rem;font-size:0.875rem" required>
               <select name="class_id" class="form-select"
@@ -217,6 +219,7 @@
     </div>
     <p id="deleteGroupMessage" style="font-size:0.9rem;color:var(--text2);margin-bottom:1rem"></p>
     <form id="deleteGroupForm" method="POST" action="">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="delete_questions" id="deleteGroupQFlag" value="0">
       <div style="display:flex;flex-direction:column;gap:0.5rem">
         <button type="submit" class="btn btn-ghost" style="text-align:left"
@@ -394,6 +397,7 @@
     </script>
 
     <form method="POST" action="{{ url_for('teacher_bank_import_file') }}" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group" style="margin-bottom:1rem">
         <label class="form-label">Select .txt or .docx File</label>
         <input type="file" name="import_file" accept=".txt,.docx" class="form-control"
@@ -433,6 +437,7 @@ function updateImportPreview(input) {
       <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-bank-q')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
     </div>
     <form method="POST" action="{{ url_for('teacher_bank_add_question') }}" onsubmit="return bankSubmitValidate(event)">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
       {# Question type #}
       <div class="form-group">
@@ -999,6 +1004,7 @@ function confirmDeleteGroup(id, name, qcount) {
                   <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></button>
                   <form method="POST" action="{{ url_for('teacher_delete_question', question_id=q.id) }}"
                         onsubmit="return confirm('Delete this question?')" style="display:inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="redirect_to" value="bank">
                     <button type="submit" class="btn btn-danger btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
                   </form>
@@ -1049,6 +1055,7 @@ function confirmDeleteGroup(id, name, qcount) {
               <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></button>
               <form method="POST" action="{{ url_for('teacher_delete_question', question_id=q.id) }}"
                     onsubmit="return confirm('Delete this question?')" style="display:inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="redirect_to" value="bank">
                 <button type="submit" class="btn btn-danger btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
               </form>
@@ -1078,6 +1085,7 @@ function confirmDeleteGroup(id, name, qcount) {
       <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('edit-bq-{{ q.id }}')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
     </div>
     <form method="POST" action="{{ url_for('teacher_edit_question', question_id=q.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="redirect_to" value="bank">
       <div class="form-group">
         <label class="form-label">Question</label>

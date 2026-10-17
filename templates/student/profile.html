@@ -11,6 +11,7 @@
       <button type="button" class="btn btn-ghost btn-sm profile-edit-btn" data-profile-edit="profile-form" title="Edit profile" aria-label="Edit profile" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></button>
     </div>
     <form method="POST" id="profile-form" class="profile-form{% if profile_errors %} is-editing{% endif %}" action="{{ url_for('student_profile') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="update_profile" />
       <div class="form-group">
         <label class="form-label" for="full_name">Full Name</label>

@@ -286,6 +286,7 @@
 
 <!-- Exam Form -->
 <form id="exam-form" method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="session_id" value="{{ exam_session.id }}" />
 
   {% for sd in sections_data %}

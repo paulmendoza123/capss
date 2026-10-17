@@ -15,6 +15,7 @@
   <div style="display:flex;gap:0.5rem;align-items:center">
     {% if not exam.is_ready and exam.status == 'upcoming' %}
     <form method="POST" action="{{ url_for('teacher_finish_editing', exam_id=exam.id) }}" style="display:inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-primary">Finish editing</button>
     </form>
     {% endif %}
@@ -37,6 +38,7 @@
     </div>
     <form id="add-section-form" method="POST" action="{{ url_for('teacher_add_section', exam_id=exam.id) }}"
           class="flex flex-col gap-1" style="flex-wrap:wrap" onsubmit="return submitAddSection(event)">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="text" name="title" id="add-section-title" class="form-control" placeholder="Section Title" required />
       <textarea name="description" class="form-control" rows="2" placeholder="Description (optional)"></textarea>
       <button type="submit" class="btn btn-primary btn-sm" style="align-self:flex-start">Add Section</button>
@@ -59,6 +61,7 @@
             <button type="button" class="btn btn-ghost btn-sm" onclick="openSectionEdit('{{ sd.section.id }}')">Edit</button>
             <form method="POST" action="{{ url_for('teacher_delete_section', section_id=sd.section.id) }}"
                   onsubmit="return confirm('Delete this section and all its questions?')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-danger btn-sm">Delete Section</button>
             </form>
           </div>
@@ -133,6 +136,7 @@
             <button type="button" class="btn btn-ghost btn-sm" onclick="openQuestionEdit('{{ q.id }}')">Edit</button>
             <form method="POST" action="{{ url_for('teacher_delete_question', question_id=q.id) }}"
                   onsubmit="return confirm('Delete this question?')" style="display:inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-danger btn-sm">Delete</button>
             </form>
           </div>
@@ -141,6 +145,7 @@
         <!-- Edit mode (inline, expands in place — no popup) -->
         <div class="question-edit" id="qedit-{{ q.id }}" style="display:none">
           <form method="POST" action="{{ url_for('teacher_edit_question', question_id=q.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="redirect_to" value="exam_detail">
             <div class="form-group">
               <label class="form-label">Question Text</label>
@@ -260,6 +265,7 @@
         </div>
         <form method="POST" action="{{ url_for('teacher_add_question', section_id=sd.section.id) }}"
               class="add-question-form" onsubmit="return submitAddQuestion(event)">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="form-group" style="max-width:220px">
             <label class="form-label">Question Type</label>
             <select name="question_type" class="form-select qtype-select" onchange="toggleQtypeFields(this)">
@@ -571,6 +577,7 @@
 <div class="tab-content" data-tab="settings">
   <div class="card" style="max-width:580px">
     <form method="POST" action="{{ url_for('teacher_exam_settings', exam_id=exam.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="redirect_to" value="detail" />
       <div class="form-group">
         <label class="form-label">Exam Title</label>

@@ -44,6 +44,7 @@
       <button type="button" class="card-menu-btn" aria-label="Class options">⋮</button>
       <div class="card-menu-dropdown">
         <form method="POST" action="{{ url_for('student_leave_class', class_id=cls.id) }}" onsubmit="return confirm('Leave \'{{ cls.subject_name }}\'? You will need the class code to rejoin.');">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="card-menu-item danger"><svg class="icon" aria-hidden="true"><use href="#i-log-out"/></svg> Leave Class</button>
         </form>
       </div>

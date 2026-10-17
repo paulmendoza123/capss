@@ -1,5 +1,29 @@
 // SPARK — main.js
 
+// ── CSRF: automatically attach the token to every same-origin fetch() that
+// changes data (POST/PUT/PATCH/DELETE), so none of the app's existing
+// fetch() calls (save-answer, heartbeat, reorder, log-suspicious, etc.) had
+// to be edited individually. GET requests and requests to other origins are
+// left untouched. Runs immediately (not on DOMContentLoaded) so it's in
+// place before any other script on the page makes its first fetch() call.
+(function () {
+  var token = document.querySelector('meta[name="csrf-token"]');
+  if (!token) return;
+  token = token.content;
+  var origFetch = window.fetch;
+  window.fetch = function (input, init) {
+    init = init || {};
+    var method = (init.method || (input && input.method) || 'GET').toUpperCase();
+    var url = typeof input === 'string' ? input : (input && input.url) || '';
+    var sameOrigin = !/^([a-z]+:)?\/\//i.test(url) || url.indexOf(window.location.origin) === 0;
+    if (sameOrigin && method !== 'GET' && method !== 'HEAD') {
+      init = Object.assign({}, init);
+      init.headers = new Headers(init.headers || (input && input.headers) || {});
+      if (!init.headers.has('X-CSRFToken')) init.headers.set('X-CSRFToken', token);
+    }
+    return origFetch.call(this, input, init);
+  };
+})();
 
 document.addEventListener('DOMContentLoaded', () => {
   // Card kebab menus (class cards, etc.)

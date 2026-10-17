@@ -31,6 +31,7 @@
     <div class="auth-sub">Register as a student to join classes and take exams.</div>
 
     <form method="POST" novalidate data-auth-form>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Full Name</label>
         <input type="text" name="full_name" class="form-control{% if errors.get('full_name') %} is-invalid{% endif %}" placeholder="Juan dela Cruz" value="{{ form.get('full_name', '') }}" required />

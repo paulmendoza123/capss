@@ -142,6 +142,7 @@
         {% endif %}
 
         <form method="POST" action="{{ url_for('teacher_grade_essay', exam_id=exam.id, student_id=student.id, question_id=q.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="table-wrap">
             <table>
               <thead>

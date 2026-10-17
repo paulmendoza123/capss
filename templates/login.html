@@ -42,6 +42,7 @@
     <div class="auth-sub">Sign in to your account to continue.</div>
 
     <form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Email Address</label>
         <input type="email" name="email" class="form-control" placeholder="you@psu.palawan.edu.ph" value="{{ form.get('email', '') }}" required />

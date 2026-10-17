@@ -17,6 +17,9 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_wtf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 app = Flask(__name__)
 
@@ -76,6 +79,37 @@ def _load_secret_key():
 
 
 app.secret_key = _load_secret_key()
+
+# ── Session cookie hardening ──
+# SameSite=Lax stops the browser from sending the session cookie on a
+# cross-site request (the classic CSRF setup: a form on someone else's page
+# that posts to this app). HttpOnly stops JavaScript from reading it.
+# Secure (cookie only sent over HTTPS) is OFF by default because this app is
+# normally deployed over plain HTTP on a closed classroom network — turning
+# it on without HTTPS would silently break every login. Set the
+# SPARK_HTTPS=1 environment variable once the site is actually served over
+# HTTPS (e.g. behind the nginx/Caddy + real-domain setup) to turn it on.
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SPARK_HTTPS', '').strip() == '1'
+
+# ── CSRF protection ──
+# Every POST/PUT/PATCH/DELETE route now requires a matching token, carried as
+# a hidden "csrf_token" field on every HTML form (see templates/base.html +
+# the per-form inputs) and as an X-CSRFToken header on every fetch() call
+# (attached automatically by static/js/main.js). Without a valid token, the
+# request is rejected with a 400 before the route function ever runs — this
+# is what stops a malicious page on another site from submitting actions on
+# a logged-in user's behalf using just their session cookie.
+csrf = CSRFProtect(app)
+
+# ── Rate limiting ──
+# Separate from the existing per-account lockout (which only kicks in after
+# repeated wrong passwords for ONE account): this limits how fast any single
+# IP can hit the sensitive endpoints below, regardless of which account(s)
+# it's trying. In-memory storage is fine for a single-Pi deployment; it
+# resets on restart, which is acceptable here.
+limiter = Limiter(get_remote_address, app=app, storage_uri='memory://', default_limits=[])
 
 
 # Multiple-choice questions support up to 26 options, labeled A through Z.
@@ -1440,6 +1474,7 @@ def index():
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit('15 per minute')
 def login():
     if 'user_id' in session:
         return redirect(url_for(f"{session['role']}_home"))
@@ -1559,6 +1594,7 @@ def _validate_signup_form(form, required):
 
 
 @app.route('/signup', methods=['GET', 'POST'])
+@limiter.limit('10 per minute')
 def signup():
     if 'user_id' in session:
         return redirect(url_for(f"{session['role']}_home"))
@@ -1595,6 +1631,7 @@ def signup():
     return render_template('signup.html', programs=programs, form=form, errors=errors)
 
 @app.route('/signup/teacher', methods=['GET', 'POST'])
+@limiter.limit('10 per minute')
 def signup_teacher():
     if 'user_id' in session:
         return redirect(url_for(f"{session['role']}_home"))
@@ -1746,6 +1783,7 @@ def student_exam_has_session(exam_id):
 
 @app.route('/student/exam/verify-code', methods=['POST'])
 @role_required('student')
+@limiter.limit('20 per minute')
 def student_verify_exam_code():
     data = request.get_json(force=True, silent=True) or {}
     code = (data.get('code') or '').strip().upper()
@@ -1763,6 +1801,7 @@ def student_verify_exam_code():
 
 @app.route('/student/exam/join', methods=['GET', 'POST'])
 @role_required('student')
+@limiter.limit('20 per minute')
 def student_join_exam_by_code():
     if request.method == 'POST':
         code = request.form.get('exam_code', '').strip().upper()

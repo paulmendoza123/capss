@@ -11,6 +11,7 @@
 
 <div class="card" style="max-width:580px">
   <form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-group">
       <label class="form-label">Exam Title</label>
       <input type="text" name="title" class="form-control" placeholder="e.g. Midterm Exam" required />

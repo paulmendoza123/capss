@@ -8,6 +8,7 @@
 
 <div class="card" style="max-width:580px">
   <form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-group">
       <label class="form-label">Exam Title</label>
       <input type="text" name="title" class="form-control" value="{{ exam.title }}" required />
@@ -142,6 +143,7 @@
       <button onclick="copyCode()" class="btn btn-ghost btn-sm" id="copy-btn"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg> Copy Code</button>
       <form method="POST" action="{{ url_for('teacher_regenerate_exam_code', exam_id=exam.id) }}"
             onsubmit="return confirm('Generate a new code? The old code will stop working.')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg> New Code</button>
       </form>
     </div>
