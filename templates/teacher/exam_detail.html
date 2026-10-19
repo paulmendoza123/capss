@@ -30,21 +30,6 @@
 
 <!-- QUESTIONS TAB -->
 <div class="tab-content active" data-tab="questions" id="questionsTabContent">
-  <!-- Add Section Panel (hidden until opened from the floating toolbar) — always appears above the sections -->
-  <div class="card mb-2" id="add-section-card" style="display:none">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
-      <div class="card-title" style="margin:0">Add New Section</div>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="closeAddSectionPanel()" title="Close">✕</button>
-    </div>
-    <form id="add-section-form" method="POST" action="{{ url_for('teacher_add_section', exam_id=exam.id) }}"
-          class="flex flex-col gap-1" style="flex-wrap:wrap" onsubmit="return submitAddSection(event)">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="text" name="title" id="add-section-title" class="form-control" placeholder="Section Title" required />
-      <textarea name="description" class="form-control" rows="2" placeholder="Description (optional)"></textarea>
-      <button type="submit" class="btn btn-primary btn-sm" style="align-self:flex-start">Add Section</button>
-    </form>
-  </div>
-
   {% if section_data %}
     {% for sd in section_data %}
     <div class="section-group mb-3" id="section-{{ sd.section.id }}" data-section-id="{{ sd.section.id }}">
@@ -389,6 +374,21 @@
     <div class="empty-state-text">Use the <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> button on the right to add your first section.</div>
   </div>
   {% endif %}
+
+  <!-- Add Section Panel (hidden until opened from the floating toolbar) — always appears at the end, right after the last section and its questions -->
+  <div class="card mb-3" id="add-section-card" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+      <div class="card-title" style="margin:0">Add New Section</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeAddSectionPanel()" title="Close">✕</button>
+    </div>
+    <form id="add-section-form" method="POST" action="{{ url_for('teacher_add_section', exam_id=exam.id) }}"
+          class="flex flex-col gap-1" style="flex-wrap:wrap" onsubmit="return submitAddSection(event)">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="text" name="title" id="add-section-title" class="form-control" placeholder="Section Title" required />
+      <textarea name="description" class="form-control" rows="2" placeholder="Description (optional)"></textarea>
+      <button type="submit" class="btn btn-primary btn-sm" style="align-self:flex-start">Add Section</button>
+    </form>
+  </div>
 
   {# ══════════════════════════════════════════════════
      IMPORT FROM QUESTION BANK MODAL (opened via the floating toolbar)
@@ -1341,7 +1341,7 @@ function refreshQuestionsTab(focusSectionId, reopenAddQuestionSectionId) {
           if (ta) setTimeout(() => ta.focus(), 0);
         }
       }
-      window.scrollTo(0, scrollY);
+      window.scrollTo({ top: scrollY, left: 0, behavior: 'instant' });
       if (focusSectionId) {
         const el = document.getElementById('section-' + focusSectionId);
         // 'nearest' only scrolls if the section isn't already fully visible —

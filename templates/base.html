@@ -450,10 +450,13 @@ document.addEventListener('DOMContentLoaded', function() {
     if (isNaN(y)) return;
     // Layout may still be settling (fonts/images/tables), so reassert
     // the scroll position a couple of times shortly after load.
-    window.scrollTo(0, y);
-    requestAnimationFrame(function() { window.scrollTo(0, y); });
-    setTimeout(function() { window.scrollTo(0, y); }, 50);
-    setTimeout(function() { window.scrollTo(0, y); }, 200);
+    // behavior:'instant' is required: style.css sets html{scroll-behavior:smooth},
+    // which would otherwise animate the jump from the top down to y.
+    function jump() { window.scrollTo({ top: y, left: 0, behavior: 'instant' }); }
+    jump();
+    requestAnimationFrame(jump);
+    setTimeout(jump, 50);
+    setTimeout(jump, 200);
   }
 
   if (document.readyState === 'loading') {
