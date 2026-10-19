@@ -1,0 +1,208 @@
+{% extends 'base.html' %}
+{% block title %}Preview: {{ exam.title }}{% endblock %}
+{% block head %}
+<style>
+  /* Same full-screen layout students get: no sidebar, centered content */
+  .sidebar { display: none !important; }
+  .main-content { margin-left: 0 !important; width: 100% !important; }
+  .page-body { max-width: 800px; margin: 0 auto; }
+  .topbar-menu-btn { display: none !important; }
+  .topbar { position: fixed; top: 0; left: 0; right: 0; }
+
+  .preview-banner {
+    position: sticky;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    background: var(--warning-bg, rgba(245, 158, 11, 0.14));
+    border: 1px solid var(--warning, #f59e0b);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 0.6rem 0.9rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.85rem;
+  }
+  .preview-banner strong { color: var(--warning, #b45309); }
+
+  @media (max-width: 768px) {
+    .topbar { padding: 0.65rem 1rem; }
+    .page-body { padding: 0.75rem; max-width: 100%; }
+    .exam-header { flex-direction: row; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.75rem 1rem; }
+    .exam-header .fw-700 { font-size: 0.9rem; }
+    .exam-timer { font-size: 1.1rem; }
+    .question-block { padding: 0.9rem; margin-bottom: 0.75rem; }
+    .question-num { font-size: 0.75rem; }
+    .question-text { font-size: 0.95rem; line-height: 1.5; }
+    .question-code { font-size: 0.85rem; padding: 0.75rem 1rem; }
+    .choice-item { padding: 0.75rem 0.9rem; gap: 0.6rem; min-height: 48px; }
+    .choice-label-badge { flex-shrink: 0; }
+    .flex.justify-between.items-center.mt-3 { flex-direction: row; gap: 0.5rem; }
+    .flex.justify-between.items-center.mt-3 .btn { flex: 1; justify-content: center; }
+    textarea.form-control { font-size: 0.95rem; }
+    .section-announcement { font-size: 0.95rem; padding: 0.9rem; margin-bottom: 0.75rem; }
+  }
+  .no-select { -webkit-user-select: none; user-select: none; }
+</style>
+{% endblock %}
+{% block topbar_title %}{{ exam.title }}{% endblock %}
+{% block topbar_actions %}
+<div class="exam-timer">{{ "%02d"|format(exam.duration_minutes) }}:00</div>
+{% endblock %}
+{% block content %}
+
+<script>
+// The topbar is position:fixed here (same as the student page), so push the
+// content down by its real height so nothing hides underneath it.
+(function () {
+  const topbar = document.querySelector('.topbar');
+  const main = document.querySelector('.main-content');
+  const header = document.querySelector('.exam-header');
+  const banner = document.querySelector('.preview-banner');
+  if (!topbar || !main) return;
+  function apply() {
+    const h = topbar.offsetHeight;
+    main.style.paddingTop = h + 'px';
+    if (banner) banner.style.top = h + 'px';
+    if (header) header.style.top = (h + (banner ? banner.offsetHeight + 12 : 0)) + 'px';
+  }
+  apply();
+  window.addEventListener('load', apply);
+  window.addEventListener('resize', apply);
+})();
+</script>
+
+<div class="preview-banner">
+  <div><strong>Preview mode</strong> — this is what students will see. Nothing you type or select here is saved or graded.</div>
+  <a href="{{ url_for('teacher_exam_detail', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">← Back to Editor</a>
+</div>
+
+{% set total_q = namespace(n=0) %}
+{% for sd in sections_data %}{% set total_q.n = total_q.n + sd.questions|length %}{% endfor %}
+
+{% if total_q.n == 0 %}
+<div class="empty-state">
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></div>
+  <div class="empty-state-title">No questions yet</div>
+  <div class="empty-state-text">Add some questions in the editor, then come back to preview the exam.</div>
+</div>
+{% else %}
+
+<div class="exam-header">
+  <div>
+    <div class="fw-700" id="header-section-title" style="font-size:1rem">{{ sections_data[0].title or exam.title }}</div>
+    <div class="text-sm text-muted" id="section-indicator"></div>
+  </div>
+</div>
+
+{% if exam.randomize_questions %}
+<div class="text-sm text-muted mb-2">
+  <svg class="icon" aria-hidden="true"><use href="#i-info"/></svg>
+  Question order is randomized for each student. You are seeing the original order.
+</div>
+{% endif %}
+
+<div id="preview-exam">
+  {% for sd in sections_data %}
+  <div class="exam-section-page" data-section-index="{{ loop.index0 }}" style="display:none">
+    {% if sd.description %}
+    <div class="section-announcement">{{ sd.description }}</div>
+    {% endif %}
+
+    {% for q in sd.questions %}
+    <div class="question-block no-select">
+      <div class="question-num">Question {{ loop.index }} · {{ q.points }} pt(s)</div>
+      {% if q.question_type != 'fill_blank' %}
+        {% if '\n' in q.question_text %}
+        <pre class="question-code no-select">{{ q.question_text }}</pre>
+        {% else %}
+        <div class="question-text">{{ q.question_text }}</div>
+        {% endif %}
+      {% endif %}
+
+      {% if q.question_type == 'multiple_choice' %}
+      <div class="choices-list">
+        {% for choice in q.choices %}
+        <label class="choice-item">
+          <input type="radio" name="preview_{{ q.id }}" value="{{ choice.choice_label }}" />
+          <span class="choice-label-badge">{{ choice.choice_label }}</span>
+          <span>{{ choice.choice_text }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      {% elif q.question_type == 'true_false' %}
+      <div class="choices-list">
+        {% for val in ['True', 'False'] %}
+        <label class="choice-item">
+          <input type="radio" name="preview_{{ q.id }}" value="{{ val }}" />
+          <span>{{ val }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      {% elif q.question_type == 'fill_blank' %}
+      {% if '\n' in q.question_text %}
+      <pre class="question-code fib-text-line no-select">{% for part in q.text_parts %}{{ part }}{% if not loop.last %}<input type="text" class="form-control fib-blank-input" style="display:inline-block;width:140px;margin:0 0.3rem;text-transform:none" />{% endif %}{% endfor %}</pre>
+      {% else %}
+      <div class="question-text fib-text-line">
+        {% for part in q.text_parts %}{{ part }}{% if not loop.last %}<input type="text" class="form-control fib-blank-input" style="display:inline-block;width:140px;margin:0 0.3rem" />{% endif %}{% endfor %}
+      </div>
+      {% endif %}
+      {% elif q.question_type == 'essay' %}
+      <div class="text-xs text-muted mb-1"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> This question is manually graded by your teacher.</div>
+      <textarea class="form-control" placeholder="Write your answer here..." rows="10"></textarea>
+      {% else %}
+      <textarea class="form-control" placeholder="Type your answer here..." rows="3"></textarea>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    <div class="flex justify-between items-center mt-3">
+      {% if not loop.first %}
+      <button type="button" class="btn btn-ghost" onclick="goSection({{ loop.index0 - 1 }})">← Previous</button>
+      {% else %}
+      <div></div>
+      {% endif %}
+
+      {% if loop.last %}
+      <button type="button" class="btn btn-success btn-lg" disabled
+              title="Submitting is disabled in preview" style="opacity:0.6;cursor:not-allowed">Submit Exam ✓</button>
+      {% else %}
+      <button type="button" class="btn btn-primary" onclick="goSection({{ loop.index0 + 1 }})">Next Section →</button>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+const totalSections = {{ sections_data | length }};
+const sectionTitles = {{ sections_data | map(attribute='title') | list | tojson }};
+const examTitleFallback = {{ exam.title | tojson }};
+
+function goSection(idx) {
+  if (idx < 0 || idx >= totalSections) return;
+  document.querySelectorAll('.exam-section-page').forEach((el, i) => {
+    el.style.display = i === idx ? '' : 'none';
+  });
+  document.getElementById('section-indicator').textContent =
+    totalSections > 1 ? `Section ${idx + 1} of ${totalSections}` : '';
+  const titleEl = document.getElementById('header-section-title');
+  if (titleEl) titleEl.textContent = sectionTitles[idx] || examTitleFallback;
+  window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+}
+
+// Highlight the clicked choice, like the real exam page does
+document.addEventListener('change', function (e) {
+  const radio = e.target;
+  if (!radio.matches || !radio.matches('.choice-item input[type=radio]')) return;
+  document.querySelectorAll('input[type=radio][name="' + radio.name + '"]').forEach(r => {
+    r.closest('.choice-item')?.classList.toggle('selected', r.checked);
+  });
+});
+
+goSection(0);
+</script>
+{% endif %}
+{% endblock %}

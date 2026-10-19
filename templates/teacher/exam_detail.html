@@ -19,6 +19,9 @@
       <button type="submit" class="btn btn-primary">Finish editing</button>
     </form>
     {% endif %}
+    <a href="{{ url_for('teacher_exam_preview', exam_id=exam.id) }}" class="btn btn-primary" title="See exactly what students will see">
+      <svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg> Preview
+    </a>
     <a href="{{ url_for('teacher_class_detail', class_id=exam.class_id) }}" class="btn btn-ghost">← Back to Class</a>
   </div>
 </div>

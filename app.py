@@ -2773,6 +2773,51 @@ def teacher_exam_detail(exam_id):
     return render_template('teacher/exam_detail.html', exam=exam, section_data=section_data,
                            bank_questions=bank_questions, exam_bank_groups=exam_bank_groups)
 
+@app.route('/teacher/exam/<int:exam_id>/preview')
+@role_required('teacher')
+def teacher_exam_preview(exam_id):
+    """Read-only preview of the exam exactly as students see it.
+    Nothing is saved: no exam session, no answers, no monitoring, no submit."""
+    conn = get_db()
+    exam = conn.execute('''
+        SELECT e.*, c.subject_name, c.block_name, c.teacher_id
+        FROM exams e JOIN classes c ON e.class_id = c.id
+        WHERE e.id=?
+    ''', (exam_id,)).fetchone()
+    if not exam or int(exam['teacher_id']) != int(session['user_id']):
+        flash('Exam not found.', 'error')
+        return redirect(url_for('teacher_home'))
+
+    def load_questions(rows):
+        out = []
+        for q in rows:
+            qd = dict(q)
+            if qd['question_type'] == 'multiple_choice':
+                qd['choices'] = [dict(c) for c in conn.execute(
+                    'SELECT * FROM choices WHERE question_id=?', (qd['id'],)).fetchall()]
+            else:
+                qd['choices'] = []
+            if qd['question_type'] == 'fill_blank':
+                qd['text_parts'] = fib_split_text(qd['question_text'])
+            out.append(qd)
+        return out
+
+    sections = conn.execute(
+        'SELECT * FROM sections WHERE exam_id=? ORDER BY order_index', (exam_id,)).fetchall()
+    sections_data = []
+    if sections:
+        for sec in sections:
+            qs = conn.execute(
+                'SELECT * FROM questions WHERE section_id=? ORDER BY order_index', (sec['id'],)).fetchall()
+            sections_data.append({'title': sec['title'], 'description': sec['description'],
+                                  'questions': load_questions(qs)})
+    else:
+        qs = conn.execute(
+            'SELECT * FROM questions WHERE exam_id=? ORDER BY order_index', (exam_id,)).fetchall()
+        sections_data.append({'title': None, 'description': None, 'questions': load_questions(qs)})
+
+    return render_template('teacher/exam_preview.html', exam=exam, sections_data=sections_data)
+
 @app.route('/teacher/exam/<int:exam_id>/monitoring')
 @role_required('teacher')
 def teacher_exam_monitoring(exam_id):
