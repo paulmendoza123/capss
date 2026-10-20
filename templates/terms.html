@@ -14,7 +14,7 @@
     <p class="text-sm text-muted mb-3">
       These terms are the ground rules for using SPARK. They apply to students, teachers, and
       administrators who use SPARK. SPARK is a capstone project of fourth-year Information Technology students of
-      Palawan State University (&ldquo;PSU&rdquo;), called &ldquo;the capstone team&rdquo;. For now, it is intended only for
+      Palawan State University (PSU), called &ldquo;the SPARK team&rdquo;. For now, it is intended only for
       Computer Science and Information Technology students and professors of PSU, not the whole University. Please read them together with the
       <a href="{{ url_for('privacy_policy') }}" style="color:var(--accent)">Data Privacy Statement</a>.
       Nothing in these terms takes away rights you have under Philippine law, including the Data
@@ -57,7 +57,7 @@
       Data Privacy Statement. Monitoring starts only after you click &ldquo;I Understand &amp; Agree&rdquo;.
       If you click &ldquo;I Do Not Agree&rdquo;, you do not start the exam through SPARK. If you have concerns, talk to
       your teacher before the exam day.
-      The capstone team and PSU also rely on their own lawful bases for exam integrity under the Data Privacy Act, which are
+      The SPARK team and PSU also rely on their own lawful bases for exam integrity under the Data Privacy Act, which are
       explained in the Data Privacy Statement; the notice is not a way to waive your rights.</p>
 
     <h3 class="fw-700 mt-3 mb-2">5. Acceptable use and confidentiality</h3>
@@ -76,14 +76,14 @@
       <li>Handle exported files, backups, and temporary passwords carefully, and delete exports you no longer need.</li>
     </ul>
 
-    <h3 class="fw-700 mt-3 mb-2">7. Restricting or suspending accounts</h3>
-    <p>An administrator may lock, restrict, or delete an account that breaks these terms or PSU&rsquo;s rules,
+    <h3 class="fw-700 mt-3 mb-2">7.suspending accounts</h3>
+    <p>An administrator may lock, or delete an account that breaks these terms or PSU&rsquo;s rules,
       or that may be compromised. Decisions that affect a student&rsquo;s grades or standing follow PSU&rsquo;s
       disciplinary process (see section 2), which includes the chance to explain and to ask for a review.</p>
 
     <h3 class="fw-700 mt-3 mb-2">8. Network interruptions, technical problems, and reporting issues</h3>
-    <p>SPARK runs on a server managed by the capstone team, and short interruptions (for example a network or power problem) can
-      happen. The capstone team will make reasonable efforts to keep it available but cannot promise uninterrupted service.
+    <p>SPARK runs on a server managed by the SPARK team, and short interruptions (for example a network or power problem) can
+      happen. The SPARK team will make reasonable efforts to keep it available but cannot promise uninterrupted service.
       SPARK saves your answers as you work, but you should not rely on that alone. The exam clock is shared: it
       counts from when your teacher opened the exam, so it does not pause if you join late or lose connection.</p>
     <p>If something goes wrong during an exam (you are disconnected, the page freezes, or SPARK ends your exam
@@ -101,7 +101,29 @@
   </div>
 
   <div class="mt-3">
-    <a href="javascript:history.back()" class="btn btn-ghost">← Back</a>
+    <a href="{{ url_for('index') }}" class="btn btn-ghost" id="policy-back-btn">← Back</a>
   </div>
 </div>
+
+<script>
+(function () {
+  var btn = document.getElementById('policy-back-btn');
+  if (!btn) return;
+  btn.addEventListener('click', function (e) {
+    var sameOriginRef = false;
+    try { sameOriginRef = document.referrer && new URL(document.referrer).origin === location.origin; } catch (err) {}
+    if (sameOriginRef && history.length > 1) {
+      // Came from another SPARK page in this tab: go back normally
+      e.preventDefault();
+      history.back();
+    } else if (window.opener === null && history.length <= 1) {
+      // Opened in a new tab (target="_blank"): try to close it, else fall through to the home link
+      e.preventDefault();
+      window.close();
+      setTimeout(function () { window.location.href = btn.href; }, 150);
+    }
+    // otherwise: default link behavior -> index (login or role home)
+  });
+})();
+</script>
 {% endblock %}

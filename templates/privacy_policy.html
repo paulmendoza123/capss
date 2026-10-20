@@ -24,7 +24,7 @@
     <p>SPARK is a capstone project developed by fourth-year Information Technology students of Palawan State University
       (PSU), called SPARK in this statement. For now, it is used only by Computer Science
       and Information Technology students and professors of PSU, as part of the capstone. It is not a system for the whole University.
-      The capstone team manages SPARK and is responsible for the personal data in it, together with the CS and IT professors who
+      The SPARK team manages SPARK and is responsible for the personal data in it, together with the CS and IT professors who
       use it for their classes and exams. This makes them the personal information controller for SPARK under RA 10173.
       SPARK runs on a server managed by the SPARK team; it is not a service run by a separate company.</p>
 
@@ -59,7 +59,7 @@
     <p><strong>Technical items</strong></p>
     <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
       <li>A session cookie that keeps you logged in, and a theme (light/dark) preference saved in your browser</li>
-      <li>The server software that hosts SPARK (for example the web server and operating system) may keep its own technical logs, such as device network addresses. These are handled by the capstone team as system administrator and are separate from SPARK&rsquo;s database.</li>
+      <li>The server software that hosts SPARK (for example the web server and operating system) may keep its own technical logs, such as device network addresses. These are handled by the SPARK team as system administrator and are separate from SPARK&rsquo;s database.</li>
     </ul>
     <p>SPARK does not ask for your date of birth, age, home address, phone number, government ID numbers, or photos.
       Exam answers are whatever you type, so please do not put sensitive personal information of yourself or others in an answer unless the question asks for it.</p>
@@ -97,7 +97,7 @@
       exam session manually. A monitoring log is a signal for your teacher to review, not proof of cheating; if you
       think an event was caused by a technical problem, tell your teacher right away.</p>
     <p>If you choose &ldquo;I Do Not Agree&rdquo;, you are taken back and you do not start the exam through SPARK.
-      Because agreeing to monitoring is required to take the exam in SPARK, your professors and the capstone team should be ready to handle
+      Because agreeing to monitoring is required to take the exam in SPARK, your professors and the SPARK team should be ready to handle
       students who have concerns. If you cannot agree to monitoring, talk to your teacher before the exam day.</p>
 
     <h3 class="fw-700 mt-3 mb-2">6. Who can see your data</h3>
@@ -128,8 +128,8 @@
       <li>Passwords are stored as salted, slow hashes, not as readable text.</li>
       <li>Login attempts are rate-limited, and an account is locked for a limited time after repeated failures.</li>
       <li>Teacher and administrator pages and monitoring data are available only to those roles, and a teacher can open only their own classes&rsquo; exams.</li>
-      <li>The session cookie is marked HttpOnly and SameSite, and forms use CSRF protection. The cookie is also marked Secure when SPARK is run over HTTPS; whether HTTPS is switched on is a deployment choice of the capstone team.</li>
-      <li>SPARK itself does not encrypt the database file. Protecting the server, its storage, and backups is the responsibility of the capstone team.</li>
+      <li>The session cookie is marked HttpOnly and SameSite, and forms use CSRF protection. The cookie is also marked Secure when SPARK is run over HTTPS; whether HTTPS is switched on is a deployment choice of the SPARK team.</li>
+      <li>SPARK itself does not encrypt the database file. Protecting the server, its storage, and backups is the responsibility of the SPARK team.</li>
     </ul>
     <p>You can help by choosing a strong password, not sharing it, logging out on shared computers, and telling your teacher or administrator if you think your account was used by someone else.</p>
 
@@ -145,12 +145,12 @@
       <li>claim compensation for damages caused by inaccurate, incomplete, or unauthorized use of your data; and</li>
       <li>file a complaint with the National Privacy Commission (<a href="https://www.privacy.gov.ph" target="_blank" rel="noopener" style="color:var(--accent)">privacy.gov.ph</a>).</li>
     </ul>
-    <p>Some of these rights can be limited where PSU or the capstone team must keep academic records or the law allows or requires processing.
-      To make a request, contact your teacher or the system administrator (see section 11). The capstone team may ask you to confirm your identity first.
+    <p>Some of these rights can be limited where PSU or the SPARK team must keep academic records or the law allows or requires processing.
+      To make a request, contact your teacher or the system administrator (see section 11). The SPARK team may ask you to confirm your identity first.
       Please note that, as explained in section 7, some erasure requests currently need the system administrator to remove records by hand.</p>
 
     <h3 class="fw-700 mt-3 mb-2">10. Students under 18</h3>
-    <p>SPARK does not ask for or check your age. If you are under 18, the capstone team and your professors remain responsible for handling your data
+    <p>SPARK does not ask for or check your age. If you are under 18, the SPARK team and your professors remain responsible for handling your data
       carefully, and the monitoring described here should be explained to you in terms you can understand.</p>
 
     <h3 class="fw-700 mt-3 mb-2">11. Questions, requests, and complaints</h3>
@@ -166,7 +166,29 @@
   </div>
 
   <div class="mt-3">
-    <a href="javascript:history.back()" class="btn btn-ghost">← Back</a>
+    <a href="{{ url_for('index') }}" class="btn btn-ghost" id="policy-back-btn">← Back</a>
   </div>
 </div>
+
+<script>
+(function () {
+  var btn = document.getElementById('policy-back-btn');
+  if (!btn) return;
+  btn.addEventListener('click', function (e) {
+    var sameOriginRef = false;
+    try { sameOriginRef = document.referrer && new URL(document.referrer).origin === location.origin; } catch (err) {}
+    if (sameOriginRef && history.length > 1) {
+      // Came from another SPARK page in this tab: go back normally
+      e.preventDefault();
+      history.back();
+    } else if (window.opener === null && history.length <= 1) {
+      // Opened in a new tab (target="_blank"): try to close it, else fall through to the home link
+      e.preventDefault();
+      window.close();
+      setTimeout(function () { window.location.href = btn.href; }, 150);
+    }
+    // otherwise: default link behavior -> index (login or role home)
+  });
+})();
+</script>
 {% endblock %}
