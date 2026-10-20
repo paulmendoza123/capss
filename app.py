@@ -1645,8 +1645,8 @@ def _is_allowed_signup_email(email):
     return email.strip().lower().endswith(ALLOWED_SIGNUP_EMAIL_DOMAIN)
 
 
-SIGNUP_REQUIRED_STUDENT = ['first_name', 'last_name', 'email', 'password', 'confirm_password', 'program', 'year_level']
-SIGNUP_REQUIRED_TEACHER = ['first_name', 'last_name', 'email', 'password', 'confirm_password']
+SIGNUP_REQUIRED_STUDENT = ['first_name', 'last_name', 'email', 'password', 'confirm_password', 'program', 'year_level', 'accept_terms']
+SIGNUP_REQUIRED_TEACHER = ['first_name', 'last_name', 'email', 'password', 'confirm_password', 'accept_terms']
 
 
 def _validate_signup_form(form, required):
@@ -1693,6 +1693,7 @@ def signup():
             'confirm_password': request.form.get('confirm_password', ''),
             'program': request.form.get('program', ''),
             'year_level': request.form.get('year_level', ''),
+            'accept_terms': request.form.get('accept_terms', ''),
         }
         errors = _validate_signup_form(form, SIGNUP_REQUIRED_STUDENT)
         if not errors:
@@ -1728,6 +1729,7 @@ def signup_teacher():
             'email': request.form.get('email', '').strip(),
             'password': request.form.get('password', ''),
             'confirm_password': request.form.get('confirm_password', ''),
+            'accept_terms': request.form.get('accept_terms', ''),
         }
         errors = _validate_signup_form(form, SIGNUP_REQUIRED_TEACHER)
         if not errors:
@@ -5786,12 +5788,45 @@ def api_exam_consent():
     conn.commit()
     return jsonify({'status': 'ok'})
 
+# ── Policy pages (Terms and Conditions + Data Privacy Statement) ────────────
+# School-specific details are NOT hard-coded. The operator sets them as
+# environment variables (e.g. in deploy/spark.service). Anything left unset is
+# shown on the policy pages as a highlighted "[School to fill in: ...]" notice
+# instead of an invented value.
+POLICY_VERSION = '2026-10-20'
+_POLICY_ENV_FIELDS = {
+    'organization':      'SPARK_POLICY_ORGANIZATION',     # school / office that runs SPARK
+    'privacy_office':    'SPARK_POLICY_PRIVACY_OFFICE',   # name of office / Data Protection Officer
+    'privacy_email':     'SPARK_POLICY_PRIVACY_EMAIL',
+    'privacy_location':  'SPARK_POLICY_PRIVACY_LOCATION', # where to go in person
+    'retention':         'SPARK_POLICY_RETENTION',        # how long records are kept
+    'minors_procedure':  'SPARK_POLICY_MINORS_PROCEDURE', # procedure for students under 18
+    'discipline':        'SPARK_POLICY_DISCIPLINE',       # applicable disciplinary process
+    'exam_alternative':  'SPARK_POLICY_EXAM_ALTERNATIVE', # what happens if a student declines monitoring
+    'change_notice':     'SPARK_POLICY_CHANGE_NOTICE',    # how users are told about policy changes
+    'other_recipients':  'SPARK_POLICY_OTHER_RECIPIENTS', # offices that receive results/logs outside SPARK
+}
+
+
+@app.context_processor
+def inject_policy_info():
+    info = {k: os.environ.get(v, '').strip() or None for k, v in _POLICY_ENV_FIELDS.items()}
+    info['version'] = POLICY_VERSION
+    return {'policy': info}
+
+
 @app.route('/privacy-policy')
 def privacy_policy():
-    """Public data privacy statement. Linked from the exam consent modal and
-    can also be linked from signup/footer. No login required so students can
-    review it even before creating an account."""
+    """Public data privacy statement. Linked from the exam consent modal, the
+    sidebar footer and the login/signup pages. No login required so students
+    can review it even before creating an account."""
     return render_template('privacy_policy.html')
+
+
+@app.route('/terms')
+def terms():
+    """Public Terms and Conditions. Same access rules as the privacy statement."""
+    return render_template('terms.html')
 
 @app.route('/api/exam-status/<int:exam_id>')
 @login_required

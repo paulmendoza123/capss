@@ -132,22 +132,33 @@
     </div>
     <div style="color:var(--text2);font-size:0.875rem;line-height:1.6;margin-bottom:1rem">
       Before you begin, please note that this exam is proctored. While your exam is in progress,
-      SPARK will monitor and log:
+      SPARK will record, with the time each happens:
     </div>
     <ul style="color:var(--text2);font-size:0.85rem;line-height:1.7;margin:0 0 1rem 1.1rem;padding:0">
       <li>Tab switches, lost window focus, or minimizing the browser</li>
-      <li>Exiting fullscreen mode (if required for this exam)</li>
+      {% if exam.fullscreen_required %}<li>Exiting fullscreen mode (required for this exam)</li>{% endif %}
       <li>Connection activity (so your teacher knows if you disconnect)</li>
+      <li>When you start and submit the exam</li>
     </ul>
+    {% if exam.tab_switch_enabled and exam.tab_switch_limit %}
+    <div style="color:var(--text2);font-size:0.85rem;line-height:1.6;margin-bottom:1rem">
+      <strong>Automatic ending:</strong> this exam ends automatically after {{ exam.tab_switch_limit }}
+      tab switch{{ '' if exam.tab_switch_limit == 1 else 'es' }}, and the attempt is recorded with a score of 0.
+    </div>
+    {% endif %}
+    <div style="color:var(--text2);font-size:0.85rem;line-height:1.6;margin-bottom:1rem">
+      SPARK does <strong>not</strong> use your webcam or microphone, record your screen, or see other apps or files on your device.
+    </div>
     <div style="color:var(--text3);font-size:0.8rem;line-height:1.6;margin-bottom:1.25rem">
-      This is used only for academic-integrity purposes and is visible only to your teacher and
-      system administrators. Read the full
+      This is used for academic-integrity purposes and to review any dispute about your session. It is visible
+      only to your teacher and system administrators. Read the full
       <a href="{{ url_for('privacy_policy') }}" target="_blank" rel="noopener" style="color:var(--accent)">Data Privacy Statement</a>
-      for details on retention and your rights.
+      for what is kept, for how long, and your rights, and the
+      <a href="{{ url_for('terms') }}" target="_blank" rel="noopener" style="color:var(--accent)">Terms and Conditions</a>.
     </div>
     <div style="color:var(--text3);font-size:0.78rem;margin-bottom:1.25rem">
-      Monitoring will not start until you agree below. If you do not agree, you won't be able to
-      begin this exam.
+      Monitoring starts only after you agree below. If you do not agree, you won't be able to begin this
+      exam in SPARK, so please talk to your teacher before the exam if you have concerns.
     </div>
     <div id="consent-error" style="display:none;color:var(--danger);font-size:0.8rem;margin-bottom:0.75rem"></div>
     <div style="display:flex;gap:0.6rem">
