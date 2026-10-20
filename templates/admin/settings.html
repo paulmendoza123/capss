@@ -68,6 +68,28 @@
       {% endif %}
     </div>
     <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+      <div class="fw-600 text-sm mb-1">Restore Database</div>
+      <div class="text-xs text-muted mb-2">
+        Replace <strong>all current data</strong> with a backup file (.db).
+        A safety copy of the current database is saved automatically first. You will be signed out afterwards.
+      </div>
+      {% if ongoing_sessions %}
+      <div class="text-xs mb-2" style="color:var(--danger,#e5484d)">
+        Warning: {{ ongoing_sessions }} exam session(s) are in progress right now. Restoring will disrupt those students.
+      </div>
+      {% endif %}
+      <form method="POST" action="{{ url_for('admin_restore_db') }}" enctype="multipart/form-data" id="restoreForm"
+            onsubmit="return confirm('This will REPLACE the entire database with the uploaded backup. Continue?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+          <label class="form-label">Backup file</label>
+          <input type="file" name="backup_file" class="form-control" accept=".db,.sqlite,.sqlite3" required>
+          <div class="form-hint">Max {{ restore_max_mb }} MB.</div>
+        </div>
+        <button type="submit" class="btn btn-danger btn-sm">Restore Database</button>
+      </form>
+    </div>
+    <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
       <div class="fw-600 text-sm mb-1">Database Records</div>
       <div class="flex gap-3" style="flex-wrap:wrap">
         <div>

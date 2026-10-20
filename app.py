@@ -93,6 +93,19 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SPARK_HTTPS', '').strip() == '1'
 
+# ── Larger upload limit for the admin "Restore Database" upload only ──
+# The global cap above (10 MB) is right for question/roster imports, but a
+# real database backup can be bigger. Applies only to this one admin route,
+# and must be registered before CSRFProtect (which parses the form).
+RESTORE_MAX_MB = 200
+
+
+@app.before_request
+def _raise_limit_for_db_restore():
+    if request.path == '/admin/restore' and request.method == 'POST' \
+            and session.get('role') == 'admin':
+        request.max_content_length = RESTORE_MAX_MB * 1024 * 1024
+
 # ── CSRF protection ──
 # Every POST/PUT/PATCH/DELETE route now requires a matching token, carried as
 # a hidden "csrf_token" field on every HTML form (see templates/base.html +
@@ -5200,8 +5213,10 @@ def admin_settings():
         'sessions': conn.execute("SELECT COUNT(*) FROM exam_sessions").fetchone()[0],
         'logins': conn.execute("SELECT COUNT(*) FROM login_logs").fetchone()[0],
     }
+    ongoing_sessions = conn.execute("SELECT COUNT(*) FROM exam_sessions WHERE status='ongoing'").fetchone()[0]
     return render_template('admin/settings.html', db_size=db_size, record_counts=record_counts,
-                            settings=get_settings())
+                            settings=get_settings(), ongoing_sessions=ongoing_sessions,
+                            restore_max_mb=RESTORE_MAX_MB)
 
 @app.route('/admin/profile', methods=['GET', 'POST'])
 @role_required('admin')
@@ -5546,15 +5561,149 @@ def admin_edit_class(class_id):
             flash('Please fill in all fields.', 'error')
     return render_template('admin/edit_class.html', cls=cls, teachers=teachers, enrolled=enrolled)
 
-# ── Database Backup ──
+# ── Database Backup / Restore ──
+RESTORE_REQUIRED_TABLES = {'users', 'classes', 'exams', 'questions', 'exam_sessions', 'settings'}
+RESTORE_KEEP_SAFETY_COPIES = 5
+
+
+def _sqlite_copy(src_path, dest_path):
+    """Consistent copy of a SQLite DB using SQLite's own backup API (also
+    captures data still sitting in the -wal file, which a plain file copy
+    would miss)."""
+    src = sqlite3.connect(src_path, timeout=30)
+    try:
+        dest = sqlite3.connect(dest_path, timeout=30)
+        try:
+            src.backup(dest)
+        finally:
+            dest.close()
+    finally:
+        src.close()
+
+
 @app.route('/admin/backup')
 @role_required('admin')
 def admin_backup_db():
-    import shutil
-    from flask import send_file
-    backup_path = os.path.join(os.path.dirname(__file__), 'instance', 'spark_backup.db')
-    shutil.copy2(DB_PATH, backup_path)
-    return send_file(backup_path, as_attachment=True, download_name='spark_backup.db')
+    backup_path = os.path.join(INSTANCE_DIR, 'spark_backup.db')
+    if os.path.exists(backup_path):
+        os.remove(backup_path)
+    _sqlite_copy(DB_PATH, backup_path)
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return send_file(backup_path, as_attachment=True,
+                     download_name=f'spark_backup_{stamp}.db')
+
+
+def _validate_backup_file(path):
+    """Returns an error message, or None if `path` is a usable SPARK backup."""
+    try:
+        with open(path, 'rb') as f:
+            if f.read(16) != b'SQLite format 3\x00':
+                return 'That file is not a SQLite database.'
+    except OSError:
+        return 'Could not read the uploaded file.'
+    try:
+        # mode=ro so validating never modifies the upload
+        uri = 'file:' + path.replace('\\', '/').replace('?', '%3f').replace('#', '%23') + '?mode=ro'
+        chk = sqlite3.connect(uri, uri=True, timeout=10)
+        try:
+            row = chk.execute('PRAGMA integrity_check').fetchone()
+            if not row or row[0] != 'ok':
+                return 'The database file is corrupted (integrity check failed).'
+            tables = {r[0] for r in chk.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            missing = RESTORE_REQUIRED_TABLES - tables
+            if missing:
+                return ('This does not look like a SPARK backup (missing tables: '
+                        + ', '.join(sorted(missing)) + ').')
+            admins = chk.execute("SELECT COUNT(*) FROM users WHERE role='admin'").fetchone()[0]
+            if admins < 1:
+                return ('This backup has no admin account. Restoring it would lock everyone '
+                        'out of the admin panel, so it was rejected.')
+        finally:
+            chk.close()
+    except sqlite3.Error as e:
+        return f'The file could not be read as a SPARK database ({e}).'
+    return None
+
+
+@app.route('/admin/restore', methods=['POST'])
+@role_required('admin')
+@limiter.limit('5 per minute')
+def admin_restore_db():
+    """Replace the live database with an uploaded backup (.db).
+
+    Safety: validates the file first, saves a
+    safety copy of the current database, then copies the backup in using
+    SQLite's backup API (safe while the app/other workers are running)."""
+    conn = get_db()
+
+    upload = request.files.get('backup_file')
+    if not upload or not upload.filename:
+        flash('Please choose a backup file (.db) to restore.', 'error')
+        return redirect(url_for('admin_settings'))
+    if not upload.filename.lower().endswith(('.db', '.sqlite', '.sqlite3')):
+        flash('Please upload a .db backup file.', 'error')
+        return redirect(url_for('admin_settings'))
+
+    os.makedirs(INSTANCE_DIR, exist_ok=True)
+    tmp_path = os.path.join(INSTANCE_DIR, f'_restore_upload_{secrets.token_hex(6)}.db')
+    try:
+        upload.save(tmp_path)
+
+        err = _validate_backup_file(tmp_path)
+        if err:
+            flash(err + ' Database was not changed.', 'error')
+            return redirect(url_for('admin_settings'))
+
+        # Safety copy of the CURRENT database so a wrong restore can be undone.
+        safety_dir = os.path.join(INSTANCE_DIR, 'pre_restore_backups')
+        os.makedirs(safety_dir, exist_ok=True)
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        safety_path = os.path.join(safety_dir, f'pre_restore_{stamp}.db')
+        _sqlite_copy(DB_PATH, safety_path)
+
+        # Release this request's connection before overwriting the database.
+        conn.close()
+        g.pop('db', None)
+
+        try:
+            src = sqlite3.connect(tmp_path, timeout=30)
+            try:
+                dest = sqlite3.connect(DB_PATH, timeout=30)
+                try:
+                    src.backup(dest)
+                finally:
+                    dest.close()
+            finally:
+                src.close()
+        except sqlite3.Error as e:
+            app.logger.error('Database restore failed: %s', e)
+            flash(f'Restore failed ({e}). Your current database was not changed; '
+                  f'a safety copy is at instance/pre_restore_backups/.', 'error')
+            return redirect(url_for('admin_settings'))
+
+        # Bring an older backup up to the current schema (idempotent migrations).
+        init_db()
+        app.logger.warning('Database restored from "%s" by admin id %s (safety copy: %s)',
+                           upload.filename, session.get('user_id'), os.path.basename(safety_path))
+
+        # Keep only the most recent safety copies.
+        old = sorted(f for f in os.listdir(safety_dir) if f.startswith('pre_restore_'))
+        for f in old[:-RESTORE_KEEP_SAFETY_COPIES]:
+            try:
+                os.remove(os.path.join(safety_dir, f))
+            except OSError:
+                pass
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+    # The restored data may not contain this session's user, so sign everyone
+    # out of this browser and make the admin log in again.
+    session.clear()
+    flash('Database restored successfully. Please log in again with an account from the restored backup.', 'success')
+    return redirect(url_for('login'))
 
 
 # ─── API Endpoints ────────────────────────────────────────────────────────────
