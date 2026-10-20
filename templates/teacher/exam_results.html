@@ -241,8 +241,9 @@ function generateReport() {
     {% for r in results %}
     {% set pct = (r.score * 100 / r.total_points)|int if r.total_points and r.score is not none else 0 %}
     {
-      student: {{ r.full_name | tojson }},
-      score: {{ (r.score|score_fmt ~ ' out of ' ~ r.total_points|string) | tojson if r.score is not none else '"—"' }},
+      first_name: {{ (r.first_name if (r.first_name or r.last_name) else (r.full_name | first_name)) | tojson }},
+      last_name: {{ (r.last_name if (r.first_name or r.last_name) else (r.full_name | last_name)) | tojson }},
+      score: {{ (r.score|score_fmt|string) | tojson if r.score is not none else '"—"' }},
       percentage: {{ (pct|string ~ '%') | tojson if r.score is not none and r.total_points else '"—"' }},
       status: {% if r.status == 'terminated' %}"Terminated"{% elif r.status == 'ongoing' %}"Ongoing"{% elif pct >= pass_pct %}"Passed"{% else %}"Failed"{% endif %},
       submitted: {{ ((r.submitted_at | string) | time12) | tojson if r.submitted_at else '"—"' }}
@@ -250,13 +251,15 @@ function generateReport() {
     {% endfor %}
   ];
 
-  const csvHeader = ['Student', 'Score', 'Percentage', 'Status', 'Submitted'];
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csvHeader = ['First Name', 'Last Name', 'Score', 'Percentage', 'Status', 'Submitted'];
   const csvRows = rows.map(r => [
-    `"${r.student}"`,
-    `"${r.score}"`,
-    `"${r.percentage}"`,
-    `"${r.status}"`,
-    `"${r.submitted}"`
+    q(r.first_name),
+    q(r.last_name),
+    q(r.score),
+    q(r.percentage),
+    q(r.status),
+    q(r.submitted)
   ].join(','));
   const csvContent = [csvHeader.join(','), ...csvRows].join('\n');
   const blob = new Blob([csvContent], { type: 'text/csv' });

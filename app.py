@@ -468,6 +468,46 @@ def _migrate_local_time_defaults(conn):
         print('[init_db] local-time default migration skipped:', e)
 
 
+def split_full_name(full_name):
+    """Splits a stored full_name into (first_name, last_name).
+    Supports "Last, First [Middle]" and "First [Middle] Last"."""
+    name = ' '.join((full_name or '').split())
+    if not name:
+        return '', ''
+    if ',' in name:
+        last, _, first = name.partition(',')
+        return first.strip(), last.strip()
+    parts = name.split(' ')
+    if len(parts) == 1:
+        return parts[0], ''
+    return ' '.join(parts[:-1]), parts[-1]
+
+
+def clean_name(value):
+    """Collapse runs of whitespace and trim."""
+    return ' '.join((value or '').split())
+
+
+def compose_full_name(first_name, last_name):
+    """users.full_name is kept in sync as "First Last" so every page that
+    shows a person's name keeps working."""
+    return ' '.join(p for p in (clean_name(first_name), clean_name(last_name)) if p)
+
+
+def name_parts(row):
+    """(first, last) for a users-joined row: the stored columns when filled,
+    otherwise split from full_name (legacy rows)."""
+    try:
+        first, last = clean_name(row['first_name']), clean_name(row['last_name'])
+    except (KeyError, IndexError):
+        first, last = '', ''
+    if first or last:
+        return first, last
+    return split_full_name(row['full_name'])
+
+
+NAME_MAX = 50
+
 def init_db():
     conn = get_db()
     cursor = conn.cursor()
@@ -685,6 +725,22 @@ def init_db():
     except Exception:
         pass  # Column already exists
 
+    # Migration: separate first/last name columns. full_name stays (kept as
+    # "First Last") so the rest of the app is unaffected. Existing users are
+    # back-filled once by splitting their current full_name.
+    for _col in ('first_name', 'last_name'):
+        try:
+            conn.execute(f'ALTER TABLE users ADD COLUMN {_col} TEXT')
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
+    for _u in conn.execute(
+            "SELECT id, full_name FROM users "
+            "WHERE (first_name IS NULL OR first_name='') AND (last_name IS NULL OR last_name='')").fetchall():
+        _f, _l = split_full_name(_u['full_name'])
+        conn.execute('UPDATE users SET first_name=?, last_name=? WHERE id=?', (_f, _l, _u['id']))
+    conn.commit()
+
     # First-run admin: only created when NO admin exists. It starts with the
     # default password (admin123, or SPARK_ADMIN_PASSWORD if set) but is FLAGGED so
     # the admin is forced to choose a new password right after the first login.
@@ -692,9 +748,9 @@ def init_db():
     if not has_admin:
         admin_plain = os.environ.get('SPARK_ADMIN_PASSWORD', '').strip() or 'admin123'
         cursor.execute('''
-            INSERT INTO users (full_name, email, password, role, must_change_password)
-            VALUES (?, ?, ?, ?, 1)
-        ''', ('Administrator', 'admin@spark.edu', generate_password_hash(admin_plain), 'admin'))
+            INSERT INTO users (full_name, first_name, last_name, email, password, role, must_change_password)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
+        ''', ('Administrator', 'Administrator', '', 'admin@spark.edu', generate_password_hash(admin_plain), 'admin'))
         conn.commit()
         print("First run: admin account created -> admin@spark.edu "
               "(password must be changed at first login).")
@@ -1321,17 +1377,23 @@ def clean_time_warning(raw, duration):
     return max(0, min(minutes, max((duration or 0) - 1, 0)))
 
 def handle_profile_update(conn, user, with_year_level=False):
-    """Update the editable parts of a profile (name, and year level for students).
+    """Update the editable parts of a profile (first/last name, and year level for students).
 
     Returns (ok, profile_errors). Flashes the outcome.
     """
-    full_name = ' '.join(request.form.get('full_name', '').split())
+    first_name = clean_name(request.form.get('first_name', ''))
+    last_name = clean_name(request.form.get('last_name', ''))
     errs = {}
-    if not full_name:
-        errs['full_name'] = True
-    elif len(full_name) > 100:
-        errs['full_name'] = True
-        flash('Name must be 100 characters or fewer.', 'error')
+    if not first_name:
+        errs['first_name'] = True
+    if not last_name:
+        errs['last_name'] = True
+    if len(first_name) > NAME_MAX or len(last_name) > NAME_MAX:
+        if len(first_name) > NAME_MAX:
+            errs['first_name'] = True
+        if len(last_name) > NAME_MAX:
+            errs['last_name'] = True
+        flash(f'Name must be {NAME_MAX} characters or fewer for each of first and last name.', 'error')
         return False, errs
     year_level = None
     if with_year_level:
@@ -1340,13 +1402,15 @@ def handle_profile_update(conn, user, with_year_level=False):
             errs['year_level'] = True
     if errs:
         if 'Name must' not in ''.join(m for _, m in session.get('_flashes', [])):
-            flash('Please fill in your name' + (' and select a valid year level.' if with_year_level else '.'), 'error')
+            flash('Please fill in your first and last name' + (' and select a valid year level.' if with_year_level else '.'), 'error')
         return False, errs
+    full_name = compose_full_name(first_name, last_name)
     if with_year_level:
-        conn.execute('UPDATE users SET full_name=?, year_level=? WHERE id=?',
-                     (full_name, year_level, user['id']))
+        conn.execute('UPDATE users SET full_name=?, first_name=?, last_name=?, year_level=? WHERE id=?',
+                     (full_name, first_name, last_name, year_level, user['id']))
     else:
-        conn.execute('UPDATE users SET full_name=? WHERE id=?', (full_name, user['id']))
+        conn.execute('UPDATE users SET full_name=?, first_name=?, last_name=? WHERE id=?',
+                     (full_name, first_name, last_name, user['id']))
     conn.commit()
     session['full_name'] = full_name
     flash('Profile updated successfully.', 'success')
@@ -1568,8 +1632,8 @@ def _is_allowed_signup_email(email):
     return email.strip().lower().endswith(ALLOWED_SIGNUP_EMAIL_DOMAIN)
 
 
-SIGNUP_REQUIRED_STUDENT = ['full_name', 'email', 'password', 'confirm_password', 'program', 'year_level']
-SIGNUP_REQUIRED_TEACHER = ['full_name', 'email', 'password', 'confirm_password']
+SIGNUP_REQUIRED_STUDENT = ['first_name', 'last_name', 'email', 'password', 'confirm_password', 'program', 'year_level']
+SIGNUP_REQUIRED_TEACHER = ['first_name', 'last_name', 'email', 'password', 'confirm_password']
 
 
 def _validate_signup_form(form, required):
@@ -1587,6 +1651,9 @@ def _validate_signup_form(form, required):
     password = form.get('password', '')
     if password and validate_password_strength(password):
         errors['password'] = True
+    for key in ('first_name', 'last_name'):
+        if len(form.get(key, '')) > NAME_MAX:
+            errors[key] = True
     confirm = form.get('confirm_password', '')
     if password and confirm and password != confirm:
         errors['confirm_password'] = True
@@ -1606,7 +1673,8 @@ def signup():
     form, errors = {}, {}
     if request.method == 'POST':
         form = {
-            'full_name': request.form.get('full_name', '').strip(),
+            'first_name': clean_name(request.form.get('first_name', '')),
+            'last_name': clean_name(request.form.get('last_name', '')),
             'email': request.form.get('email', '').strip(),
             'password': request.form.get('password', ''),
             'confirm_password': request.form.get('confirm_password', ''),
@@ -1618,9 +1686,10 @@ def signup():
             try:
                 conn = get_db()
                 conn.execute('''
-                    INSERT INTO users (full_name, email, password, role, program, year_level)
-                    VALUES (?, ?, ?, 'student', ?, ?)
-                ''', (form['full_name'], form['email'], hash_password(form['password']),
+                    INSERT INTO users (full_name, first_name, last_name, email, password, role, program, year_level)
+                    VALUES (?, ?, ?, ?, ?, 'student', ?, ?)
+                ''', (compose_full_name(form['first_name'], form['last_name']),
+                      form['first_name'], form['last_name'], form['email'], hash_password(form['password']),
                       form['program'], form['year_level']))
                 conn.commit()
                 flash('Account created! You can now log in.', 'success')
@@ -1641,7 +1710,8 @@ def signup_teacher():
     form, errors = {}, {}
     if request.method == 'POST':
         form = {
-            'full_name': request.form.get('full_name', '').strip(),
+            'first_name': clean_name(request.form.get('first_name', '')),
+            'last_name': clean_name(request.form.get('last_name', '')),
             'email': request.form.get('email', '').strip(),
             'password': request.form.get('password', ''),
             'confirm_password': request.form.get('confirm_password', ''),
@@ -1651,9 +1721,10 @@ def signup_teacher():
             try:
                 conn = get_db()
                 conn.execute('''
-                    INSERT INTO users (full_name, email, password, role)
-                    VALUES (?, ?, ?, 'teacher')
-                ''', (form['full_name'], form['email'], hash_password(form['password'])))
+                    INSERT INTO users (full_name, first_name, last_name, email, password, role)
+                    VALUES (?, ?, ?, ?, ?, 'teacher')
+                ''', (compose_full_name(form['first_name'], form['last_name']),
+                      form['first_name'], form['last_name'], form['email'], hash_password(form['password'])))
                 conn.commit()
                 flash('Teacher account created! You can now log in.', 'success')
                 return redirect(url_for('login'))
@@ -2166,7 +2237,8 @@ def student_profile():
             if ok:
                 return redirect(url_for('student_profile'))
             user = dict(user)
-            user['full_name'] = request.form.get('full_name', '')
+            user['first_name'] = request.form.get('first_name', '')
+            user['last_name'] = request.form.get('last_name', '')
             user['year_level'] = request.form.get('year_level', '')
         else:
             form, errors, ok = handle_password_change(conn, user)
@@ -2818,6 +2890,77 @@ def teacher_exam_preview(exam_id):
 
     return render_template('teacher/exam_preview.html', exam=exam, sections_data=sections_data)
 
+@app.template_filter('first_name')
+def first_name_filter(full_name):
+    return split_full_name(full_name)[0]
+
+
+@app.template_filter('last_name')
+def last_name_filter(full_name):
+    return split_full_name(full_name)[1]
+
+
+def _csv_safe(value):
+    """Neutralise spreadsheet formula injection in exported text cells."""
+    v = '' if value is None else str(value)
+    return "'" + v if v[:1] in ('=', '+', '-', '@') else v
+
+
+# Violation columns for the Activity Logs CSV: (CSV header, suspicious_logs.event_type)
+LOG_EXPORT_VIOLATIONS = [
+    ('Tab Switch', 'tab_switch'),
+    ('Lost Focus', 'window_minimize'),
+    ('Exited Fullscreen', 'fullscreen_exit'),
+    ('Disconnected', 'disconnected'),
+]
+
+
+@app.route('/teacher/exam/<int:exam_id>/logs/export')
+@role_required('teacher')
+def teacher_export_activity_logs(exam_id):
+    """CSV: one row per student with First Name, Last Name and a count for every
+    violation type (0 when the student has none)."""
+    import csv
+    conn = get_db()
+    exam = conn.execute('''
+        SELECT e.*, c.teacher_id FROM exams e JOIN classes c ON e.class_id = c.id WHERE e.id=?
+    ''', (exam_id,)).fetchone()
+    if not exam or int(exam['teacher_id']) != int(session['user_id']):
+        flash('Exam not found.', 'error')
+        return redirect(url_for('teacher_home'))
+
+    # Every student who took (or started) the exam, even with zero violations
+    students = conn.execute('''
+        SELECT u.id, u.full_name, u.first_name, u.last_name FROM users u
+        WHERE u.id IN (SELECT student_id FROM exam_sessions WHERE exam_id=?)
+           OR u.id IN (SELECT student_id FROM suspicious_logs WHERE exam_id=?)
+    ''', (exam_id, exam_id)).fetchall()
+
+    counts = {}
+    for r in conn.execute(
+            'SELECT student_id, event_type, COUNT(*) AS cnt FROM suspicious_logs '
+            'WHERE exam_id=? GROUP BY student_id, event_type', (exam_id,)).fetchall():
+        counts[(r['student_id'], r['event_type'])] = r['cnt']
+
+    rows = []
+    for st in students:
+        first, last = name_parts(st)
+        rows.append((last.lower(), first.lower(), first, last, st['id']))
+    rows.sort()
+
+    buf = io.StringIO()
+    w = csv.writer(buf, quoting=csv.QUOTE_ALL)
+    w.writerow(['First Name', 'Last Name'] + [h for h, _ in LOG_EXPORT_VIOLATIONS])
+    for _, _, first, last, sid in rows:
+        w.writerow([_csv_safe(first), _csv_safe(last)] +
+                   [counts.get((sid, ev), 0) for _, ev in LOG_EXPORT_VIOLATIONS])
+
+    safe_title = re.sub(r'[^A-Za-z0-9_-]+', '_', exam['title']).strip('_') or 'Exam'
+    resp = app.response_class('\ufeff' + buf.getvalue(), mimetype='text/csv')
+    resp.headers['Content-Disposition'] = f'attachment; filename="{safe_title}_Activity_Logs.csv"'
+    return resp
+
+
 @app.route('/teacher/exam/<int:exam_id>/monitoring')
 @role_required('teacher')
 def teacher_exam_monitoring(exam_id):
@@ -2892,7 +3035,7 @@ def teacher_exam_results(exam_id):
         flash('Exam not found.', 'error')
         return redirect(url_for('teacher_home'))
     results = conn.execute('''
-        SELECT u.full_name, u.id as student_id, es.score, es.total_points, es.status, es.submitted_at, es.tab_switch_count,
+        SELECT u.full_name, u.first_name, u.last_name, u.id as student_id, es.score, es.total_points, es.status, es.submitted_at, es.tab_switch_count,
                COALESCE(es.needs_grading, 0) as needs_grading
         FROM exam_sessions es JOIN users u ON es.student_id = u.id
         WHERE es.exam_id=?
@@ -4715,7 +4858,8 @@ def teacher_profile():
             if ok:
                 return redirect(url_for('teacher_profile'))
             user = dict(user)
-            user['full_name'] = request.form.get('full_name', '')
+            user['first_name'] = request.form.get('first_name', '')
+            user['last_name'] = request.form.get('last_name', '')
         else:
             form, errors, ok = handle_password_change(conn, user)
             if ok:
@@ -4843,7 +4987,9 @@ def admin_create_user():
     programs = conn.execute('SELECT * FROM programs ORDER BY code').fetchall()
     form, errors = {}, {}
     if request.method == 'POST':
-        full_name  = request.form.get('full_name', '').strip()
+        first_name = clean_name(request.form.get('first_name', ''))
+        last_name  = clean_name(request.form.get('last_name', ''))
+        full_name  = compose_full_name(first_name, last_name)
         email      = request.form.get('email', '').strip()
         password   = request.form.get('password', '')
         role       = request.form.get('role', '')
@@ -4851,10 +4997,12 @@ def admin_create_user():
         year_level = request.form.get('year_level', '')
         # Keep what was typed so a failed attempt doesn't wipe the form
         # (the password itself is not sent back).
-        form = {'full_name': full_name, 'email': email, 'role': role,
+        form = {'first_name': first_name, 'last_name': last_name, 'email': email, 'role': role,
                 'program': program, 'year_level': year_level}
-        if not all([full_name, email, password, role]):
+        if not all([first_name, last_name, email, password, role]):
             flash('Please fill in all required fields.', 'error')
+        elif len(first_name) > NAME_MAX or len(last_name) > NAME_MAX:
+            flash(f'First and last name must each be {NAME_MAX} characters or fewer.', 'error')
         else:
             # Collect every problem at once; the page turns exactly those fields red
             if not _is_allowed_signup_email(email):
@@ -4872,9 +5020,9 @@ def admin_create_user():
                 try:
                     conn = get_db()
                     conn.execute('''
-                        INSERT INTO users (full_name, email, password, role, program, year_level, created_by)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ''', (full_name, email, hash_password(password), role, program, year_level, session['user_id']))
+                        INSERT INTO users (full_name, first_name, last_name, email, password, role, program, year_level, created_by)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (full_name, first_name, last_name, email, hash_password(password), role, program, year_level, session['user_id']))
                     conn.commit()
                     flash(f'Account created for {full_name}!', 'success')
                     return redirect(url_for('admin_users'))
@@ -5067,7 +5215,8 @@ def admin_profile():
         if ok:
             return redirect(url_for('admin_profile'))
         user = dict(user)
-        user['full_name'] = request.form.get('full_name', '')
+        user['first_name'] = request.form.get('first_name', '')
+        user['last_name'] = request.form.get('last_name', '')
     elif request.method == 'POST':
         current_password = request.form.get('current_password', '')
         new_password = request.form.get('new_password', '')
@@ -5174,14 +5323,18 @@ def admin_edit_user(user_id):
     original_email = user['email']
     errors = {}
     if request.method == 'POST':
-        full_name  = request.form.get('full_name', '').strip()
+        first_name = clean_name(request.form.get('first_name', ''))
+        last_name  = clean_name(request.form.get('last_name', ''))
+        full_name  = compose_full_name(first_name, last_name)
         email      = request.form.get('email', '').strip()
         role       = request.form.get('role', '')
         program    = request.form.get('program', '')
         year_level = request.form.get('year_level', '')
         email_changed = email.lower() != (user['email'] or '').lower()
-        if not all([full_name, email, role]):
+        if not all([first_name, last_name, email, role]):
             flash('Please fill in all required fields.', 'error')
+        elif len(first_name) > NAME_MAX or len(last_name) > NAME_MAX:
+            flash(f'First and last name must each be {NAME_MAX} characters or fewer.', 'error')
         else:
             # Only checked when the email is actually being changed, so existing
             # accounts with an older address (e.g. the default admin) can still
@@ -5196,16 +5349,16 @@ def admin_edit_user(user_id):
             if not errors:
                 try:
                     conn.execute("""
-                        UPDATE users SET full_name=?, email=?, role=?, program=?, year_level=?
+                        UPDATE users SET full_name=?, first_name=?, last_name=?, email=?, role=?, program=?, year_level=?
                         WHERE id=?
-                    """, (full_name, email, role, program, year_level, user_id))
+                    """, (full_name, first_name, last_name, email, role, program, year_level, user_id))
                     conn.commit()
                     flash(f'User {full_name} updated successfully!', 'success')
                     return redirect(url_for('admin_users'))
                 except sqlite3.IntegrityError:
                     flash('Email already exists for another user.', 'error')
         # Failed: show the form again with what was typed, not the old saved values
-        user = {**dict(user), 'full_name': full_name, 'email': email, 'role': role,
+        user = {**dict(user), 'full_name': full_name, 'first_name': first_name, 'last_name': last_name, 'email': email, 'role': role,
                 'program': program, 'year_level': year_level}
     is_self = (user['id'] == session['user_id'])
     locked_until_raw = user['locked_until']
@@ -5666,7 +5819,7 @@ def api_monitoring(exam_id):
     # Results data
     passing_score = exam['passing_score'] if exam['passing_score'] is not None else 75
     results_rows = conn.execute('''
-        SELECT u.id as student_id, u.full_name, es.score, es.total_points, es.status, es.submitted_at, es.started_at
+        SELECT u.id as student_id, u.full_name, u.first_name, u.last_name, es.score, es.total_points, es.status, es.submitted_at, es.started_at
         FROM exam_sessions es JOIN users u ON es.student_id = u.id
         WHERE es.exam_id=?
         ORDER BY es.started_at ASC, es.id ASC
@@ -5674,6 +5827,7 @@ def api_monitoring(exam_id):
     results_list = []
     for r in results_rows:
         row = dict(r)
+        row['first_name'], row['last_name'] = name_parts(row)
         if row['score'] is not None and row['total_points']:
             row['pct'] = pct_floor(row['score'], row['total_points'])
         else:
@@ -5727,7 +5881,7 @@ def api_results(exam_id):
     passing_score = exam['passing_score'] if exam['passing_score'] is not None else 75
 
     results = conn.execute('''
-        SELECT u.full_name, u.id as student_id, es.score, es.total_points,
+        SELECT u.full_name, u.first_name, u.last_name, u.id as student_id, es.score, es.total_points,
                es.status, es.submitted_at, es.tab_switch_count
         FROM exam_sessions es JOIN users u ON es.student_id = u.id
         WHERE es.exam_id=?
@@ -5737,6 +5891,7 @@ def api_results(exam_id):
     results_list = []
     for r in results:
         row = dict(r)
+        row['first_name'], row['last_name'] = name_parts(row)
         if row['score'] is not None and row['total_points']:
             pct = pct_floor(row['score'], row['total_points'])
         else:

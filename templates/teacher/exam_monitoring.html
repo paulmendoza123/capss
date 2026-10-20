@@ -191,6 +191,7 @@
     </select>
     <button class="btn btn-ghost btn-sm" onclick="clearLogFilters()" style="font-size:0.82rem;">✕ Clear</button>
     <span id="log-filter-count" class="text-xs text-muted" style="align-self:center;"></span>
+    <a href="{{ url_for('teacher_export_activity_logs', exam_id=exam.id) }}" class="btn btn-primary btn-sm" style="font-size:0.82rem; margin-left:auto;"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> Export CSV</a>
   </div>
 
   <div id="logs-container">
@@ -1114,13 +1115,15 @@ function generateResultsReport() {
   fetch(`/api/results/${EXAM_ID}`)
     .then(r => r.json())
     .then(data => {
-      // CSV is always alphabetical by student name (A–Z)
+      // CSV is always alphabetical by last name, then first name (A–Z)
       const results = (data.results || []).slice().sort((a, b) =>
-        (a.full_name || '').localeCompare(b.full_name || '', undefined, { sensitivity: 'base' }));
-      const csvHeader = ['Student', 'Score', 'Percentage', 'Status', 'Submitted'];
+        (a.last_name || '').localeCompare(b.last_name || '', undefined, { sensitivity: 'base' }) ||
+        (a.first_name || '').localeCompare(b.first_name || '', undefined, { sensitivity: 'base' }));
+      const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const csvHeader = ['First Name', 'Last Name', 'Score', 'Percentage', 'Status', 'Submitted'];
       const csvRows = results.map(r => {
         const score = r.score !== null && r.total_points
-          ? `${parseInt(r.score)} out of ${r.total_points}` : '—';
+          ? `${parseInt(r.score)}` : '—';
         const pct = r.pct !== null ? `${r.pct}%` : '—';
         let status;
         if (r.status === 'terminated') status = 'Terminated';
@@ -1128,7 +1131,7 @@ function generateResultsReport() {
         else if (r.pct !== null && r.pct >= passPct) status = 'Passed';
         else status = 'Failed';
         const submitted = fmtTime12(r.submitted_at) || '—';
-        return [`"${r.full_name}"`, `"${score}"`, `"${pct}"`, `"${status}"`, `"${submitted}"`].join(',');
+        return [q(r.first_name), q(r.last_name), q(score), q(pct), q(status), q(submitted)].join(',');
       });
       const csvContent = [csvHeader.join(','), ...csvRows].join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv' });
