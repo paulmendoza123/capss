@@ -34,7 +34,7 @@
         <label class="form-label" style="font-size:0.78rem;font-weight:500">…or use a TOS you already uploaded</label>
         <select name="tos_id" id="tosSelect" class="form-select" style="max-width:340px" onchange="syncTosField()">
           <option value="">— Upload a new file instead —</option>
-          {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name }}</option>{% endfor %}
+          {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name|tos_label }}</option>{% endfor %}
         </select>
       </div>
       {% endif %}

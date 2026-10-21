@@ -15,7 +15,7 @@
   </div>
   <div style="display:flex;gap:0.5rem;align-items:center">
     {% if exam_tos %}
-    <a href="{{ url_for('teacher_download_tos', tos_id=exam_tos.id) }}" class="btn btn-ghost" title="Table of Specification used by this exam"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> TOS: {{ exam_tos.original_name }}</a>
+    <span class="btn btn-ghost" style="cursor:default;pointer-events:none" title="Table of Specification used by this exam"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> TOS: {{ exam_tos.original_name|tos_label }}</span>
     {% endif %}
     {% if not exam.is_ready and exam.status == 'upcoming' %}
     <form method="POST" action="{{ url_for('teacher_finish_editing', exam_id=exam.id) }}" style="display:inline">
@@ -368,7 +368,7 @@
 
           {% if exam_category == 'periodic' and exam_tos %}
           <div class="form-hint" style="margin-top:0.75rem"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
-            This question will use the exam's TOS: <a href="{{ url_for('teacher_download_tos', tos_id=exam_tos.id) }}">{{ exam_tos.original_name }}</a></div>
+            This question will use the exam's TOS: <strong>{{ exam_tos.original_name|tos_label }}</strong></div>
           {% elif exam_category == 'periodic' %}
           <div class="form-group" style="margin-top:0.75rem">
             <label class="form-label">Table of Specification (TOS) for this question <span style="color:var(--danger)">*</span></label>
@@ -379,7 +379,7 @@
               <label class="form-label" style="font-size:0.78rem;font-weight:500">…or reuse a TOS you already uploaded</label>
               <select name="tos_id" class="form-select" style="max-width:340px" onchange="this.closest('.form-group').querySelector('.tos-file-input').required = !this.value">
                 <option value="">— Upload a new file instead —</option>
-                {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name }}</option>{% endfor %}
+                {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name|tos_label }}</option>{% endfor %}
               </select>
             </div>
             {% endif %}
@@ -430,7 +430,7 @@
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-import-bank')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
       </div>
       {% if exam_tos %}
-      <div class="form-hint" style="margin-bottom:0.75rem">Showing only questions that use this exam's TOS: <strong>{{ exam_tos.original_name }}</strong></div>
+      <div class="form-hint" style="margin-bottom:0.75rem">Showing only questions that use this exam's TOS: <strong>{{ exam_tos.original_name|tos_label }}</strong></div>
       {% endif %}
 
       <form id="import-bank-form" onsubmit="return submitImportFromBank(event)">
@@ -1432,7 +1432,7 @@ function ftbAddQuestion() {
 function ftbImportFromBank() {
   const modal = document.getElementById('modal-import-bank');
   if (!modal) {
-    alert('No Question Bank questions match this exam' + (document.querySelector('a[title^="Table of Specification"]') ? "'s TOS" : '') + ' yet. Add questions with this TOS in the Question Bank first.');
+    alert('No Question Bank questions match this exam' + (document.querySelector('[title^="Table of Specification"]') ? "'s TOS" : '') + ' yet. Add questions with this TOS in the Question Bank first.');
     return;
   }
   const select = document.getElementById('importTargetSection');

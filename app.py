@@ -291,6 +291,17 @@ def time12_filter(value):
     return f"{date_part} {h12}:{mm}{':' + ss if ss else ''} {suffix}"
 
 
+@app.template_filter('tos_label')
+def tos_label(name):
+    """TOS file name without its .xlsx/.xlsm extension, for display."""
+    n = (name or '').strip()
+    low = n.lower()
+    for ext in ('.xlsx', '.xlsm'):
+        if low.endswith(ext):
+            return n[:-len(ext)]
+    return n
+
+
 @app.template_filter('sa_alts')
 def _sa_alts_filter(correct_answer):
     return sa_parse_answer(correct_answer)

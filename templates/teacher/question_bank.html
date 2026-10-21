@@ -140,7 +140,7 @@
       <tbody>
       {% for f in tos_files %}
         <tr>
-          <td style="word-break:break-all">{{ f.original_name }}</td>
+          <td style="word-break:break-all">{{ f.original_name|tos_label }}</td>
           <td class="text-xs text-muted">{{ (f.uploaded_at or '')[:10] }}</td>
           <td class="text-xs">{% if f.question_count or f.exam_count %}{{ f.question_count }} question{{ 's' if f.question_count != 1 else '' }}, {{ f.exam_count }} exam{{ 's' if f.exam_count != 1 else '' }}{% else %}<span class="text-muted">Not used</span>{% endif %}</td>
           <td>
@@ -472,7 +472,7 @@
           <label class="form-label" style="font-size:0.78rem;font-weight:500">…or use a TOS you already uploaded</label>
           <select name="tos_id" id="impTosPick" class="form-select" onchange="bankTosPicked('imp')">
             <option value="">— Upload a new file instead —</option>
-            {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name }}</option>{% endfor %}
+            {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name|tos_label }}</option>{% endfor %}
           </select>
         </div>
         {% endif %}
@@ -538,7 +538,7 @@ function updateImportPreview(input) {
           <label class="form-label" style="font-size:0.78rem;font-weight:500">…or reuse a TOS you already uploaded</label>
           <select name="tos_id" id="addTosPick" class="form-select" onchange="bankTosPicked('add')">
             <option value="">— Upload a new file instead —</option>
-            {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name }}</option>{% endfor %}
+            {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name|tos_label }}</option>{% endfor %}
           </select>
         </div>
         {% endif %}
@@ -1157,7 +1157,7 @@ function confirmDeleteGroup(id, name, qcount) {
               <td style="min-width:160px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ q.question_text }}">{{ q.question_text }}</td>
               <td>{% if q.question_type == 'multiple_choice' %}<span class="badge badge-blue">MC</span>{% elif q.question_type == 'true_false' %}<span class="badge badge-green">T/F</span>{% elif q.question_type == 'fill_blank' %}<span class="badge badge-purple">FIB</span>{% elif q.question_type == 'essay' %}<span class="badge badge-gray">Essay</span>{% else %}<span class="badge badge-orange">SA</span>{% endif %}</td>
               <td class="font-mono text-sm">{{ q.points }}</td>
-              {% if category == 'periodic' %}<td>{% if q.tos_id %}<a href="{{ url_for('teacher_download_tos', tos_id=q.tos_id) }}" title="Download TOS: {{ q.tos_name }}"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg></a>{% else %}<span class="text-muted">—</span>{% endif %}</td>{% endif %}
+              {% if category == 'periodic' %}<td>{% if q.tos_id %}<span title="TOS: {{ q.tos_name|tos_label }}"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg></span>{% else %}<span class="text-muted">—</span>{% endif %}</td>{% endif %}
               <td>
                 <div class="flex gap-1">
                   <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></button>
@@ -1210,7 +1210,7 @@ function confirmDeleteGroup(id, name, qcount) {
           <td style="min-width:160px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ q.question_text }}">{{ q.question_text }}</td>
           <td>{% if q.question_type == 'multiple_choice' %}<span class="badge badge-blue">MC</span>{% elif q.question_type == 'true_false' %}<span class="badge badge-green">T/F</span>{% elif q.question_type == 'fill_blank' %}<span class="badge badge-purple">FIB</span>{% elif q.question_type == 'essay' %}<span class="badge badge-gray">Essay</span>{% else %}<span class="badge badge-orange">SA</span>{% endif %}</td>
           <td class="font-mono text-sm">{{ q.points }}</td>
-          {% if category == 'periodic' %}<td>{% if q.tos_id %}<a href="{{ url_for('teacher_download_tos', tos_id=q.tos_id) }}" title="Download TOS: {{ q.tos_name }}"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg></a>{% else %}<span class="text-muted">—</span>{% endif %}</td>{% endif %}
+          {% if category == 'periodic' %}<td>{% if q.tos_id %}<span title="TOS: {{ q.tos_name|tos_label }}"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg></span>{% else %}<span class="text-muted">—</span>{% endif %}</td>{% endif %}
           <td>
             <div class="flex gap-1">
               <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></button>
@@ -1362,7 +1362,7 @@ function confirmDeleteGroup(id, name, qcount) {
       <div class="form-group">
         <label class="form-label">Table of Specification (TOS)</label>
         <div class="text-xs" style="margin-bottom:0.4rem">
-          {% if q.tos_id %}Current: <a href="{{ url_for('teacher_download_tos', tos_id=q.tos_id) }}">{{ q.tos_name }}</a>{% else %}<span class="text-muted">None</span>{% endif %}
+          {% if q.tos_id %}Current: {{ q.tos_name|tos_label }}{% else %}<span class="text-muted">None</span>{% endif %}
         </div>
         <input type="file" name="tos_file" class="form-control" accept=".xlsx,.xlsm" style="padding:0.45rem 0.65rem;font-size:0.9rem">
         <div class="form-hint">Optional — only choose a file to replace this question's TOS (Excel .xlsx).</div>
@@ -1370,7 +1370,7 @@ function confirmDeleteGroup(id, name, qcount) {
         {% if other_tos %}
         <select name="tos_id" class="form-select" style="margin-top:0.4rem">
           <option value="">— Keep current / use the uploaded file —</option>
-          {% for tf in other_tos %}<option value="{{ tf.id }}">{{ tf.original_name }}</option>{% endfor %}
+          {% for tf in other_tos %}<option value="{{ tf.id }}">{{ tf.original_name|tos_label }}</option>{% endfor %}
         </select>
         {% endif %}
       </div>
