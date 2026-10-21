@@ -55,14 +55,13 @@
 </div>
 
 <style>
-  /* Let the Recent Users card stretch to the right edge of the page,
-     in line with the Quick Summary card above it. */
-  @media (min-width: 769px) {
-    .recent-users-card { grid-column: 2 / -1; }
+  /* Exam Status, Exam Types and Recent Users sit side by side in one row. */
+  @media (min-width: 900px) {
+    .dash-row { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
   }
 </style>
 
-<div class="cards-grid">
+<div class="cards-grid dash-row">
 
   <!-- Exam Status -->
   <div class="card">
@@ -83,8 +82,27 @@
     </div>
   </div>
 
+  <!-- Exam Types (Quiz vs Periodic Exam) -->
+  <div class="card">
+    <div class="card-title mb-2">Exam Types</div>
+    <div style="display:flex;flex-direction:column;gap:0.6rem">
+      <div class="flex items-center justify-between">
+        <span class="text-sm">Quizzes</span>
+        <span class="badge badge-gray">{{ stats.quiz_exams }}</span>
+      </div>
+      <div class="flex items-center justify-between">
+        <span class="text-sm">Periodic Exams</span>
+        <span class="badge badge-purple">{{ stats.periodic_exams }}</span>
+      </div>
+      <div class="flex items-center justify-between">
+        <span class="text-sm">TOS Files Uploaded</span>
+        <span class="badge badge-blue">{{ stats.tos_files }}</span>
+      </div>
+    </div>
+  </div>
+
   <!-- Recent Users -->
-  <div class="card recent-users-card">
+  <div class="card">
     <div class="card-title mb-2">Recent Users</div>
     {% if recent_users %}
       {% for u in recent_users %}

@@ -5266,6 +5266,10 @@ def admin_home():
         'active_exams': conn.execute("SELECT COUNT(*) FROM exams WHERE status='active'").fetchone()[0],
         'completed_exams': conn.execute("SELECT COUNT(*) FROM exams WHERE status='completed'").fetchone()[0],
         'upcoming_exams': conn.execute("SELECT COUNT(*) FROM exams WHERE status='upcoming'").fetchone()[0],
+        # Quiz vs Periodic Exam split (teacher side) + uploaded Tables of Specification
+        'quiz_exams':     conn.execute("SELECT COUNT(*) FROM exams WHERE COALESCE(exam_category,'quiz')='quiz'").fetchone()[0],
+        'periodic_exams': conn.execute("SELECT COUNT(*) FROM exams WHERE exam_category='periodic'").fetchone()[0],
+        'tos_files':      conn.execute("SELECT COUNT(*) FROM tos_files").fetchone()[0],
     }
     recent_logins = conn.execute("""
         SELECT ll.email, ll.success, ll.logged_at, u.full_name
@@ -5420,17 +5424,25 @@ def admin_exam_overview():
     f_program = request.args.get('program', '').strip()
     f_year_level = request.args.get('year_level', '').strip()
     f_section = request.args.get('section', '').strip()
+    # Quiz / Periodic Exam filter (teacher side keeps the two categories separate)
+    f_category = _norm_category(request.args.get('category'), '')
 
     query = '''
-        SELECT e.*, c.subject_name, c.block_name, c.program, c.year_level, u.full_name as teacher_name,
+        SELECT e.*, COALESCE(e.exam_category, 'quiz') AS category,
+               t.original_name AS tos_name,
+               c.subject_name, c.block_name, c.program, c.year_level, u.full_name as teacher_name,
                COUNT(DISTINCT es.id) as session_count
         FROM exams e
         JOIN classes c ON e.class_id = c.id
         JOIN users u ON c.teacher_id = u.id
+        LEFT JOIN tos_files t ON e.tos_id = t.id
         LEFT JOIN exam_sessions es ON e.id = es.exam_id
         WHERE 1=1
     '''
     params = []
+    if f_category:
+        query += " AND COALESCE(e.exam_category, 'quiz') = ?"
+        params.append(f_category)
     if f_program:
         query += ' AND c.program = ?'
         params.append(f_program)
@@ -5452,7 +5464,8 @@ def admin_exam_overview():
 
     return render_template('admin/exam_overview.html', exams=exams,
                            programs=programs, year_levels=year_levels, sections=sections,
-                           f_program=f_program, f_year_level=f_year_level, f_section=f_section)
+                           f_program=f_program, f_year_level=f_year_level, f_section=f_section,
+                           f_category=f_category)
 
 @app.route('/admin/logs')
 @role_required('admin')
@@ -5610,6 +5623,11 @@ def admin_reports():
     for r in exam_rows:
         exam_status[r['status']] = r['cnt']
         total_exams += r['cnt']
+    exam_category_counts = {'quiz': 0, 'periodic': 0}
+    for r in conn.execute("SELECT COALESCE(exam_category,'quiz') AS cat, COUNT(*) AS cnt FROM exams GROUP BY cat").fetchall():
+        if r['cat'] in exam_category_counts:
+            exam_category_counts[r['cat']] = r['cnt']
+    tos_count = conn.execute("SELECT COUNT(*) FROM tos_files").fetchone()[0]
     total_logins = conn.execute("SELECT COUNT(*) FROM login_logs").fetchone()[0]
     failed_logins = conn.execute("SELECT COUNT(*) FROM login_logs WHERE success = 0").fetchone()[0]
     login_activity = conn.execute("""
@@ -5639,6 +5657,7 @@ def admin_reports():
         'role_counts': role_counts, 'program_enrollment': program_enrollment,
         'exam_status': exam_status, 'login_activity': login_activity,
         'suspicious_summary': suspicious_summary,
+        'exam_category_counts': exam_category_counts, 'tos_count': tos_count,
     }
     return render_template('admin/reports.html', report=report)
 
@@ -5749,6 +5768,11 @@ def admin_exam_analytics(exam_id):
     class_info = conn.execute('SELECT * FROM classes WHERE id=?', (exam['class_id'],)).fetchone()
     teacher = conn.execute('SELECT full_name FROM users WHERE id=?', (class_info['teacher_id'],)).fetchone()
     teacher_name = teacher['full_name'] if teacher else '—'
+    exam_category = _q_get(exam, 'exam_category', 'quiz') or 'quiz'
+    exam_tos = None
+    if _q_get(exam, 'tos_id'):
+        t = conn.execute('SELECT id, original_name, uploaded_at FROM tos_files WHERE id=?', (exam['tos_id'],)).fetchone()
+        exam_tos = dict(t) if t else None
     sessions = conn.execute("""
         SELECT es.*, u.full_name FROM exam_sessions es
         JOIN users u ON es.student_id = u.id WHERE es.exam_id=? ORDER BY es.score DESC
@@ -5831,7 +5855,23 @@ def admin_exam_analytics(exam_id):
     return render_template('admin/exam_analytics.html',
         exam=exam, class_info=class_info, teacher_name=teacher_name,
         stats=stats, sessions=sessions, hard_questions=hard_questions_list, suspicious=suspicious,
-        section_stats=section_stats)
+        section_stats=section_stats, exam_category=exam_category, exam_tos=exam_tos)
+
+@app.route('/admin/tos/<int:tos_id>/download')
+@role_required('admin')
+def admin_download_tos(tos_id):
+    """Admins can open any teacher's Table of Specification (read-only)."""
+    conn = get_db()
+    row = conn.execute('SELECT * FROM tos_files WHERE id=?', (tos_id,)).fetchone()
+    if not row:
+        flash('TOS file not found.', 'error')
+        return redirect(url_for('admin_exam_overview'))
+    from flask import Response
+    safe_name = row['original_name'].replace('"', '')
+    return Response(
+        row['file_data'],
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename="{safe_name}"'})
 
 # ── Class Management ──
 @app.route('/admin/classes')
