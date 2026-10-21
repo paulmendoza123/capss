@@ -16,6 +16,15 @@
       <label class="form-label">Exam Title</label>
       <input type="text" name="title" class="form-control" placeholder="e.g. Midterm Exam" required />
     </div>
+    <div class="form-group">
+      <label class="form-label">Exam Type</label>
+      <select name="exam_category" class="form-select" required style="max-width:260px">
+        <option value="" disabled selected>— Select type —</option>
+        <option value="quiz">Quiz</option>
+        <option value="periodic">Periodic Exam (Midterm / Final Term)</option>
+      </select>
+      <div class="form-hint">Quizzes and Periodic Exams use separate question banks — their questions can't be mixed. Periodic Exams require a Table of Specification (TOS) when you add questions.</div>
+    </div>
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Duration (minutes)</label>

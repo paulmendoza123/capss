@@ -104,12 +104,65 @@
 <div class="page-header">
   <div>
     <div class="page-title">Question Bank</div>
-    <div class="page-subtitle">All questions across your exams and bank</div>
+    <div class="page-subtitle">Separate banks for Quizzes and Periodic Exams (Midterm / Final Term)</div>
   </div>
   <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+    <button class="btn btn-ghost" onclick="openModal('modal-tos-files')"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> TOS Files{% if tos_files %} ({{ tos_files|length }}){% endif %}</button>
     <button class="btn btn-ghost" onclick="openModal('modal-manage-groups')"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg> Manage Groups</button>
     <button class="btn btn-ghost" onclick="openModal('modal-import-file')"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg> Import File</button>
     <button class="btn btn-primary" onclick="openModal('modal-add-bank-q')">+ Add Question</button>
+  </div>
+</div>
+
+{# Quiz / Periodic Exam banks #}
+<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.25rem">
+  <a href="{{ url_for('teacher_question_bank', category='quiz') }}"
+     class="btn {{ 'btn-primary' if category == 'quiz' else 'btn-ghost' }}">Quiz
+    <span class="badge badge-gray" style="margin-left:0.3rem">{{ category_counts.quiz }}</span></a>
+  <a href="{{ url_for('teacher_question_bank', category='periodic') }}"
+     class="btn {{ 'btn-primary' if category == 'periodic' else 'btn-ghost' }}">Periodic Exam
+    <span class="badge badge-gray" style="margin-left:0.3rem">{{ category_counts.periodic }}</span></a>
+</div>
+
+{# ══════════════════════════════════════════════════
+   TOS FILES MODAL — download / delete uploaded Tables of Specification
+══════════════════════════════════════════════════ #}
+<div class="modal-overlay" id="modal-tos-files">
+  <div class="modal" style="max-width:680px;width:95vw;max-height:88vh;overflow-y:auto;padding:1.5rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+      <div class="modal-title" style="margin-bottom:0"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> My TOS Files</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-tos-files')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
+    </div>
+    <div class="text-xs text-muted" style="margin-bottom:0.9rem">A file that is still used by questions or exams can't be deleted. To change the TOS of an exam, use the <strong>TOS</strong> button on that exam's Edit page.</div>
+    {% if tos_files %}
+    <div class="table-wrap"><table style="min-width:480px">
+      <thead><tr><th>File</th><th style="width:130px">Uploaded</th><th style="width:110px">Used by</th><th style="width:100px">Actions</th></tr></thead>
+      <tbody>
+      {% for f in tos_files %}
+        <tr>
+          <td style="word-break:break-all">{{ f.original_name }}</td>
+          <td class="text-xs text-muted">{{ (f.uploaded_at or '')[:10] }}</td>
+          <td class="text-xs">{% if f.question_count or f.exam_count %}{{ f.question_count }} question{{ 's' if f.question_count != 1 else '' }}, {{ f.exam_count }} exam{{ 's' if f.exam_count != 1 else '' }}{% else %}<span class="text-muted">Not used</span>{% endif %}</td>
+          <td>
+            <div class="flex gap-1">
+              <a class="btn btn-ghost btn-sm" href="{{ url_for('teacher_download_tos', tos_id=f.id) }}" title="Download"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg></a>
+              <form method="POST" action="{{ url_for('teacher_delete_tos', tos_id=f.id) }}" style="display:inline"
+                    onsubmit="return confirm('Delete this TOS file?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-danger btn-sm" {% if f.question_count or f.exam_count %}disabled title="Still in use"{% else %}title="Delete"{% endif %}><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
+              </form>
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    <div class="text-muted" style="padding:1rem 0">No TOS files yet. They appear here after you import or add Periodic Exam questions.</div>
+    {% endif %}
+    <div class="modal-footer" style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid var(--border)">
+      <button type="button" class="btn btn-ghost" onclick="closeModal('modal-tos-files')">Close</button>
+    </div>
   </div>
 </div>
 
@@ -128,6 +181,8 @@
       <div class="qb-modal-section-title" style="margin-bottom:0.85rem;font-size:0.75rem">Create New Group</div>
       <form method="POST" action="{{ url_for('teacher_create_bank_group') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="exam_category" value="{{ category }}">
+        <div class="text-xs text-muted" style="margin-bottom:0.6rem">This group will be created in the <strong>{{ 'Periodic Exam' if category == 'periodic' else 'Quiz' }}</strong> bank.</div>
         <div class="form-group" style="margin-bottom:0.75rem">
           <label class="form-label" style="font-size:0.82rem">Group Name</label>
           <input type="text" name="name" class="form-control" placeholder="e.g. Chapter 3, Midterm 2025…" required style="font-size:0.9rem;padding:0.55rem 0.75rem">
@@ -399,6 +454,22 @@
     <form method="POST" action="{{ url_for('teacher_bank_import_file') }}" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group" style="margin-bottom:1rem">
+        <label class="form-label">Exam Type <span style="color:var(--danger)">*</span></label>
+        <select name="exam_category" id="impCategory" class="form-select" required onchange="bankCategoryChanged('imp')">
+          <option value="" disabled selected>— Select Quiz or Periodic Exam —</option>
+          <option value="quiz">Quiz</option>
+          <option value="periodic">Periodic Exam (Midterm / Final Term)</option>
+        </select>
+        <div class="form-hint">Quiz and Periodic Exam questions are kept in separate banks and can't be mixed.</div>
+      </div>
+      <div class="form-group" id="impTosWrap" style="display:none;margin-bottom:1rem">
+        <label class="form-label">Table of Specification (TOS) <span style="color:var(--danger)">*</span></label>
+        <input type="file" name="tos_file" id="impTosFile" accept=".xlsx,.xlsm" class="form-control"
+               style="padding:0.45rem 0.65rem;font-size:0.9rem">
+        <div class="form-hint">Required for Periodic Exams — upload the TOS as an Excel file (.xlsx).</div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:1rem">
         <label class="form-label">Select .txt or .docx File</label>
         <input type="file" name="import_file" accept=".txt,.docx" class="form-control"
                required style="padding:0.45rem 0.65rem;font-size:0.9rem" id="importFileInput"
@@ -436,8 +507,33 @@ function updateImportPreview(input) {
       <div class="modal-title" style="margin-bottom:0">+ Add Question to Bank</div>
       <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-bank-q')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
     </div>
-    <form method="POST" action="{{ url_for('teacher_bank_add_question') }}" onsubmit="return bankSubmitValidate(event)">
+    <form method="POST" action="{{ url_for('teacher_bank_add_question') }}" enctype="multipart/form-data" onsubmit="return bankSubmitValidate(event)">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="form-group" style="margin-bottom:0.85rem">
+        <label class="form-label">Exam Type <span style="color:var(--danger)">*</span></label>
+        <select name="exam_category" id="addCategory" class="form-select" required onchange="bankCategoryChanged('add')">
+          <option value="" disabled selected>— Select Quiz or Periodic Exam —</option>
+          <option value="quiz">Quiz</option>
+          <option value="periodic">Periodic Exam (Midterm / Final Term)</option>
+        </select>
+        <div class="form-hint">Quiz and Periodic Exam questions are kept in separate banks and can't be mixed.</div>
+      </div>
+      <div class="form-group" id="addTosWrap" style="display:none;margin-bottom:0.85rem">
+        <label class="form-label">Table of Specification (TOS) <span style="color:var(--danger)">*</span></label>
+        <input type="file" name="tos_file" id="addTosFile" accept=".xlsx,.xlsm" class="form-control"
+               style="padding:0.45rem 0.65rem;font-size:0.9rem">
+        <div class="form-hint">Required for Periodic Exams — upload the TOS as an Excel file (.xlsx).</div>
+        {% if tos_list %}
+        <div style="margin-top:0.5rem">
+          <label class="form-label" style="font-size:0.78rem;font-weight:500">…or reuse a TOS you already uploaded</label>
+          <select name="tos_id" id="addTosPick" class="form-select" onchange="bankTosPicked()">
+            <option value="">— Upload a new file instead —</option>
+            {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
+      </div>
 
       {# Question type #}
       <div class="form-group">
@@ -569,8 +665,8 @@ function updateImportPreview(input) {
           <div style="display:flex;gap:0.4rem">
             <select name="bank_group_id" id="bankGroupSel" class="form-select" style="flex:1;min-width:0">
               <option value="">— No group —</option>
-              {% for g in bank_groups %}
-              <option value="{{ g.id }}">{{ g.name }}{% if g.subject_name %} · {{ g.subject_name }}{% endif %}</option>
+              {% for g in all_bank_groups %}
+              <option value="{{ g.id }}" data-cat="{{ g.exam_category or 'quiz' }}" hidden disabled>{{ g.name }}{% if g.subject_name %} · {{ g.subject_name }}{% endif %}</option>
               {% endfor %}
             </select>
             <button type="button" class="btn btn-ghost btn-sm" onclick="toggleInlineCreate()" style="flex-shrink:0">+ New</button>
@@ -885,6 +981,48 @@ function rubricAddRow(btn) {
   container.appendChild(row);
 }
 
+/* ── Quiz / Periodic Exam choice: show + require the TOS upload for Periodic ── */
+function bankCategoryChanged(prefix) {
+  const cat = document.getElementById(prefix + 'Category').value;
+  const periodic = cat === 'periodic';
+  const wrap = document.getElementById(prefix + 'TosWrap');
+  const file = document.getElementById(prefix + 'TosFile');
+  if (wrap) wrap.style.display = periodic ? '' : 'none';
+  if (file) {
+    if (!periodic) file.value = '';
+    file.required = periodic;
+  }
+  if (prefix === 'add') {
+    if (!periodic) { const p = document.getElementById('addTosPick'); if (p) p.value = ''; }
+    bankTosPicked();
+    // Only offer groups that belong to the chosen category
+    const sel = document.getElementById('bankGroupSel');
+    if (sel) {
+      for (const o of sel.options) {
+        if (!o.value) continue;
+        const ok = o.dataset.cat === cat;
+        o.hidden = !ok; o.disabled = !ok;
+      }
+      const cur = sel.options[sel.selectedIndex];
+      if (cur && cur.value && cur.dataset.cat !== cat) sel.value = '';
+    }
+  }
+}
+/* closeModal() calls form.reset(), which puts the select back on its placeholder
+   without firing 'change' — re-sync the TOS block / group list afterwards. */
+document.addEventListener('reset', function (e) {
+  const sel = e.target.querySelector && e.target.querySelector('select[name="exam_category"]');
+  if (sel && sel.id) setTimeout(() => bankCategoryChanged(sel.id.replace('Category', '')), 0);
+}, true);
+/* A picked existing TOS replaces the need to upload a new file. */
+function bankTosPicked() {
+  const pick = document.getElementById('addTosPick');
+  const file = document.getElementById('addTosFile');
+  const cat = document.getElementById('addCategory');
+  if (!file || !cat) return;
+  file.required = cat.value === 'periodic' && !(pick && pick.value);
+}
+
 /* ── Group inline create ── */
 function toggleInlineCreate() {
   const el = document.getElementById('inlineGroupCreate');
@@ -894,12 +1032,16 @@ function toggleInlineCreate() {
 function createGroupInline() {
   const name = document.getElementById('newGroupName').value.trim();
   if (!name) { alert('Enter a group name.'); return; }
+  const cat = document.getElementById('addCategory').value;
+  if (!cat) { alert('Pick Quiz or Periodic Exam first — a group belongs to one of them.'); return; }
   const fd = new FormData();
   fd.append('name', name);
+  fd.append('exam_category', cat);
   fetch('{{ url_for("teacher_create_bank_group") }}', { method: 'POST', body: fd })
     .then(() => {
       sessionStorage.setItem('reopenAddModal', '1');
       sessionStorage.setItem('pendingGroupName', name);
+      sessionStorage.setItem('pendingCategory', cat);
       location.reload();
     });
 }
@@ -907,8 +1049,14 @@ window.addEventListener('DOMContentLoaded', () => {
   if (sessionStorage.getItem('reopenAddModal')) {
     sessionStorage.removeItem('reopenAddModal');
     const pending = sessionStorage.getItem('pendingGroupName');
+    const pendingCat = sessionStorage.getItem('pendingCategory');
     sessionStorage.removeItem('pendingGroupName');
+    sessionStorage.removeItem('pendingCategory');
     openModal('modal-add-bank-q');
+    if (pendingCat) {
+      document.getElementById('addCategory').value = pendingCat;
+      bankCategoryChanged('add');
+    }
     if (pending) {
       const sel = document.getElementById('bankGroupSel');
       if (sel) {
@@ -987,6 +1135,7 @@ function confirmDeleteGroup(id, name, qcount) {
             <th>Question</th>
             <th style="width:70px">Type</th>
             <th style="width:56px">Pts</th>
+            {% if category == 'periodic' %}<th style="width:60px">TOS</th>{% endif %}
             <th style="width:88px">Actions</th>
           </tr></thead>
           <tbody>
@@ -999,6 +1148,7 @@ function confirmDeleteGroup(id, name, qcount) {
               <td style="min-width:160px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ q.question_text }}">{{ q.question_text }}</td>
               <td>{% if q.question_type == 'multiple_choice' %}<span class="badge badge-blue">MC</span>{% elif q.question_type == 'true_false' %}<span class="badge badge-green">T/F</span>{% elif q.question_type == 'fill_blank' %}<span class="badge badge-purple">FIB</span>{% elif q.question_type == 'essay' %}<span class="badge badge-gray">Essay</span>{% else %}<span class="badge badge-orange">SA</span>{% endif %}</td>
               <td class="font-mono text-sm">{{ q.points }}</td>
+              {% if category == 'periodic' %}<td>{% if q.tos_id %}<a href="{{ url_for('teacher_download_tos', tos_id=q.tos_id) }}" title="Download TOS: {{ q.tos_name }}"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg></a>{% else %}<span class="text-muted">—</span>{% endif %}</td>{% endif %}
               <td>
                 <div class="flex gap-1">
                   <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></button>
@@ -1038,6 +1188,7 @@ function confirmDeleteGroup(id, name, qcount) {
         <th>Question</th>
         <th style="width:70px">Type</th>
         <th style="width:56px">Pts</th>
+        {% if category == 'periodic' %}<th style="width:60px">TOS</th>{% endif %}
         <th style="width:88px">Actions</th>
       </tr></thead>
       <tbody>
@@ -1050,6 +1201,7 @@ function confirmDeleteGroup(id, name, qcount) {
           <td style="min-width:160px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ q.question_text }}">{{ q.question_text }}</td>
           <td>{% if q.question_type == 'multiple_choice' %}<span class="badge badge-blue">MC</span>{% elif q.question_type == 'true_false' %}<span class="badge badge-green">T/F</span>{% elif q.question_type == 'fill_blank' %}<span class="badge badge-purple">FIB</span>{% elif q.question_type == 'essay' %}<span class="badge badge-gray">Essay</span>{% else %}<span class="badge badge-orange">SA</span>{% endif %}</td>
           <td class="font-mono text-sm">{{ q.points }}</td>
+          {% if category == 'periodic' %}<td>{% if q.tos_id %}<a href="{{ url_for('teacher_download_tos', tos_id=q.tos_id) }}" title="Download TOS: {{ q.tos_name }}"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg></a>{% else %}<span class="text-muted">—</span>{% endif %}</td>{% endif %}
           <td>
             <div class="flex gap-1">
               <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></button>
@@ -1084,7 +1236,7 @@ function confirmDeleteGroup(id, name, qcount) {
       <div class="modal-title" style="margin-bottom:0"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Edit Question</div>
       <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('edit-bq-{{ q.id }}')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
     </div>
-    <form method="POST" action="{{ url_for('teacher_edit_question', question_id=q.id) }}">
+    <form method="POST" action="{{ url_for('teacher_edit_question', question_id=q.id) }}" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="redirect_to" value="bank">
       <div class="form-group">
@@ -1197,6 +1349,23 @@ function confirmDeleteGroup(id, name, qcount) {
         </label>
       </div>
       {% endif %}
+      {% if category == 'periodic' %}
+      <div class="form-group">
+        <label class="form-label">Table of Specification (TOS)</label>
+        <div class="text-xs" style="margin-bottom:0.4rem">
+          {% if q.tos_id %}Current: <a href="{{ url_for('teacher_download_tos', tos_id=q.tos_id) }}">{{ q.tos_name }}</a>{% else %}<span class="text-muted">None</span>{% endif %}
+        </div>
+        <input type="file" name="tos_file" class="form-control" accept=".xlsx,.xlsm" style="padding:0.45rem 0.65rem;font-size:0.9rem">
+        <div class="form-hint">Optional — only choose a file to replace this question's TOS (Excel .xlsx).</div>
+        {% set other_tos = tos_list | rejectattr('id', 'equalto', q.tos_id or 0) | list %}
+        {% if other_tos %}
+        <select name="tos_id" class="form-select" style="margin-top:0.4rem">
+          <option value="">— Keep current / use the uploaded file —</option>
+          {% for tf in other_tos %}<option value="{{ tf.id }}">{{ tf.original_name }}</option>{% endfor %}
+        </select>
+        {% endif %}
+      </div>
+      {% endif %}
       <div class="modal-footer" style="padding-top:0.75rem;border-top:1px solid var(--border)">
         <button type="button" class="btn btn-ghost" onclick="closeModal('edit-bq-{{ q.id }}')">Cancel</button>
         <button type="submit" class="btn btn-primary">Save Changes</button>
@@ -1230,8 +1399,8 @@ function filterQ() {
 {% else %}
 <div class="empty-state">
   <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg></div>
-  <div class="empty-state-title">No questions yet</div>
-  <div class="empty-state-text">Add questions directly to the bank, or create an exam and add questions there.</div>
+  <div class="empty-state-title">No {{ 'Periodic Exam' if category == 'periodic' else 'Quiz' }} questions yet</div>
+  <div class="empty-state-text">Use <strong>Import File</strong> or <strong>+ Add Question</strong> and choose {{ 'Periodic Exam' if category == 'periodic' else 'Quiz' }} as the exam type.</div>
 </div>
 {% endif %}
 {% endblock %}

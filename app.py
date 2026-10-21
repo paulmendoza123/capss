@@ -1252,6 +1252,37 @@ def init_db():
     except Exception:
         pass  # Column already exists
 
+    # Migration: Quiz vs Periodic Exam separation + Table of Specification (TOS).
+    # Every exam, question and bank group belongs to exactly one category
+    # ('quiz' or 'periodic'); everything that already exists defaults to 'quiz'.
+    # The TOS is an Excel file stored INSIDE the database (BLOB) so the existing
+    # Backup/Restore feature keeps working without extra files on disk.
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS tos_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER NOT NULL,
+            original_name TEXT NOT NULL,
+            file_data BLOB NOT NULL,
+            uploaded_at TIMESTAMP DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (teacher_id) REFERENCES users(id)
+        )
+    ''')
+    for _stmt in (
+        "ALTER TABLE exams ADD COLUMN exam_category TEXT DEFAULT 'quiz'",
+        "ALTER TABLE exams ADD COLUMN tos_id INTEGER REFERENCES tos_files(id)",
+        "ALTER TABLE questions ADD COLUMN exam_category TEXT DEFAULT 'quiz'",
+        "ALTER TABLE questions ADD COLUMN tos_id INTEGER REFERENCES tos_files(id)",
+        "ALTER TABLE question_bank_groups ADD COLUMN exam_category TEXT DEFAULT 'quiz'",
+    ):
+        try:
+            conn.execute(_stmt)
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
+    for _tbl in ('exams', 'questions', 'question_bank_groups'):
+        conn.execute(f"UPDATE {_tbl} SET exam_category='quiz' WHERE exam_category IS NULL OR exam_category=''")
+    conn.commit()
+
 
 def get_maintenance_db():
     """Standalone sqlite connection for the background maintenance thread, which
@@ -2716,12 +2747,13 @@ def teacher_copy_class(class_id):
             INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, activated_at, status,
                                 show_results, randomize_questions, tab_switch_limit, tab_switch_enabled,
                                 manually_closed, passing_score, exam_code, fullscreen_required,
-                                time_warning_minutes)
-            VALUES (?, ?, ?, NULL, NULL, 'upcoming', ?, ?, ?, ?, 0, ?, ?, ?, ?)
+                                time_warning_minutes, exam_category, tos_id)
+            VALUES (?, ?, ?, NULL, NULL, 'upcoming', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
         ''', (exam['title'], new_class_id, exam['duration_minutes'],
               exam['show_results'], exam['randomize_questions'], exam['tab_switch_limit'], exam['tab_switch_enabled'],
               exam['passing_score'], new_exam_code, exam['fullscreen_required'],
-              exam['time_warning_minutes'] if exam['time_warning_minutes'] is not None else DEFAULT_TIME_WARNING_MINUTES))
+              exam['time_warning_minutes'] if exam['time_warning_minutes'] is not None else DEFAULT_TIME_WARNING_MINUTES,
+              _q_get(exam, 'exam_category', 'quiz') or 'quiz', _q_get(exam, 'tos_id', None)))
         new_exam_id = ecur.lastrowid
 
         section_id_map = {}
@@ -2738,10 +2770,11 @@ def teacher_copy_class(class_id):
         for q in questions:
             new_section_id = section_id_map.get(q['section_id']) if q['section_id'] else None
             qcur = conn.execute('''
-                INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive, exam_category, tos_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (new_exam_id, new_section_id, q['question_text'], q['question_type'], q['points'],
-                  q['correct_answer'], q['order_index'], _q_get(q, 'case_sensitive', 0)))
+                  q['correct_answer'], q['order_index'], _q_get(q, 'case_sensitive', 0),
+                  _q_get(q, 'exam_category', 'quiz') or 'quiz', _q_get(q, 'tos_id', None)))
             new_question_id = qcur.lastrowid
 
             choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (q['id'],)).fetchall()
@@ -2754,6 +2787,151 @@ def teacher_copy_class(class_id):
     conn.commit()
     flash(f'"{cls["subject_name"]}" has been copied as "{new_name}" (code: {new_code}).', 'success')
     return redirect(url_for('teacher_home'))
+
+# ── Quiz vs Periodic Exam + Table of Specification (TOS) ─────────────────────
+EXAM_CATEGORIES = ('quiz', 'periodic')
+EXAM_CATEGORY_LABELS = {'quiz': 'Quiz', 'periodic': 'Periodic Exam'}
+TOS_EXTENSIONS = ('xlsx', 'xlsm')
+
+
+def _norm_category(value, default=None):
+    """'quiz' / 'periodic' (case-insensitive) or `default` when missing/invalid."""
+    v = (value or '').strip().lower()
+    return v if v in EXAM_CATEGORIES else default
+
+
+def _bank_url(category=None):
+    """Question Bank URL opened on the right Quiz / Periodic Exam tab."""
+    category = _norm_category(category)
+    if category:
+        return url_for('teacher_question_bank', category=category)
+    return url_for('teacher_question_bank')
+
+
+def _teacher_tos_list(conn, teacher_id, with_usage=False):
+    """This teacher's uploaded TOS files (newest first).
+    With with_usage=True each file also carries question_count / exam_count,
+    i.e. how many questions and exams currently use it (a TOS that is in use
+    can't be deleted)."""
+    if not with_usage:
+        return [dict(r) for r in conn.execute(
+            'SELECT id, original_name, uploaded_at FROM tos_files WHERE teacher_id=? ORDER BY id DESC',
+            (teacher_id,)).fetchall()]
+    return [dict(r) for r in conn.execute('''
+        SELECT t.id, t.original_name, t.uploaded_at,
+               (SELECT COUNT(*) FROM questions q WHERE q.tos_id = t.id) AS question_count,
+               (SELECT COUNT(*) FROM exams e WHERE e.tos_id = t.id) AS exam_count
+        FROM tos_files t WHERE t.teacher_id=? ORDER BY t.id DESC
+    ''', (teacher_id,)).fetchall()]
+
+
+def _resolve_tos(conn, teacher_id, form, files, existing_tos_id=None):
+    """Work out which TOS a periodic-exam question must be linked to.
+
+    Order: a newly uploaded Excel file > a previously uploaded TOS picked from
+    the dropdown > `existing_tos_id` (e.g. the exam already has one).
+    Returns (tos_id, error_message). tos_id is None only when error_message is set.
+    """
+    upload = files.get('tos_file') if files else None
+    if upload and upload.filename:
+        if _upload_too_large(upload):
+            return None, f'The TOS file is too large. The maximum allowed size is {MAX_UPLOAD_MB} MB.'
+        name = os.path.basename(upload.filename)
+        ext = name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+        if ext not in TOS_EXTENSIONS:
+            return None, 'The Table of Specification (TOS) must be an Excel file (.xlsx).'
+        data = upload.read()
+        try:
+            import io
+            from openpyxl import load_workbook
+            load_workbook(io.BytesIO(data), read_only=True).close()
+        except Exception:
+            return None, 'Could not read the TOS file. Make sure it is a valid Excel (.xlsx) file.'
+        cur = conn.execute(
+            'INSERT INTO tos_files (teacher_id, original_name, file_data) VALUES (?,?,?)',
+            (teacher_id, name, data))
+        return cur.lastrowid, None
+    picked = (form.get('tos_id') or '').strip()
+    if picked.isdigit():
+        row = conn.execute('SELECT id FROM tos_files WHERE id=? AND teacher_id=?',
+                           (int(picked), teacher_id)).fetchone()
+        if row:
+            return row['id'], None
+    if existing_tos_id:
+        return existing_tos_id, None
+    return None, ('A Table of Specification (TOS) Excel file is required for Periodic Exam questions. '
+                  'Please upload one.')
+
+
+@app.route('/teacher/tos/<int:tos_id>/download')
+@role_required('teacher')
+def teacher_download_tos(tos_id):
+    conn = get_db()
+    row = conn.execute('SELECT * FROM tos_files WHERE id=? AND teacher_id=?',
+                       (tos_id, session['user_id'])).fetchone()
+    if not row:
+        flash('TOS file not found.', 'error')
+        return redirect(url_for('teacher_home'))
+    from flask import Response
+    safe_name = row['original_name'].replace('"', '')
+    return Response(
+        row['file_data'],
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename="{safe_name}"'})
+
+
+@app.route('/teacher/tos/<int:tos_id>/delete', methods=['POST'])
+@role_required('teacher')
+def teacher_delete_tos(tos_id):
+    """Delete one of the teacher's TOS files — only when nothing uses it."""
+    conn = get_db()
+    row = conn.execute('SELECT * FROM tos_files WHERE id=? AND teacher_id=?',
+                       (tos_id, session['user_id'])).fetchone()
+    if not row:
+        flash('TOS file not found.', 'error')
+        return redirect(_bank_url('periodic'))
+    q_n = conn.execute('SELECT COUNT(*) FROM questions WHERE tos_id=?', (tos_id,)).fetchone()[0]
+    e_n = conn.execute('SELECT COUNT(*) FROM exams WHERE tos_id=?', (tos_id,)).fetchone()[0]
+    if q_n or e_n:
+        flash(f'"{row["original_name"]}" is still used by {q_n} question(s) and {e_n} exam(s), '
+              f'so it can\'t be deleted. Remove those questions or replace the exam\'s TOS first.', 'error')
+        return redirect(_bank_url('periodic'))
+    conn.execute('DELETE FROM tos_files WHERE id=?', (tos_id,))
+    conn.commit()
+    flash(f'TOS file "{row["original_name"]}" deleted.', 'success')
+    return redirect(_bank_url('periodic'))
+
+
+@app.route('/teacher/exam/<int:exam_id>/tos/replace', methods=['POST'])
+@role_required('teacher')
+def teacher_replace_exam_tos(exam_id):
+    """Swap the Table of Specification of a Periodic Exam (upload a new Excel
+    file or pick one already uploaded). Every question of the exam follows."""
+    conn = get_db()
+    exam = conn.execute('''
+        SELECT e.* FROM exams e JOIN classes c ON e.class_id = c.id
+        WHERE e.id=? AND c.teacher_id=?
+    ''', (exam_id, session['user_id'])).fetchone()
+    if not exam:
+        flash('Exam not found.', 'error')
+        return redirect(url_for('teacher_home'))
+    if (_q_get(exam, 'exam_category', 'quiz') or 'quiz') != 'periodic':
+        flash('Only Periodic Exams have a TOS.', 'error')
+        return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
+    locked = _exam_locked_response(exam_id)
+    if locked:
+        return locked
+    tos_id, err = _resolve_tos(conn, session['user_id'], request.form, request.files)
+    if err:
+        conn.rollback()
+        flash(err, 'error')
+        return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
+    conn.execute('UPDATE exams SET tos_id=? WHERE id=?', (tos_id, exam_id))
+    conn.execute('UPDATE questions SET tos_id=? WHERE exam_id=?', (tos_id, exam_id))
+    conn.commit()
+    flash('Table of Specification updated.', 'success')
+    return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
+
 
 @app.route('/teacher/class/<int:class_id>/create-exam', methods=['GET', 'POST'])
 @role_required('teacher')
@@ -2779,14 +2957,18 @@ def teacher_create_exam(class_id):
         fullscreen_required = 1 if request.form.get('fullscreen_required') else 0
         passing_score = request.form.get('passing_score', 50, type=int)
         time_warning = clean_time_warning(request.form.get('time_warning_minutes'), duration)
+        exam_category = _norm_category(request.form.get('exam_category'))
         if not title or not duration:
             flash('Title and duration are required.', 'error')
             return render_template('teacher/create_exam.html', cls=cls)
+        if not exam_category:
+            flash('Please choose whether this is a Quiz or a Periodic Exam.', 'error')
+            return render_template('teacher/create_exam.html', cls=cls)
         exam_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         cur = conn.execute('''
-            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, show_results, randomize_questions, tab_switch_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning_minutes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning))
+            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, show_results, randomize_questions, tab_switch_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning_minutes, exam_category)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning, exam_category))
         exam_id = cur.lastrowid
 
         conn.commit()
@@ -2809,6 +2991,12 @@ def teacher_exam_detail(exam_id):
     locked = _exam_locked_response(exam_id)
     if locked:
         return locked
+    exam_category = _q_get(exam, 'exam_category', 'quiz') or 'quiz'
+    exam_tos = None
+    if _q_get(exam, 'tos_id'):
+        t = conn.execute('SELECT id, original_name FROM tos_files WHERE id=?', (exam['tos_id'],)).fetchone()
+        exam_tos = dict(t) if t else None
+    tos_list = _teacher_tos_list(conn, session['user_id']) if exam_category == 'periodic' else []
     sections = conn.execute('SELECT * FROM sections WHERE exam_id=? ORDER BY order_index', (exam_id,)).fetchall()
     section_data = []
     for sec in sections:
@@ -2845,18 +3033,20 @@ def teacher_exam_detail(exam_id):
         LEFT JOIN question_bank_groups g ON q.bank_group_id = g.id
         LEFT JOIN classes gc ON g.class_id = gc.id
         WHERE q.is_bank_only = 1 AND q.teacher_id = ?
+          AND COALESCE(q.exam_category, 'quiz') = ?
         ORDER BY q.bank_group_id IS NULL ASC, COALESCE(g.name,''), COALESCE(c.subject_name,''), COALESCE(c.block_name,''), e.title
-    ''', (session['user_id'],)).fetchall()
+    ''', (session['user_id'], exam_category)).fetchall()
     bank_questions = [dict(bq) for bq in raw_bank]
     # Get teacher's bank groups for the import filter (with class info)
     exam_bank_groups = [dict(g) for g in conn.execute('''
         SELECT g.*, c.subject_name, c.block_name
         FROM question_bank_groups g
         LEFT JOIN classes c ON g.class_id = c.id
-        WHERE g.teacher_id=? ORDER BY g.name
-    ''', (session['user_id'],)).fetchall()]
+        WHERE g.teacher_id=? AND COALESCE(g.exam_category, 'quiz') = ? ORDER BY g.name
+    ''', (session['user_id'], exam_category)).fetchall()]
     return render_template('teacher/exam_detail.html', exam=exam, section_data=section_data,
-                           bank_questions=bank_questions, exam_bank_groups=exam_bank_groups)
+                           bank_questions=bank_questions, exam_bank_groups=exam_bank_groups,
+                           exam_category=exam_category, exam_tos=exam_tos, tos_list=tos_list)
 
 @app.route('/teacher/exam/<int:exam_id>/preview')
 @role_required('teacher')
@@ -3902,13 +4092,25 @@ def teacher_import_from_bank(section_id):
     if locked:
         return locked
     question_ids = request.form.getlist('question_ids')
+    exam_row = conn.execute('SELECT exam_category, tos_id FROM exams WHERE id=?', (exam_id,)).fetchone()
+    exam_category = _q_get(exam_row, 'exam_category', 'quiz') or 'quiz'
+    exam_tos_id = _q_get(exam_row, 'tos_id', None)
     imported = 0
     skipped = 0
+    wrong_category = 0
     for qid in question_ids:
         # Only this teacher's own bank questions may be imported.
         src = conn.execute('SELECT * FROM questions WHERE id=? AND is_bank_only=1 AND teacher_id=?',
                            (qid, session['user_id'])).fetchone()
         if not src:
+            continue
+        # Quiz and Periodic Exam questions are kept strictly separate.
+        if (_q_get(src, 'exam_category', 'quiz') or 'quiz') != exam_category:
+            wrong_category += 1
+            continue
+        src_tos_id = _q_get(src, 'tos_id', None)
+        if exam_category == 'periodic' and not (src_tos_id or exam_tos_id):
+            wrong_category += 1  # periodic question without a TOS can't be used
             continue
         # Skip if same question text+type already exists in this section
         existing = conn.execute(
@@ -3922,12 +4124,17 @@ def teacher_import_from_bank(section_id):
         # Imported copy becomes a regular exam question — it is NOT part of
         # the bank (is_bank_only left at its default 0) and is not linked to
         # any bank group. Only the Question Bank page can create groups.
+        new_tos_id = src_tos_id or exam_tos_id if exam_category == 'periodic' else None
         cur = conn.execute('''
-            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive)
-            VALUES (?,?,?,?,?,?,?,?)
+            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive, exam_category, tos_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
         ''', (exam_id, section_id, src['question_text'], src['question_type'], src['points'], src['correct_answer'], count,
-              _q_get(src, 'case_sensitive', 0)))
+              _q_get(src, 'case_sensitive', 0), exam_category, new_tos_id))
         new_qid = cur.lastrowid
+        if exam_category == 'periodic' and not exam_tos_id and new_tos_id:
+            # The exam adopts the TOS of the first periodic question imported into it.
+            conn.execute('UPDATE exams SET tos_id=? WHERE id=?', (new_tos_id, exam_id))
+            exam_tos_id = new_tos_id
         if src['question_type'] == 'multiple_choice':
             choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (qid,)).fetchall()
             for c in choices:
@@ -3947,6 +4154,9 @@ def teacher_import_from_bank(section_id):
     msg = f'{imported} question(s) imported from bank.'
     if skipped:
         msg += f' {skipped} duplicate(s) skipped.'
+    if wrong_category:
+        msg += (f' {wrong_category} question(s) skipped because they do not belong to this '
+                f'{EXAM_CATEGORY_LABELS[exam_category]}.')
     flash(msg, 'success')
     if _wants_json():
         return jsonify({'ok': True, 'imported': imported, 'skipped': skipped, 'section_id': section_id})
@@ -4024,14 +4234,30 @@ def teacher_add_question(section_id):
             return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
         points = sum(p for _, p in rubric_criteria)  # question's max points = sum of rubric points
     if q_text:
+        # Periodic Exam questions need a Table of Specification (TOS). The exam
+        # keeps one TOS: it is uploaded with the first question and reused after.
+        exam_row = conn.execute('SELECT exam_category, tos_id FROM exams WHERE id=?', (exam_id,)).fetchone()
+        exam_category = _q_get(exam_row, 'exam_category', 'quiz') or 'quiz'
+        q_tos_id = None
+        if exam_category == 'periodic':
+            q_tos_id = _q_get(exam_row, 'tos_id', None)
+            if not q_tos_id:
+                q_tos_id, tos_err = _resolve_tos(conn, session['user_id'], request.form, request.files)
+                if tos_err:
+                    conn.rollback()
+                    flash(tos_err, 'error')
+                    if _wants_json():
+                        return jsonify({'ok': False, 'error': tos_err}), 400
+                    return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
+                conn.execute('UPDATE exams SET tos_id=? WHERE id=?', (q_tos_id, exam_id))
         count = conn.execute('SELECT COUNT(*) FROM questions WHERE section_id=?', (section_id,)).fetchone()[0]
         # Questions added directly to an exam section are NOT part of the
         # question bank and are never linked to a bank group — only the
         # Question Bank page can create/assign bank groups.
         cur = conn.execute('''
-            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive)
-            VALUES (?,?,?,?,?,?,?,?)
-        ''', (exam_id, section_id, q_text, q_type, points, correct, count, case_sensitive))
+            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive, exam_category, tos_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+        ''', (exam_id, section_id, q_text, q_type, points, correct, count, case_sensitive, exam_category, q_tos_id))
         q_id = cur.lastrowid
         if mc_choices is not None:
             for label, ct in mc_choices:
@@ -4109,10 +4335,10 @@ def teacher_delete_question(question_id):
         conn.execute('DELETE FROM questions WHERE id=?', (question_id,))
         conn.commit()
         if request.form.get('redirect_to') == 'bank':
-            return redirect(url_for('teacher_question_bank'))
+            return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
         if exam_id:
             return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
     return redirect(url_for('teacher_home'))
 
 @app.route('/teacher/question/<int:question_id>/edit', methods=['POST'])
@@ -4139,6 +4365,14 @@ def teacher_edit_question(question_id):
     points = request.form.get('points', 1, type=int)
     bank_group_id = request.form.get('bank_group_id') or None
     case_sensitive = 1 if request.form.get('case_sensitive') else 0
+    if bank_group_id:
+        grp = conn.execute(
+            'SELECT id, exam_category FROM question_bank_groups WHERE id=? AND teacher_id=?',
+            (bank_group_id, session['user_id'])
+        ).fetchone()
+        if not grp or (_q_get(grp, 'exam_category', 'quiz') or 'quiz') != (_q_get(q, 'exam_category', 'quiz') or 'quiz'):
+            flash('That group belongs to a different category (Quiz / Periodic Exam).', 'error')
+            return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
     if q['question_type'] == 'fill_blank':
         blank_count = fib_count_blanks(q_text)
         answer_count = len(correct.split('|')) if correct else 0
@@ -4146,7 +4380,7 @@ def teacher_edit_question(question_id):
             flash(f'Fill in the Blank questions need one "___" per answer. Found {blank_count} blank(s) but {answer_count} answer group(s).', 'error')
             redirect_to = request.form.get('redirect_to', '')
             if redirect_to == 'bank' or not exam_id:
-                return redirect(url_for('teacher_question_bank'))
+                return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
             return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
     mc_choices = None
     if q['question_type'] == 'multiple_choice':
@@ -4156,13 +4390,13 @@ def teacher_edit_question(question_id):
             flash(err, 'error')
             redirect_to = request.form.get('redirect_to', '')
             if redirect_to == 'bank' or not exam_id:
-                return redirect(url_for('teacher_question_bank'))
+                return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
             return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
     if q['question_type'] == 'true_false' and correct not in ('True', 'False'):
         flash('Please select whether True or False is the correct answer.', 'error')
         redirect_to = request.form.get('redirect_to', '')
         if redirect_to == 'bank' or not exam_id:
-            return redirect(url_for('teacher_question_bank'))
+            return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
         return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
     rubric_criteria = None
     if q['question_type'] == 'essay':
@@ -4172,12 +4406,26 @@ def teacher_edit_question(question_id):
             flash(err, 'error')
             redirect_to = request.form.get('redirect_to', '')
             if redirect_to == 'bank' or not exam_id:
-                return redirect(url_for('teacher_question_bank'))
+                return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
             return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
         correct = None
         points = sum(p for _, p in rubric_criteria)
+    # A Periodic Exam bank question may get a different TOS (new upload or an
+    # already-uploaded one). It can be swapped but never removed.
+    new_tos_id = None
+    tos_up = request.files.get('tos_file')
+    if (q['is_bank_only'] and (_q_get(q, 'exam_category', 'quiz') or 'quiz') == 'periodic'
+            and ((tos_up and tos_up.filename) or request.form.get('tos_id'))):
+        new_tos_id, tos_err = _resolve_tos(conn, session['user_id'], request.form, request.files,
+                                           _q_get(q, 'tos_id', None))
+        if tos_err:
+            conn.rollback()
+            flash(tos_err, 'error')
+            return redirect(_bank_url('periodic'))
     conn.execute('UPDATE questions SET question_text=?, correct_answer=?, points=?, bank_group_id=?, case_sensitive=? WHERE id=?',
                  (q_text, correct, points, bank_group_id, case_sensitive, question_id))
+    if new_tos_id:
+        conn.execute('UPDATE questions SET tos_id=? WHERE id=?', (new_tos_id, question_id))
     if mc_choices is not None:
         conn.execute('DELETE FROM choices WHERE question_id=?', (question_id,))
         for label, ct in mc_choices:
@@ -4194,7 +4442,7 @@ def teacher_edit_question(question_id):
     flash('Question updated.', 'success')
     redirect_to = request.form.get('redirect_to', '')
     if redirect_to == 'bank' or not exam_id:
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
     return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
 
 @app.route('/teacher/exams')
@@ -4232,24 +4480,28 @@ def teacher_create_bank_group():
     name = request.form.get('name', '').strip()
     description = request.form.get('description', '').strip()
     class_id = request.form.get('class_id') or None
+    category = _norm_category(request.form.get('exam_category'))
     if not name:
         flash('Group name is required.', 'error')
-        return redirect(url_for('teacher_question_bank'))
-    # Allow same name if it belongs to a different class
+        return redirect(_bank_url(category))
+    if not category:
+        flash('Please choose Quiz or Periodic Exam for this group.', 'error')
+        return redirect(_bank_url())
+    # Allow same name if it belongs to a different class or a different category
     existing = conn.execute(
-        'SELECT id FROM question_bank_groups WHERE teacher_id=? AND name=? AND (class_id=? OR (class_id IS NULL AND ? IS NULL))',
-        (session['user_id'], name, class_id, class_id)
+        'SELECT id FROM question_bank_groups WHERE teacher_id=? AND name=? AND COALESCE(exam_category,\'quiz\')=? AND (class_id=? OR (class_id IS NULL AND ? IS NULL))',
+        (session['user_id'], name, category, class_id, class_id)
     ).fetchone()
     if existing:
         flash(f'A group named "{name}" already exists for that class.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
     conn.execute(
-        'INSERT INTO question_bank_groups (teacher_id, name, description, class_id) VALUES (?,?,?,?)',
-        (session['user_id'], name, description, class_id)
+        'INSERT INTO question_bank_groups (teacher_id, name, description, class_id, exam_category) VALUES (?,?,?,?,?)',
+        (session['user_id'], name, description, class_id, category)
     )
     conn.commit()
     flash(f'Group "{name}" created successfully.', 'success')
-    return redirect(url_for('teacher_question_bank'))
+    return redirect(_bank_url(category))
 
 @app.route('/teacher/question-bank/groups/<int:group_id>/delete', methods=['POST'])
 @role_required('teacher')
@@ -4261,7 +4513,7 @@ def teacher_delete_bank_group(group_id):
     ).fetchone()
     if not grp:
         flash('Group not found.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url())
 
     delete_questions = request.form.get('delete_questions') == '1'
     if delete_questions:
@@ -4281,7 +4533,7 @@ def teacher_delete_bank_group(group_id):
         conn.execute('DELETE FROM question_bank_groups WHERE id=?', (group_id,))
         conn.commit()
         flash(f'Group "{grp["name"]}" deleted. Questions are now ungrouped.', 'success')
-    return redirect(url_for('teacher_question_bank'))
+    return redirect(_bank_url(_q_get(grp, 'exam_category', 'quiz')))
 
 @app.route('/teacher/question-bank/groups/<int:group_id>/rename', methods=['POST'])
 @role_required('teacher')
@@ -4293,16 +4545,16 @@ def teacher_rename_bank_group(group_id):
     ).fetchone()
     if not grp:
         flash('Group not found.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url())
     new_name = request.form.get('name', '').strip()
     if not new_name:
         flash('Group name cannot be empty.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(_q_get(grp, 'exam_category', 'quiz')))
     new_class_id = request.form.get('class_id') or None
     conn.execute('UPDATE question_bank_groups SET name=?, class_id=? WHERE id=?', (new_name, new_class_id, group_id))
     conn.commit()
     flash(f'Group updated to "{new_name}".', 'success')
-    return redirect(url_for('teacher_question_bank'))
+    return redirect(_bank_url(_q_get(grp, 'exam_category', 'quiz')))
 
 @app.route('/teacher/question/<int:question_id>/assign-group', methods=['POST'])
 @role_required('teacher')
@@ -4311,11 +4563,16 @@ def teacher_assign_question_group(question_id):
     group_id = request.form.get('bank_group_id') or None
     if group_id:
         grp = conn.execute(
-            'SELECT id FROM question_bank_groups WHERE id=? AND teacher_id=?',
+            'SELECT id, exam_category FROM question_bank_groups WHERE id=? AND teacher_id=?',
             (group_id, session['user_id'])
         ).fetchone()
         if not grp:
             flash('Invalid group.', 'error')
+            return redirect(url_for('teacher_question_bank'))
+        qrow = conn.execute('SELECT exam_category FROM questions WHERE id=? AND teacher_id=?',
+                            (question_id, session['user_id'])).fetchone()
+        if not qrow or (_q_get(qrow, 'exam_category', 'quiz') or 'quiz') != (_q_get(grp, 'exam_category', 'quiz') or 'quiz'):
+            flash('A question can only be put in a group of the same category (Quiz / Periodic Exam).', 'error')
             return redirect(url_for('teacher_question_bank'))
     conn.execute('UPDATE questions SET bank_group_id=? WHERE id=?', (group_id, question_id))
     conn.commit()
@@ -4327,6 +4584,7 @@ def teacher_assign_question_group(question_id):
 def teacher_bank_add_question():
     """Add a standalone bank-only question (not tied to any exam or section)."""
     conn = get_db()
+    category = _norm_category(request.form.get('exam_category'))
     q_text = request.form.get('question_text', '').strip()
     q_type = request.form.get('question_type', '').strip()
     points = request.form.get('points', 1, type=int)
@@ -4336,9 +4594,12 @@ def teacher_bank_add_question():
     bank_group_id = request.form.get('bank_group_id') or None
     case_sensitive = 1 if request.form.get('case_sensitive') else 0
 
+    if not category:
+        flash('Please choose whether this question is for a Quiz or a Periodic Exam.', 'error')
+        return redirect(_bank_url())
     if not q_text or q_type not in ('multiple_choice', 'short_answer', 'fill_blank', 'essay', 'true_false'):
         flash('Question text and type are required.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
 
     mc_choices = None
     if q_type == 'multiple_choice':
@@ -4346,18 +4607,18 @@ def teacher_bank_add_question():
         ok, correct, err = mc_validate(mc_choices, correct)
         if not ok:
             flash(err, 'error')
-            return redirect(url_for('teacher_question_bank'))
+            return redirect(_bank_url(category))
 
     if q_type == 'fill_blank':
         blank_count = fib_count_blanks(q_text)
         answer_count = len(correct.split('|')) if correct else 0
         if blank_count == 0 or blank_count != answer_count:
             flash(f'Fill in the Blank questions need one "___" per answer. Found {blank_count} blank(s) but {answer_count} answer group(s).', 'error')
-            return redirect(url_for('teacher_question_bank'))
+            return redirect(_bank_url(category))
 
     if q_type == 'true_false' and correct not in ('True', 'False'):
         flash('Please select whether True or False is the correct answer.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
 
     rubric_criteria = None
     if q_type == 'essay':
@@ -4366,7 +4627,7 @@ def teacher_bank_add_question():
         ok, err = rubric_validate(rubric_criteria)
         if not ok:
             flash(err, 'error')
-            return redirect(url_for('teacher_question_bank'))
+            return redirect(_bank_url(category))
         points = sum(p for _, p in rubric_criteria)  # points = sum of rubric criteria
 
     if bank_group_id:
@@ -4377,12 +4638,29 @@ def teacher_bank_add_question():
         if not grp:
             bank_group_id = None
 
+    # A group only holds questions of its own category.
+    if bank_group_id:
+        grp_cat = conn.execute('SELECT exam_category FROM question_bank_groups WHERE id=?',
+                               (bank_group_id,)).fetchone()
+        if (_q_get(grp_cat, 'exam_category', 'quiz') or 'quiz') != category:
+            flash('That group belongs to a different category (Quiz / Periodic Exam).', 'error')
+            return redirect(_bank_url(category))
+
+    # Periodic Exam questions must come with a Table of Specification (Excel).
+    tos_id = None
+    if category == 'periodic':
+        tos_id, tos_err = _resolve_tos(conn, session['user_id'], request.form, request.files)
+        if tos_err:
+            conn.rollback()
+            flash(tos_err, 'error')
+            return redirect(_bank_url(category))
+
     cur = conn.execute(
         '''INSERT INTO questions
            (exam_id, section_id, question_text, question_type, points, correct_answer,
-            order_index, bank_group_id, is_bank_only, teacher_id, case_sensitive)
-           VALUES (NULL, NULL, ?, ?, ?, ?, 0, ?, 1, ?, ?)''',
-        (q_text, q_type, points, correct, bank_group_id, session['user_id'], case_sensitive)
+            order_index, bank_group_id, is_bank_only, teacher_id, case_sensitive, exam_category, tos_id)
+           VALUES (NULL, NULL, ?, ?, ?, ?, 0, ?, 1, ?, ?, ?, ?)''',
+        (q_text, q_type, points, correct, bank_group_id, session['user_id'], case_sensitive, category, tos_id)
     )
     q_id = cur.lastrowid
     if mc_choices is not None:
@@ -4399,7 +4677,7 @@ def teacher_bank_add_question():
             ''', (q_id, crit_text, max_pts, idx))
     conn.commit()
     flash('Question added to bank.', 'success')
-    return redirect(url_for('teacher_question_bank'))
+    return redirect(_bank_url(category))
 
 @app.route('/teacher/question-bank/import', methods=['POST'])
 @role_required('teacher')
@@ -4407,21 +4685,31 @@ def teacher_bank_import_file():
     """Parse an uploaded .txt or .docx file and bulk-add questions to the bank."""
     import re as _re
     conn = get_db()
+    category = _norm_category(request.form.get('exam_category'))
+    if not category:
+        flash('Please choose whether you are importing Quiz or Periodic Exam questions.', 'error')
+        return redirect(_bank_url())
     uploaded = request.files.get('import_file')
     if not uploaded or uploaded.filename == '':
         flash('No file selected.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
+    # Periodic Exam imports must come with a Table of Specification (TOS) Excel
+    # file — check it up front so nothing is parsed or saved without one.
+    tos_upload = request.files.get('tos_file')
+    if category == 'periodic' and (not tos_upload or not tos_upload.filename):
+        flash('A Table of Specification (TOS) Excel file is required when importing Periodic Exam questions.', 'error')
+        return redirect(_bank_url(category))
 
     if _upload_too_large(uploaded):
         flash(f'File is too large. The maximum allowed size is {MAX_UPLOAD_MB} MB.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
 
     raw_name = uploaded.filename
     ext = raw_name.rsplit('.', 1)[-1].lower() if '.' in raw_name else ''
 
     if ext not in ('txt', 'docx'):
         flash('Unsupported file type. Please upload a .txt or .docx file.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
 
     # Derive group name from filename (strip extension)
     group_name = _re.sub(r'\.[^.]+$', '', raw_name).strip()
@@ -4438,7 +4726,7 @@ def teacher_bank_import_file():
             content = '\n'.join(p.text for p in document.paragraphs)
     except Exception:
         flash('Could not read file. Make sure it is a valid (.txt or .docx) file.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
 
     # ── Parse questions ──────────────────────────────────────────────────────
     # Supported formats:
@@ -4712,19 +5000,28 @@ def teacher_bank_import_file():
             )
         else:
             flash('No questions found. Make sure your file uses the required format.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
 
     # ── Create group (or reuse existing) ────────────────────────────────────
+    # Save the TOS only now that the questions parsed successfully.
+    tos_id = None
+    if category == 'periodic':
+        tos_id, tos_err = _resolve_tos(conn, session['user_id'], {}, request.files)
+        if tos_err:
+            conn.rollback()
+            flash(tos_err, 'error')
+            return redirect(_bank_url(category))
+
     existing_grp = conn.execute(
-        'SELECT id FROM question_bank_groups WHERE teacher_id=? AND name=?',
-        (session['user_id'], group_name)
+        'SELECT id FROM question_bank_groups WHERE teacher_id=? AND name=? AND COALESCE(exam_category, \'quiz\')=?',
+        (session['user_id'], group_name, category)
     ).fetchone()
     if existing_grp:
         group_id = existing_grp['id']
     else:
         cur = conn.execute(
-            'INSERT INTO question_bank_groups (teacher_id, name, description, class_id) VALUES (?,?,?,NULL)',
-            (session['user_id'], group_name, f'Imported from {raw_name}')
+            'INSERT INTO question_bank_groups (teacher_id, name, description, class_id, exam_category) VALUES (?,?,?,NULL,?)',
+            (session['user_id'], group_name, f'Imported from {raw_name}', category)
         )
         group_id = cur.lastrowid
 
@@ -4748,9 +5045,9 @@ def teacher_bank_import_file():
         cur = conn.execute(
             '''INSERT INTO questions
                (exam_id, section_id, question_text, question_type, points, correct_answer,
-                order_index, bank_group_id, is_bank_only, teacher_id)
-               VALUES (NULL, NULL, ?, ?, ?, ?, 0, ?, 1, ?)''',
-            (q['text'], q['type'], points, q.get('answer'), group_id, session['user_id'])
+                order_index, bank_group_id, is_bank_only, teacher_id, exam_category, tos_id)
+               VALUES (NULL, NULL, ?, ?, ?, ?, 0, ?, 1, ?, ?, ?)''',
+            (q['text'], q['type'], points, q.get('answer'), group_id, session['user_id'], category, tos_id)
         )
         q_id = cur.lastrowid
         if q['type'] == 'multiple_choice':
@@ -4769,7 +5066,7 @@ def teacher_bank_import_file():
         added += 1
 
     conn.commit()
-    msg = f'Imported {added} question{"s" if added != 1 else ""} into group "{group_name}".'
+    msg = f'Imported {added} {EXAM_CATEGORY_LABELS[category]} question{"s" if added != 1 else ""} into group "{group_name}".'
     if duplicates:
         msg += f' Skipped {duplicates} already in this group (same question text).'
     skipped_total = skipped_no_answer + skipped_blank_mismatch + skipped_essay_no_rubric
@@ -4786,13 +5083,15 @@ def teacher_bank_import_file():
         flash(msg, 'info')
     else:
         flash(msg, 'success')
-    return redirect(url_for('teacher_question_bank'))
+    return redirect(_bank_url(category))
 
 
 @app.route('/teacher/question-bank')
 @role_required('teacher')
 def teacher_question_bank():
     conn = get_db()
+    # The bank is split into two separate banks: Quiz and Periodic Exam.
+    category = _norm_category(request.args.get('category'), 'quiz')
     # Fetch only questions explicitly added to the bank (is_bank_only=1).
     # Regular exam-section questions are NOT part of the bank and must not
     # appear here — the bank only contains what the teacher added via
@@ -4804,16 +5103,19 @@ def teacher_question_bank():
                c.subject_name as exam_subject, c.block_name as exam_block,
                s.title as section_title,
                g.name as group_name,
-               gc.subject_name as group_subject, gc.block_name as group_block, gc.id as group_class_id
+               gc.subject_name as group_subject, gc.block_name as group_block, gc.id as group_class_id,
+               q.tos_id, t.original_name as tos_name
         FROM questions q
         LEFT JOIN exams e ON q.exam_id = e.id
         LEFT JOIN classes c ON e.class_id = c.id
         LEFT JOIN sections s ON q.section_id = s.id
         LEFT JOIN question_bank_groups g ON q.bank_group_id = g.id
         LEFT JOIN classes gc ON g.class_id = gc.id
+        LEFT JOIN tos_files t ON q.tos_id = t.id
         WHERE q.is_bank_only = 1 AND q.teacher_id = ?
+          AND COALESCE(q.exam_category, 'quiz') = ?
         ORDER BY q.bank_group_id IS NULL ASC, COALESCE(g.name,''), COALESCE(c.subject_name,''), e.title
-    ''', (session['user_id'],)).fetchall()
+    ''', (session['user_id'], category)).fetchall()
     questions = []
     for q in raw:
         qd = dict(q)
@@ -4845,10 +5147,28 @@ def teacher_question_bank():
         SELECT g.*, c.subject_name, c.block_name, c.year_level
         FROM question_bank_groups g
         LEFT JOIN classes c ON g.class_id = c.id
-        WHERE g.teacher_id=?
+        WHERE g.teacher_id=? AND COALESCE(g.exam_category, 'quiz') = ?
         ORDER BY g.name
-    ''', (session['user_id'],)).fetchall()
+    ''', (session['user_id'], category)).fetchall()
     bank_groups = [dict(g) for g in groups]
+    # Every group of every category, so the Add Question modal can offer the
+    # right groups once the teacher picks Quiz or Periodic Exam in it.
+    all_bank_groups = [dict(g) for g in conn.execute('''
+        SELECT g.*, c.subject_name FROM question_bank_groups g
+        LEFT JOIN classes c ON g.class_id = c.id
+        WHERE g.teacher_id=? ORDER BY g.name
+    ''', (session['user_id'],)).fetchall()]
+
+    # Question counts for the Quiz / Periodic Exam tabs.
+    category_counts = {'quiz': 0, 'periodic': 0}
+    for r in conn.execute('''
+        SELECT COALESCE(exam_category, 'quiz') AS cat, COUNT(*) AS n
+        FROM questions WHERE is_bank_only = 1 AND teacher_id = ? GROUP BY cat
+    ''', (session['user_id'],)).fetchall():
+        if r['cat'] in category_counts:
+            category_counts[r['cat']] = r['n']
+    tos_list = _teacher_tos_list(conn, session['user_id'])
+    tos_files = _teacher_tos_list(conn, session['user_id'], with_usage=True)
 
     # Get teacher's classes for the group create/edit form
     teacher_classes = conn.execute(
@@ -4857,7 +5177,10 @@ def teacher_question_bank():
     ).fetchall()
     teacher_classes = [dict(c) for c in teacher_classes]
 
-    return render_template('teacher/question_bank.html', questions=questions, bank_sections=bank_sections, bank_groups=bank_groups, teacher_classes=teacher_classes)
+    return render_template('teacher/question_bank.html', questions=questions, bank_sections=bank_sections,
+                           bank_groups=bank_groups, all_bank_groups=all_bank_groups, teacher_classes=teacher_classes,
+                           category=category, category_counts=category_counts, tos_list=tos_list,
+                           tos_files=tos_files)
 
 @app.route('/teacher/profile', methods=['GET', 'POST'])
 @role_required('teacher')
