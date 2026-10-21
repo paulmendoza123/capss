@@ -149,13 +149,13 @@
     </nav>
 
     <div class="sidebar-footer">
-      <a href="{{ url_for('logout') }}">
-        <span><svg class="icon" aria-hidden="true"><use href="#i-log-out"/></svg></span> Logout
+      <a href="{{ url_for('logout') }}" class="logout-btn">
+        <span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-log-out"/></svg></span> Logout
       </a>
-      <div style="margin-top:0.5rem;font-size:0.75rem;opacity:0.8">
-        <a href="{{ url_for('terms') }}" target="_blank" rel="noopener" style="display:inline;padding:0;font-size:inherit;color:inherit">Terms</a>
-        &middot;
-        <a href="{{ url_for('privacy_policy') }}" target="_blank" rel="noopener" style="display:inline;padding:0;font-size:inherit;color:inherit">Privacy</a>
+      <div class="sidebar-legal">
+        <a href="{{ url_for('terms') }}" target="_blank" rel="noopener">Terms</a>
+        <span aria-hidden="true">&middot;</span>
+        <a href="{{ url_for('privacy_policy') }}" target="_blank" rel="noopener">Privacy</a>
       </div>
     </div>
   </aside>
