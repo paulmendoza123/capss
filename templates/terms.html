@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+{% from '_policy_macros.html' import ph %}
+{% block title %}Terms and Conditions{% endblock %}
+{% block content %}
+<div style="max-width:760px;margin:0 auto;padding:0.5rem 0 3rem;">
+
+  <div class="mb-4">
+    <div class="fw-700" style="font-size:1.5rem"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> Terms and Conditions</div>
+    <div class="text-muted text-sm mt-1">SPARK Exam Monitoring System &middot; Version {{ policy.version }}</div>
+  </div>
+
+  <div class="card" style="padding:1.5rem;line-height:1.7;font-size:1.02rem">
+
+    <p class="text-sm text-muted mb-3">
+      These terms are the ground rules for using SPARK. They apply to students, teachers, and
+      administrators who use SPARK. SPARK is a capstone project of fourth-year Information Technology students of
+      Palawan State University (PSU), called &ldquo;the SPARK team&rdquo;. For now, it is intended only for
+      Computer Science and Information Technology students and professors of PSU, not the whole University. Please read them together with the
+      <a href="{{ url_for('privacy_policy') }}" style="color:var(--accent)">Data Privacy Statement</a>.
+      Nothing in these terms takes away rights you have under Philippine law, including the Data
+      Privacy Act of 2012 (RA 10173), or under PSU&rsquo;s own rules. Using SPARK does not by
+      itself mean you have agreed to exam monitoring; you will see a separate notice before each exam
+      (see section 4).
+    </p>
+
+    <h3 class="fw-700 mt-3 mb-2">1. Your account</h3>
+    <p>Accounts are created with a school email address, and SPARK accepts only school email addresses.
+      Give accurate information, and keep it up to date (you can edit your name and, for students, your
+      year level on your profile page). Keep your password private, do not share your account, and do not
+      log in as someone else. You are responsible for activity done through your account. If you think
+      someone else used it, tell your teacher or the administrator right away. After several wrong password
+      attempts SPARK locks the account for a limited time. If a teacher or administrator gives you a temporary
+      password, change it as soon as you log in.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">2. Academic integrity and prohibited conduct</h3>
+    <p>SPARK is used for timed, proctored exams. During an exam you agree not to:</p>
+    <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
+      <li>get help from other people, devices, websites, or materials your teacher has not allowed;</li>
+      <li>let someone else take the exam for you, or take an exam for someone else;</li>
+      <li>try to get around, disable, or trick the exam monitoring or the exam timer, including by scripts or automation;</li>
+      <li>copy, photograph, or share exam questions, answers, or exam codes outside what your teacher permits.</li>
+    </ul>
+    <p>Possible consequences are the automatic or manual ending of your exam attempt, and action under the
+      PSU&rsquo;s disciplinary process.
+      SPARK&rsquo;s monitoring records are information for people to review. They are not proof of cheating by themselves,
+      and you have the right to explain what happened.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">3. What SPARK does during exams (summary)</h3>
+    <p>While an exam is ongoing, SPARK counts tab switches, loss of window focus, and leaving fullscreen
+      (if required), tracks your connection status, and records timestamps for your start and submission.
+      If your teacher set a tab-switch limit, reaching it ends your exam automatically. SPARK does not use your
+      webcam or microphone. The full list, who can see it, and how long it is kept are in the
+      <a href="{{ url_for('privacy_policy') }}" style="color:var(--accent)">Data Privacy Statement</a>.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">4. Exam monitoring notice and your choice</h3>
+    <p>Before each exam SPARK shows a notice explaining what is recorded, why, and who can see it, with a link to the
+      Data Privacy Statement. Monitoring starts only after you click &ldquo;I Understand &amp; Agree&rdquo;.
+      If you click &ldquo;I Do Not Agree&rdquo;, you do not start the exam through SPARK. If you have concerns, talk to
+      your teacher before the exam day.
+      The SPARK team and PSU also rely on their own lawful bases for exam integrity under the Data Privacy Act, which are
+      explained in the Data Privacy Statement; the notice is not a way to waive your rights.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">5. Acceptable use and confidentiality</h3>
+    <p>Use SPARK only for school work. Do not try to break into the system, look at other people&rsquo;s data,
+      overload the server, or upload harmful files. Exam questions, answers, and exam codes are confidential.
+      So is any information about other students that you may see through SPARK. Do not share it, and do not
+      post it online. Files exported from SPARK (such as results or activity logs) must be stored securely and shared
+      only with people who need them.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">6. Teachers and administrators</h3>
+    <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
+      <li>Use student results and monitoring logs only to run, grade, and review exams and to handle academic-integrity concerns. Look only at what you need, and do not share it with people who have no need for it.</li>
+      <li>Treat monitoring logs as one piece of information. Before acting on them, review the context and give the student a chance to explain, especially where a disconnect or technical issue may be the cause.</li>
+      <li>Teachers can reset a password only for students in their own classes. SPARK records these resets in its logs. Administrator password resets are not currently recorded by SPARK itself, so administrators should follow their professor&rsquo;s or PSU&rsquo;s procedure for documenting them.</li>
+      <li>Deleting exams, classes, or accounts removes records and cannot be undone from inside SPARK. Check first what the Data Privacy Statement says is and is not removed by each deletion.</li>
+      <li>Handle exported files, backups, and temporary passwords carefully, and delete exports you no longer need.</li>
+    </ul>
+
+    <h3 class="fw-700 mt-3 mb-2">7.suspending accounts</h3>
+    <p>An administrator may delete an account that breaks these terms or PSU&rsquo;s rules,
+      or that may be compromised. Decisions that affect a student&rsquo;s grades or standing follow PSU&rsquo;s
+      disciplinary process (see section 2), which includes the chance to explain and to ask for a review.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">8. Network interruptions, technical problems, and reporting issues</h3>
+    <p>SPARK runs on a server managed by the SPARK team, and short interruptions (for example a network or power problem) can
+      happen. The SPARK team will make reasonable efforts to keep it available but cannot promise uninterrupted service.
+      SPARK saves your answers as you work, but you should not rely on that alone. The exam clock is shared: it
+      counts from when your teacher opened the exam, so it does not pause if you join late or lose connection.</p>
+    <p>If something goes wrong during an exam (you are disconnected, the page freezes, or SPARK ends your exam
+      unexpectedly), tell your teacher or proctor right away and note the time. Your teacher can review the connection
+      and activity records for your session. These terms do not limit any right you have to a fair review.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">9. Changes to these terms</h3>
+    <p>The version number above changes whenever these terms are updated, and the current version is always on this page.
+      If a change affects what exam monitoring records, the notice shown before each exam changes as well.</p>
+
+    <p class="text-sm text-muted mt-4" style="border-top:1px solid rgba(128,128,128,0.2);padding-top:0.75rem">
+      Questions about these terms, or about your data, can go to your teacher or the system administrator (see the
+      <a href="{{ url_for('privacy_policy') }}" style="color:var(--accent)">Data Privacy Statement</a>). Version {{ policy.version }}.
+    </p>
+  </div>
+
+  <div class="mt-3">
+    <a href="{{ url_for('index') }}" class="btn btn-ghost" id="policy-back-btn">← Back</a>
+  </div>
+</div>
+
+<script>
+(function () {
+  var btn = document.getElementById('policy-back-btn');
+  if (!btn) return;
+  btn.addEventListener('click', function (e) {
+    var sameOriginRef = false;
+    try { sameOriginRef = document.referrer && new URL(document.referrer).origin === location.origin; } catch (err) {}
+    if (sameOriginRef && history.length > 1) {
+      // Came from another SPARK page in this tab: go back normally
+      e.preventDefault();
+      history.back();
+    } else if (window.opener === null && history.length <= 1) {
+      // Opened in a new tab (target="_blank"): try to close it, else fall through to the home link
+      e.preventDefault();
+      window.close();
+      setTimeout(function () { window.location.href = btn.href; }, 150);
+    }
+    // otherwise: default link behavior -> index (login or role home)
+  });
+})();
+</script>
+{% endblock %}

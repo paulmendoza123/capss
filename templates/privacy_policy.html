@@ -1,62 +1,194 @@
 {% extends 'base.html' %}
+{% from '_policy_macros.html' import ph %}
 {% block title %}Data Privacy Statement{% endblock %}
 {% block content %}
 <div style="max-width:760px;margin:0 auto;padding:0.5rem 0 3rem;">
 
   <div class="mb-4">
     <div class="fw-700" style="font-size:1.5rem"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Data Privacy Statement</div>
-    <div class="text-muted text-sm mt-1">SPARK Exam Monitoring System</div>
+    <div class="text-muted text-sm mt-1">SPARK Exam Monitoring System &middot; Version {{ policy.version }}</div>
   </div>
 
   <div class="card" style="padding:1.5rem;line-height:1.7">
 
     <p class="text-sm text-muted mb-3">
-      This statement explains what SPARK monitors during an online exam, why it is collected,
-      how long it is kept, and the rights you have over that data. It applies to all students,
-      teachers, and administrators using the system.
+      This statement explains, in plain language, what personal data SPARK collects, why, who can
+      see it, how long it is kept, how it is protected, and what rights you have. It describes what
+      the SPARK software actually does, and it applies to all students, teachers, and
+      administrators. It is read together with the
+      <a href="{{ url_for('terms') }}" style="color:var(--accent)">Terms and Conditions</a>.
+      It refers to the Data Privacy Act of 2012 (Republic Act No. 10173) of the Philippines.
     </p>
 
-    <h3 class="fw-700 mt-3 mb-2">1. What is monitored during an exam</h3>
-    <p>While an exam session is <strong>ongoing</strong>, SPARK may record:</p>
+    <h3 class="fw-700 mt-3 mb-2">1. Who runs SPARK and who is responsible for your data</h3>
+    <p>SPARK is a capstone project developed by fourth-year Information Technology students of Palawan State University
+      (PSU), called SPARK in this statement. For now, it is used only by Computer Science
+      and Information Technology students and professors of PSU, as part of the capstone. It is not a system for the whole University.
+      The SPARK team manages SPARK and is responsible for the personal data in it, together with the CS and IT professors who
+      use it for their classes and exams. This makes them the personal information controller for SPARK under RA 10173.
+      SPARK runs on a server managed by the SPARK team; it is not a service run by a separate company.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">2. What personal data SPARK collects</h3>
+    <p><strong>Account information</strong></p>
     <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
-      <li>Tab switches, window/app focus loss, and browser minimizing</li>
-      <li>Exiting fullscreen mode, if the teacher requires fullscreen for that exam</li>
-      <li>Connection activity (online/offline heartbeat), so teachers know if you disconnected</li>
-      <li>Timestamps of when you started, answered questions, and submitted</li>
+      <li>First name, last name, and school email address (sign-up and administrator-created accounts accept only school email addresses)</li>
+      <li>Your password, stored only as a salted hash &mdash; nobody, including administrators, can read it back</li>
+      <li>Your role (student, teacher, or administrator); for students, program and year level</li>
+      <li>When the account was created and, for admin-created accounts, which administrator created it</li>
+      <li>A counter of failed login attempts and, if your account was temporarily locked, until when</li>
     </ul>
-    <p>SPARK does <strong>not</strong> access your webcam, microphone, files outside the browser
-      tab, or any other application on your device.</p>
+    <p><strong>Classes and exams</strong></p>
+    <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
+      <li>The classes you join and when you joined; teachers may also keep a list of student emails that are allowed to join a class</li>
+      <li>Your exam answers, scores, and exam status (ongoing, submitted, or terminated)</li>
+      <li>The time you started and submitted an exam, and the question order shown to you if the teacher randomizes questions</li>
+      <li>For essay questions: your teacher&rsquo;s rubric scores, written feedback, and the time it was graded</li>
+    </ul>
+    <p><strong>Exam monitoring</strong> (only while an exam session is <strong>ongoing</strong> and after you agree on the consent screen)</p>
+    <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
+      <li>Tab switches or the exam tab being hidden, the browser window losing focus, and minimizing the browser &mdash; each logged with its time, plus running counts</li>
+      <li>Exiting fullscreen mode, if the teacher requires fullscreen for that exam</li>
+      <li>Connection activity: your browser sends a signal about every 4 seconds, and SPARK keeps the time it was last seen and logs &ldquo;connected&rdquo; and &ldquo;disconnected&rdquo; events so teachers know if you dropped off</li>
+      <li>A record that you agreed to the monitoring notice, and when</li>
+    </ul>
+    <p><strong>Account activity records</strong></p>
+    <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
+      <li>Login history: the email entered, whether the attempt succeeded, and the time. SPARK&rsquo;s login history does not currently store IP addresses.</li>
+      <li>When a teacher resets a student&rsquo;s password: which student, which teacher, which class, and when</li>
+    </ul>
+    <p><strong>Technical items</strong></p>
+    <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
+      <li>A session cookie that keeps you logged in, and a theme (light/dark) preference saved in your browser</li>
+      <li>The server software that hosts SPARK (for example the web server and operating system) may keep its own technical logs, such as device network addresses. These are handled by the SPARK team as system administrator and are separate from SPARK&rsquo;s database.</li>
+    </ul>
+    <p>SPARK does not ask for your date of birth, age, home address, phone number, government ID numbers, or photos.
+      Exam answers are whatever you type, so please do not put sensitive personal information of yourself or others in an answer unless the question asks for it.</p>
 
-    <h3 class="fw-700 mt-3 mb-2">2. Why this data is collected</h3>
-    <p>This information exists solely to protect academic integrity — helping teachers identify
-      possible cheating during a timed, proctored exam — and to give you a fair, accurate record
-      if your session is ever disputed (e.g., a disconnect during submission).</p>
+    <h3 class="fw-700 mt-3 mb-2">3. What SPARK does <u>not</u> do</h3>
+    <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
+      <li>It does <strong>not</strong> use your webcam or microphone.</li>
+      <li>It does <strong>not</strong> record or take screenshots of your screen, and it cannot see files or other apps on your device. When you leave the exam tab, your browser only tells SPARK that the tab lost focus or was hidden &mdash; not where you went or what you did.</li>
+      <li>It does <strong>not</strong> log keystrokes or clipboard contents. On exam pages SPARK blocks right-click, copy, cut, selecting question text, and some shortcuts (such as Ctrl+C and F12). These are restrictions only; they are not recorded.</li>
+      <li>It does <strong>not</strong> send your data to advertisers, analytics services, or other outside companies. The code contains no connection to third-party services.</li>
+    </ul>
 
-    <h3 class="fw-700 mt-3 mb-2">3. Who can see it</h3>
-    <p>Monitoring logs for an exam are visible only to the teacher who owns that exam/class and
-      to system administrators. Other students never see your monitoring activity.</p>
+    <h3 class="fw-700 mt-3 mb-2">4. Why your data is used, and on what basis</h3>
+    <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
+      <li><strong>Accounts and login</strong> &mdash; to identify you, give you the right access, and protect accounts (for example the temporary lockout after repeated failed logins).</li>
+      <li><strong>Classes, exams, answers, and grading</strong> &mdash; to deliver, grade, and report on exams given through SPARK and to show you your results.</li>
+      <li><strong>Exam monitoring</strong> &mdash; to protect academic integrity during timed exams and to give you and your teacher an accurate record if a session is ever disputed (for example a disconnect during submission).</li>
+      <li><strong>Password-reset and login records</strong> &mdash; to keep accounts secure and to have an audit trail.</li>
+    </ul>
+    <p>Under RA 10173, personal data may be processed on several lawful bases, not only consent &mdash; for example
+      when it is needed for PSU&rsquo;s functions toward its students, or for legitimate
+      interests when your rights and freedoms are not overridden. SPARK tries to follow the principles of
+      transparency, legitimate purpose, and proportionality: it collects only what the features above need.
+      The consent screen before each exam exists so that you are clearly told what is recorded and can ask
+      questions; it is not the only basis for processing.</p>
 
-    <h3 class="fw-700 mt-3 mb-2">4. How long it is kept</h3>
-    <p>Monitoring logs are retained for as long as the related exam record exists in the system,
-      so results and disputes can be reviewed for that term. Logs are permanently deleted when a
-      teacher or admin deletes the associated exam.</p>
+    <h3 class="fw-700 mt-3 mb-2">5. The consent screen, automatic exam endings, and declining</h3>
+    <p>Before each exam, SPARK shows a screen explaining the monitoring. Monitoring starts only after you click
+      &ldquo;I Understand &amp; Agree&rdquo;; SPARK then saves that you agreed and the time. The monitoring notice
+      shows the same information as this section.</p>
+    <p>If the teacher turned on a tab-switch limit for an exam, SPARK <strong>ends the exam automatically</strong>
+      once your tab-switch count reaches that limit. The attempt is recorded as terminated with a score of 0, and
+      it cannot be retaken through SPARK. Losing window focus and leaving fullscreen are counted and shown to
+      your teacher, but on their own they do not end your exam. Teachers and administrators can also end an
+      exam session manually. A monitoring log is a signal for your teacher to review, not proof of cheating; if you
+      think an event was caused by a technical problem, tell your teacher right away.</p>
+    <p>If you choose &ldquo;I Do Not Agree&rdquo;, you are taken back and you do not start the exam through SPARK.
+      Because agreeing to monitoring is required to take the exam in SPARK, your professors and the SPARK team should be ready to handle
+      students who have concerns. If you cannot agree to monitoring, talk to your teacher before the exam day.</p>
 
-    <h3 class="fw-700 mt-3 mb-2">5. Your consent</h3>
-    <p>Before any monitoring begins, you will be shown a consent screen at the start of each exam.
-      Monitoring does not start until you explicitly agree. If you do not agree, you will not be
-      able to begin that exam, since fair proctoring requires it to be active for all students.</p>
+    <h3 class="fw-700 mt-3 mb-2">6. Who can see your data</h3>
+    <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
+      <li><strong>You</strong> can see your own profile and your own exam results (answer review depends on your teacher&rsquo;s settings).</li>
+      <li><strong>Your teacher</strong> can see, for the classes they own: the class list, exam results and answers, monitoring logs, and exported activity logs and essay files. Teachers can also reset the password of a student in their class.</li>
+      <li><strong>Administrators</strong> can see all accounts, classes, exams, results, monitoring logs, login history, and reports, and can download and restore full database backups.</li>
+      <li><strong>Other students</strong> cannot see your results or monitoring activity.</li>
+      <li><strong>IT / system administrators</strong> with access to the server can technically reach the database file and any backups.</li>
+    </ul>
+    <p>SPARK does not send data to any outside service. Teachers and administrators can download exports (CSV or
+      Excel files); once downloaded, those files are outside SPARK and must be kept confidential.</p>
 
-    <h3 class="fw-700 mt-3 mb-2">6. Questions or concerns</h3>
-    <p>If you have questions about how your data is used, please raise them with your teacher or
-      the system administrator before starting an exam.</p>
+    <h3 class="fw-700 mt-3 mb-2">7. How long your data is kept</h3>
+    <p>SPARK has no automatic deletion: records stay until a teacher or administrator removes them. What deletion does today:</p>
+    <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
+      <li><strong>Deleting an exam</strong> (teacher, from the exam&rsquo;s settings) removes its questions, student sessions, answers, and monitoring logs. Some grading detail (rubric scores) is not currently removed by this action.</li>
+      <li><strong>Deleting a class</strong> removes the class, its exams, and student sessions, but does not currently remove all answers and monitoring log entries linked to those exams.</li>
+      <li><strong>Deleting a user account</strong> removes the account record only. Exam sessions, answers, and monitoring events already linked to that student are not currently erased with it.</li>
+      <li>Login history and password-reset records are not deleted automatically.</li>
+      <li>Database backups downloaded by administrators keep a copy of everything until those files are deleted.</li>
+    </ul>
+    <p>Records are kept until a teacher or administrator removes them, as described above.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">8. How your data is protected</h3>
+    <p>SPARK uses these safeguards. No system can promise perfect security.</p>
+    <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
+      <li>Passwords are stored as salted, slow hashes, not as readable text.</li>
+      <li>Login attempts are rate-limited, and an account is locked for a limited time after repeated failures.</li>
+      <li>Teacher and administrator pages and monitoring data are available only to those roles, and a teacher can open only their own classes&rsquo; exams.</li>
+      <li>The session cookie is marked HttpOnly and SameSite, and forms use CSRF protection. The cookie is also marked Secure when SPARK is run over HTTPS; whether HTTPS is switched on is a deployment choice of the SPARK team.</li>
+      <li>SPARK itself does not encrypt the database file. Protecting the server, its storage, and backups is the responsibility of the SPARK team.</li>
+    </ul>
+    <p>You can help by choosing a strong password, not sharing it, logging out on shared computers, and telling your teacher or administrator if you think your account was used by someone else.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">9. Your rights</h3>
+    <p>Under RA 10173 you have the right to:</p>
+    <ul style="margin-left:1.25rem;margin-bottom:0.75rem">
+      <li>be informed about how your data is processed (this statement);</li>
+      <li>access your personal data and ask for a copy;</li>
+      <li>object to processing, and withdraw consent where consent is the basis;</li>
+      <li>correct inaccurate data (you can edit your name and, for students, your year level on your profile page; ask your teacher or administrator for other corrections);</li>
+      <li>ask for erasure or blocking of data that is no longer needed or was processed unlawfully;</li>
+      <li>receive your data in a structured, commonly used format, where applicable;</li>
+      <li>claim compensation for damages caused by inaccurate, incomplete, or unauthorized use of your data; and</li>
+      <li>file a complaint with the National Privacy Commission (<a href="https://www.privacy.gov.ph" target="_blank" rel="noopener" style="color:var(--accent)">privacy.gov.ph</a>).</li>
+    </ul>
+    <p>Some of these rights can be limited where PSU or the SPARK team must keep academic records or the law allows or requires processing.
+      To make a request, contact your teacher or the system administrator (see section 11). The SPARK team may ask you to confirm your identity first.
+      Please note that, as explained in section 7, some erasure requests currently need the system administrator to remove records by hand.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">10. Students under 18</h3>
+    <p>SPARK does not ask for or check your age. If you are under 18, the SPARK team and your professors remain responsible for handling your data
+      carefully, and the monitoring described here should be explained to you in terms you can understand.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">11. Questions, requests, and complaints</h3>
+    <p>For questions, requests about your data, or complaints, contact your teacher or the SPARK system administrator.
+      You may also raise questions before an exam.</p>
+
+    <h3 class="fw-700 mt-3 mb-2">12. Changes to this statement</h3>
+    <p>When this statement changes, the version above is updated. If the monitoring itself changes, the notice shown before each exam will change too.</p>
 
     <p class="text-sm text-muted mt-4" style="border-top:1px solid rgba(128,128,128,0.2);padding-top:0.75rem">
-      Last updated: this statement is reviewed each academic term.
+      Version {{ policy.version }}. This statement is a plain-language description of the system and is not legal advice.
     </p>
   </div>
 
   <div class="mt-3">
-    <a href="javascript:history.back()" class="btn btn-ghost">← Back</a>
+    <a href="{{ url_for('index') }}" class="btn btn-ghost" id="policy-back-btn">← Back</a>
   </div>
 </div>
+
+<script>
+(function () {
+  var btn = document.getElementById('policy-back-btn');
+  if (!btn) return;
+  btn.addEventListener('click', function (e) {
+    var sameOriginRef = false;
+    try { sameOriginRef = document.referrer && new URL(document.referrer).origin === location.origin; } catch (err) {}
+    if (sameOriginRef && history.length > 1) {
+      // Came from another SPARK page in this tab: go back normally
+      e.preventDefault();
+      history.back();
+    } else if (window.opener === null && history.length <= 1) {
+      // Opened in a new tab (target="_blank"): try to close it, else fall through to the home link
+      e.preventDefault();
+      window.close();
+      setTimeout(function () { window.location.href = btn.href; }, 150);
+    }
+    // otherwise: default link behavior -> index (login or role home)
+  });
+})();
+</script>
 {% endblock %}
