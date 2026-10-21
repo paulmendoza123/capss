@@ -2904,37 +2904,6 @@ def teacher_delete_tos(tos_id):
     return redirect(_bank_url('periodic'))
 
 
-@app.route('/teacher/exam/<int:exam_id>/tos/replace', methods=['POST'])
-@role_required('teacher')
-def teacher_replace_exam_tos(exam_id):
-    """Swap the Table of Specification of a Periodic Exam (upload a new Excel
-    file or pick one already uploaded). Every question of the exam follows."""
-    conn = get_db()
-    exam = conn.execute('''
-        SELECT e.* FROM exams e JOIN classes c ON e.class_id = c.id
-        WHERE e.id=? AND c.teacher_id=?
-    ''', (exam_id, session['user_id'])).fetchone()
-    if not exam:
-        flash('Exam not found.', 'error')
-        return redirect(url_for('teacher_home'))
-    if (_q_get(exam, 'exam_category', 'quiz') or 'quiz') != 'periodic':
-        flash('Only Periodic Exams have a TOS.', 'error')
-        return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
-    locked = _exam_locked_response(exam_id)
-    if locked:
-        return locked
-    tos_id, err = _resolve_tos(conn, session['user_id'], request.form, request.files)
-    if err:
-        conn.rollback()
-        flash(err, 'error')
-        return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
-    conn.execute('UPDATE exams SET tos_id=? WHERE id=?', (tos_id, exam_id))
-    conn.execute('UPDATE questions SET tos_id=? WHERE exam_id=?', (tos_id, exam_id))
-    conn.commit()
-    flash('Table of Specification updated.', 'success')
-    return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
-
-
 @app.route('/teacher/class/<int:class_id>/create-exam', methods=['GET', 'POST'])
 @role_required('teacher')
 def teacher_create_exam(class_id):
@@ -2960,23 +2929,33 @@ def teacher_create_exam(class_id):
         passing_score = request.form.get('passing_score', 50, type=int)
         time_warning = clean_time_warning(request.form.get('time_warning_minutes'), duration)
         exam_category = _norm_category(request.form.get('exam_category'))
+        tos_list = _teacher_tos_list(conn, session['user_id'])
         if not title or not duration:
             flash('Title and duration are required.', 'error')
-            return render_template('teacher/create_exam.html', cls=cls)
+            return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
         if not exam_category:
             flash('Please choose whether this is a Quiz or a Periodic Exam.', 'error')
-            return render_template('teacher/create_exam.html', cls=cls)
+            return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
+        # A Periodic Exam is built on ONE Table of Specification, chosen here.
+        # Only questions that belong to this TOS can be added to / imported into the exam.
+        exam_tos_id = None
+        if exam_category == 'periodic':
+            exam_tos_id, tos_err = _resolve_tos(conn, session['user_id'], request.form, request.files)
+            if tos_err:
+                conn.rollback()
+                flash(tos_err, 'error')
+                return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
         exam_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         cur = conn.execute('''
-            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, show_results, randomize_questions, tab_switch_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning_minutes, exam_category)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning, exam_category))
+            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, show_results, randomize_questions, tab_switch_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning_minutes, exam_category, tos_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning, exam_category, exam_tos_id))
         exam_id = cur.lastrowid
 
         conn.commit()
         flash('Exam created!', 'success')
         return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
-    return render_template('teacher/create_exam.html', cls=cls)
+    return render_template('teacher/create_exam.html', cls=cls, tos_list=_teacher_tos_list(conn, session['user_id']))
 
 @app.route('/teacher/exam/<int:exam_id>')
 @role_required('teacher')
@@ -2994,11 +2973,11 @@ def teacher_exam_detail(exam_id):
     if locked:
         return locked
     exam_category = _q_get(exam, 'exam_category', 'quiz') or 'quiz'
+    tos_list = _teacher_tos_list(conn, session['user_id']) if exam_category == 'periodic' else []
     exam_tos = None
-    if _q_get(exam, 'tos_id'):
+    if exam_category == 'periodic' and _q_get(exam, 'tos_id'):
         t = conn.execute('SELECT id, original_name FROM tos_files WHERE id=?', (exam['tos_id'],)).fetchone()
         exam_tos = dict(t) if t else None
-    tos_list = _teacher_tos_list(conn, session['user_id']) if exam_category == 'periodic' else []
     sections = conn.execute('SELECT * FROM sections WHERE exam_id=? ORDER BY order_index', (exam_id,)).fetchall()
     section_data = []
     for sec in sections:
@@ -3036,8 +3015,9 @@ def teacher_exam_detail(exam_id):
         LEFT JOIN classes gc ON g.class_id = gc.id
         WHERE q.is_bank_only = 1 AND q.teacher_id = ?
           AND COALESCE(q.exam_category, 'quiz') = ?
+          AND (? IS NULL OR q.tos_id = ?)
         ORDER BY q.bank_group_id IS NULL ASC, COALESCE(g.name,''), COALESCE(c.subject_name,''), COALESCE(c.block_name,''), e.title
-    ''', (session['user_id'], exam_category)).fetchall()
+    ''', (session['user_id'], exam_category, exam_tos['id'] if exam_tos else None, exam_tos['id'] if exam_tos else None)).fetchall()
     bank_questions = [dict(bq) for bq in raw_bank]
     # Get teacher's bank groups for the import filter (with class info)
     exam_bank_groups = [dict(g) for g in conn.execute('''
@@ -4096,7 +4076,7 @@ def teacher_import_from_bank(section_id):
     question_ids = request.form.getlist('question_ids')
     exam_row = conn.execute('SELECT exam_category, tos_id FROM exams WHERE id=?', (exam_id,)).fetchone()
     exam_category = _q_get(exam_row, 'exam_category', 'quiz') or 'quiz'
-    exam_tos_id = _q_get(exam_row, 'tos_id', None)
+    exam_tos_id = _q_get(exam_row, 'tos_id', None) if exam_category == 'periodic' else None
     imported = 0
     skipped = 0
     wrong_category = 0
@@ -4111,8 +4091,11 @@ def teacher_import_from_bank(section_id):
             wrong_category += 1
             continue
         src_tos_id = _q_get(src, 'tos_id', None)
-        if exam_category == 'periodic' and not (src_tos_id or exam_tos_id):
+        if exam_category == 'periodic' and not src_tos_id:
             wrong_category += 1  # periodic question without a TOS can't be used
+            continue
+        if exam_tos_id and src_tos_id != exam_tos_id:
+            wrong_category += 1  # question belongs to a different TOS than this exam's
             continue
         # Skip if same question text+type already exists in this section
         existing = conn.execute(
@@ -4126,17 +4109,13 @@ def teacher_import_from_bank(section_id):
         # Imported copy becomes a regular exam question — it is NOT part of
         # the bank (is_bank_only left at its default 0) and is not linked to
         # any bank group. Only the Question Bank page can create groups.
-        new_tos_id = src_tos_id or exam_tos_id if exam_category == 'periodic' else None
+        new_tos_id = src_tos_id if exam_category == 'periodic' else None
         cur = conn.execute('''
             INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive, exam_category, tos_id)
             VALUES (?,?,?,?,?,?,?,?,?,?)
         ''', (exam_id, section_id, src['question_text'], src['question_type'], src['points'], src['correct_answer'], count,
               _q_get(src, 'case_sensitive', 0), exam_category, new_tos_id))
         new_qid = cur.lastrowid
-        if exam_category == 'periodic' and not exam_tos_id and new_tos_id:
-            # The exam adopts the TOS of the first periodic question imported into it.
-            conn.execute('UPDATE exams SET tos_id=? WHERE id=?', (new_tos_id, exam_id))
-            exam_tos_id = new_tos_id
         if src['question_type'] == 'multiple_choice':
             choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (qid,)).fetchall()
             for c in choices:
@@ -4236,22 +4215,23 @@ def teacher_add_question(section_id):
             return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
         points = sum(p for _, p in rubric_criteria)  # question's max points = sum of rubric points
     if q_text:
-        # Periodic Exam questions need a Table of Specification (TOS). The exam
-        # keeps one TOS: it is uploaded with the first question and reused after.
+        # Periodic Exam questions need their own Table of Specification (TOS).
+        # It is not shared at exam level - every question links to its own TOS.
         exam_row = conn.execute('SELECT exam_category, tos_id FROM exams WHERE id=?', (exam_id,)).fetchone()
         exam_category = _q_get(exam_row, 'exam_category', 'quiz') or 'quiz'
         q_tos_id = None
         if exam_category == 'periodic':
+            # The exam's TOS (picked when the exam was created) applies to every question.
             q_tos_id = _q_get(exam_row, 'tos_id', None)
-            if not q_tos_id:
+            tos_err = None
+            if not q_tos_id:  # older exams created before this change
                 q_tos_id, tos_err = _resolve_tos(conn, session['user_id'], request.form, request.files)
-                if tos_err:
-                    conn.rollback()
-                    flash(tos_err, 'error')
-                    if _wants_json():
-                        return jsonify({'ok': False, 'error': tos_err}), 400
-                    return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
-                conn.execute('UPDATE exams SET tos_id=? WHERE id=?', (q_tos_id, exam_id))
+            if tos_err:
+                conn.rollback()
+                flash(tos_err, 'error')
+                if _wants_json():
+                    return jsonify({'ok': False, 'error': tos_err}), 400
+                return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
         count = conn.execute('SELECT COUNT(*) FROM questions WHERE section_id=?', (section_id,)).fetchone()[0]
         # Questions added directly to an exam section are NOT part of the
         # question bank and are never linked to a bank group — only the
@@ -4698,8 +4678,9 @@ def teacher_bank_import_file():
     # Periodic Exam imports must come with a Table of Specification (TOS) Excel
     # file — check it up front so nothing is parsed or saved without one.
     tos_upload = request.files.get('tos_file')
-    if category == 'periodic' and (not tos_upload or not tos_upload.filename):
-        flash('A Table of Specification (TOS) Excel file is required when importing Periodic Exam questions.', 'error')
+    picked_tos = (request.form.get('tos_id') or '').strip()
+    if category == 'periodic' and (not tos_upload or not tos_upload.filename) and not picked_tos:
+        flash('A Table of Specification (TOS) is required when importing Periodic Exam questions — upload an Excel file or choose one you already uploaded.', 'error')
         return redirect(_bank_url(category))
 
     if _upload_too_large(uploaded):
@@ -5008,7 +4989,7 @@ def teacher_bank_import_file():
     # Save the TOS only now that the questions parsed successfully.
     tos_id = None
     if category == 'periodic':
-        tos_id, tos_err = _resolve_tos(conn, session['user_id'], {}, request.files)
+        tos_id, tos_err = _resolve_tos(conn, session['user_id'], request.form, request.files)
         if tos_err:
             conn.rollback()
             flash(tos_err, 'error')

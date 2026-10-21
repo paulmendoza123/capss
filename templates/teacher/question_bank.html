@@ -133,7 +133,7 @@
       <div class="modal-title" style="margin-bottom:0"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> My TOS Files</div>
       <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-tos-files')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
     </div>
-    <div class="text-xs text-muted" style="margin-bottom:0.9rem">A file that is still used by questions or exams can't be deleted. To change the TOS of an exam, use the <strong>TOS</strong> button on that exam's Edit page.</div>
+    <div class="text-xs text-muted" style="margin-bottom:0.9rem">A file that is still used by questions or exams can't be deleted. An exam's TOS is chosen when the exam is created.</div>
     {% if tos_files %}
     <div class="table-wrap"><table style="min-width:480px">
       <thead><tr><th>File</th><th style="width:130px">Uploaded</th><th style="width:110px">Used by</th><th style="width:100px">Actions</th></tr></thead>
@@ -467,6 +467,15 @@
         <input type="file" name="tos_file" id="impTosFile" accept=".xlsx,.xlsm" class="form-control"
                style="padding:0.45rem 0.65rem;font-size:0.9rem">
         <div class="form-hint">Required for Periodic Exams — upload the TOS as an Excel file (.xlsx).</div>
+        {% if tos_list %}
+        <div style="margin-top:0.5rem">
+          <label class="form-label" style="font-size:0.78rem;font-weight:500">…or use a TOS you already uploaded</label>
+          <select name="tos_id" id="impTosPick" class="form-select" onchange="bankTosPicked('imp')">
+            <option value="">— Upload a new file instead —</option>
+            {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
       </div>
 
       <div class="form-group" style="margin-bottom:1rem">
@@ -527,7 +536,7 @@ function updateImportPreview(input) {
         {% if tos_list %}
         <div style="margin-top:0.5rem">
           <label class="form-label" style="font-size:0.78rem;font-weight:500">…or reuse a TOS you already uploaded</label>
-          <select name="tos_id" id="addTosPick" class="form-select" onchange="bankTosPicked()">
+          <select name="tos_id" id="addTosPick" class="form-select" onchange="bankTosPicked('add')">
             <option value="">— Upload a new file instead —</option>
             {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name }}</option>{% endfor %}
           </select>
@@ -990,11 +999,10 @@ function bankCategoryChanged(prefix) {
   if (wrap) wrap.style.display = periodic ? '' : 'none';
   if (file) {
     if (!periodic) file.value = '';
-    file.required = periodic;
   }
+  if (!periodic) { const p = document.getElementById(prefix + 'TosPick'); if (p) p.value = ''; }
+  bankTosPicked(prefix);
   if (prefix === 'add') {
-    if (!periodic) { const p = document.getElementById('addTosPick'); if (p) p.value = ''; }
-    bankTosPicked();
     // Only offer groups that belong to the chosen category
     const sel = document.getElementById('bankGroupSel');
     if (sel) {
@@ -1015,10 +1023,11 @@ document.addEventListener('reset', function (e) {
   if (sel && sel.id) setTimeout(() => bankCategoryChanged(sel.id.replace('Category', '')), 0);
 }, true);
 /* A picked existing TOS replaces the need to upload a new file. */
-function bankTosPicked() {
-  const pick = document.getElementById('addTosPick');
-  const file = document.getElementById('addTosFile');
-  const cat = document.getElementById('addCategory');
+function bankTosPicked(prefix) {
+  prefix = prefix || 'add';
+  const pick = document.getElementById(prefix + 'TosPick');
+  const file = document.getElementById(prefix + 'TosFile');
+  const cat = document.getElementById(prefix + 'Category');
   if (!file || !cat) return;
   file.required = cat.value === 'periodic' && !(pick && pick.value);
 }

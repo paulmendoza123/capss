@@ -14,14 +14,14 @@
     </div>
   </div>
   <div style="display:flex;gap:0.5rem;align-items:center">
+    {% if exam_tos %}
+    <a href="{{ url_for('teacher_download_tos', tos_id=exam_tos.id) }}" class="btn btn-ghost" title="Table of Specification used by this exam"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> TOS: {{ exam_tos.original_name }}</a>
+    {% endif %}
     {% if not exam.is_ready and exam.status == 'upcoming' %}
     <form method="POST" action="{{ url_for('teacher_finish_editing', exam_id=exam.id) }}" style="display:inline">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-primary">Finish editing</button>
     </form>
-    {% endif %}
-    {% if exam_category == 'periodic' %}
-    <button type="button" class="btn btn-ghost" onclick="openModal('modal-exam-tos')" title="View or replace the Table of Specification"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> {{ 'TOS' if exam_tos else 'Upload TOS' }}</button>
     {% endif %}
     <a href="{{ url_for('teacher_exam_preview', exam_id=exam.id) }}" class="btn btn-primary" title="See exactly what students will see">
       <svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg> Preview
@@ -30,46 +30,6 @@
   </div>
 </div>
 
-{% if exam_category == 'periodic' %}
-<div class="modal-overlay" id="modal-exam-tos">
-  <div class="modal" style="max-width:520px;width:95vw">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-      <div class="modal-title" style="margin-bottom:0"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> Table of Specification (TOS)</div>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-exam-tos')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
-    </div>
-    <div style="margin-bottom:1rem">
-      {% if exam_tos %}
-      <div class="text-xs text-muted">Current TOS</div>
-      <a href="{{ url_for('teacher_download_tos', tos_id=exam_tos.id) }}">{{ exam_tos.original_name }}</a>
-      {% else %}
-      <div class="text-muted">This exam has no TOS yet.</div>
-      {% endif %}
-    </div>
-    <form method="POST" action="{{ url_for('teacher_replace_exam_tos', exam_id=exam.id) }}" enctype="multipart/form-data">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="form-group">
-        <label class="form-label">{{ 'Replace with a new Excel file' if exam_tos else 'Upload TOS (Excel .xlsx)' }} <span style="color:var(--danger)">*</span></label>
-        <input type="file" name="tos_file" id="examTosFile" class="form-control" accept=".xlsx,.xlsm" required style="padding:0.45rem 0.65rem;font-size:0.9rem">
-        <div class="form-hint">Applies to every question in this exam.</div>
-      </div>
-      {% set other_tos = tos_list | rejectattr('id', 'equalto', exam_tos.id if exam_tos else 0) | list %}
-      {% if other_tos %}
-      <div class="form-group">
-        <label class="form-label" style="font-size:0.78rem;font-weight:500">…or use a TOS you already uploaded</label>
-        <select name="tos_id" class="form-select" onchange="document.getElementById('examTosFile').required = !this.value">
-          <option value="">— Upload a new file instead —</option>
-          {% for t in other_tos %}<option value="{{ t.id }}">{{ t.original_name }}</option>{% endfor %}
-        </select>
-      </div>
-      {% endif %}
-      <div class="modal-footer" style="padding-top:0.75rem;border-top:1px solid var(--border)">
-        <button type="button" class="btn btn-ghost" onclick="closeModal('modal-exam-tos')">Cancel</button>
-        <button type="submit" class="btn btn-primary">{{ 'Replace TOS' if exam_tos else 'Save TOS' }}</button>
-      </div>
-    </form>
-  </div>
-</div>
-{% endif %}
 
 <div class="tabs">
   <button class="tab-btn active" data-tab="questions"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> Questions</button>
@@ -406,15 +366,14 @@
             </div>
           </div>
 
-          {% if exam_category == 'periodic' %}
+          {% if exam_category == 'periodic' and exam_tos %}
+          <div class="form-hint" style="margin-top:0.75rem"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+            This question will use the exam's TOS: <a href="{{ url_for('teacher_download_tos', tos_id=exam_tos.id) }}">{{ exam_tos.original_name }}</a></div>
+          {% elif exam_category == 'periodic' %}
           <div class="form-group" style="margin-top:0.75rem">
-            {% if exam_tos %}
-            <div class="text-xs text-muted"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
-              TOS for this exam: <a href="{{ url_for('teacher_download_tos', tos_id=exam_tos.id) }}">{{ exam_tos.original_name }}</a></div>
-            {% else %}
-            <label class="form-label">Table of Specification (TOS) <span style="color:var(--danger)">*</span></label>
+            <label class="form-label">Table of Specification (TOS) for this question <span style="color:var(--danger)">*</span></label>
             <input type="file" name="tos_file" class="form-control tos-file-input" accept=".xlsx,.xlsm" required style="padding:0.45rem 0.65rem;font-size:0.9rem">
-            <div class="form-hint">Required for Periodic Exams (Excel .xlsx). It is saved with the exam, so you only upload it once.</div>
+            <div class="form-hint">Required for Periodic Exam questions (Excel .xlsx).</div>
             {% if tos_list %}
             <div style="margin-top:0.5rem">
               <label class="form-label" style="font-size:0.78rem;font-weight:500">…or reuse a TOS you already uploaded</label>
@@ -423,7 +382,6 @@
                 {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name }}</option>{% endfor %}
               </select>
             </div>
-            {% endif %}
             {% endif %}
           </div>
           {% endif %}
@@ -471,6 +429,9 @@
           <span class="badge {{ 'badge-purple' if exam_category == 'periodic' else 'badge-gray' }}" style="margin-left:0.4rem;font-size:0.7rem">{{ 'Periodic Exam' if exam_category == 'periodic' else 'Quiz' }} bank</span></div>
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-import-bank')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
       </div>
+      {% if exam_tos %}
+      <div class="form-hint" style="margin-bottom:0.75rem">Showing only questions that use this exam's TOS: <strong>{{ exam_tos.original_name }}</strong></div>
+      {% endif %}
 
       <form id="import-bank-form" onsubmit="return submitImportFromBank(event)">
         <div class="form-group" style="margin-bottom:0.85rem">
@@ -1471,7 +1432,7 @@ function ftbAddQuestion() {
 function ftbImportFromBank() {
   const modal = document.getElementById('modal-import-bank');
   if (!modal) {
-    alert('Add some questions to your Question Bank first, then you can import them here.');
+    alert('No Question Bank questions match this exam' + (document.querySelector('a[title^="Table of Specification"]') ? "'s TOS" : '') + ' yet. Add questions with this TOS in the Question Bank first.');
     return;
   }
   const select = document.getElementById('importTargetSection');
