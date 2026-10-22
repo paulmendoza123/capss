@@ -16,6 +16,7 @@
 
 <!-- LOGIN LOGS -->
 <div class="tab-content active" data-tab="login">
+<div class="mb-2" style="text-align:right"><a href="{{ url_for('admin_export', kind='login-logs') }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</a></div>
   {% if login_logs %}
   <!-- Login Filters -->
   <div class="card mb-2">
@@ -76,6 +77,7 @@
 
 <!-- SUSPICIOUS ACTIVITY LOGS -->
 <div class="tab-content" data-tab="suspicious">
+<div class="mb-2" style="text-align:right"><a href="{{ url_for('admin_export', kind='suspicious-logs') }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</a></div>
   {% if suspicious %}
   <!-- Suspicious Filters -->
   <div class="card mb-2">
@@ -148,6 +150,7 @@
 
 <!-- PASSWORD RESETS (done by teachers for their students) -->
 <div class="tab-content" data-tab="pw-resets">
+<div class="mb-2" style="text-align:right"><a href="{{ url_for('admin_export', kind='password-resets') }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</a></div>
   {% if pw_resets %}
   <div class="card">
     <div class="table-wrap">

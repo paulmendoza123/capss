@@ -10,11 +10,34 @@
 </div>
 
 <div class="card" style="max-width:580px">
-  <form method="POST">
+  <form method="POST" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-group">
       <label class="form-label">Exam Title</label>
       <input type="text" name="title" class="form-control" placeholder="e.g. Midterm Exam" required />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Exam Type</label>
+      <select name="exam_category" id="examCategory" class="form-select" required style="max-width:260px" onchange="syncTosField()">
+        <option value="" disabled selected>— Select type —</option>
+        <option value="quiz">Quiz</option>
+        <option value="periodic">Periodic Exam (Midterm / Final Term)</option>
+      </select>
+      <div class="form-hint">Quizzes and Periodic Exams use separate question banks — their questions can't be mixed. Periodic Exams are built on one Table of Specification (TOS).</div>
+    </div>
+    <div class="form-group" id="tosGroup" style="display:none">
+      <label class="form-label">Table of Specification (TOS) <span style="color:var(--danger)">*</span></label>
+      <input type="file" name="tos_file" id="tosFile" class="form-control" accept=".xlsx,.xlsm" style="padding:0.45rem 0.65rem;font-size:0.9rem">
+      <div class="form-hint">Excel (.xlsx). Only questions that belong to this TOS can be added to or imported into this exam.</div>
+      {% if tos_list %}
+      <div style="margin-top:0.5rem">
+        <label class="form-label" style="font-size:0.78rem;font-weight:500">…or use a TOS you already uploaded</label>
+        <select name="tos_id" id="tosSelect" class="form-select" style="max-width:340px" onchange="syncTosField()">
+          <option value="">— Upload a new file instead —</option>
+          {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name|tos_label }}</option>{% endfor %}
+        </select>
+      </div>
+      {% endif %}
     </div>
     <div class="form-row">
       <div class="form-group">
@@ -105,6 +128,17 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 </style>
 
 <script>
+function syncTosField() {
+  const cat = document.getElementById('examCategory');
+  const group = document.getElementById('tosGroup');
+  const file = document.getElementById('tosFile');
+  const sel = document.getElementById('tosSelect');
+  const periodic = cat && cat.value === 'periodic';
+  group.style.display = periodic ? '' : 'none';
+  // the file is only required when periodic AND no existing TOS was picked
+  file.required = periodic && !(sel && sel.value);
+}
+document.addEventListener('DOMContentLoaded', syncTosField);
 function toggleTabLimit(cb) {
   const group = document.getElementById('tabLimitGroup');
   const hint = document.getElementById('tabSwitchHint');

@@ -11,6 +11,25 @@
   </div>
 </div>
 
+{% if assigned %}
+<div class="card mb-2">
+  <div class="card-title mb-1">Subjects assigned to you</div>
+  <div class="text-sm text-muted mb-2">Assigned by your program head for the current semester. Create your class from a subject below.</div>
+  {% for a in assigned %}
+  <div class="flex items-center justify-between" style="padding:0.5rem 0;border-top:1px solid var(--border);gap:0.75rem;flex-wrap:wrap">
+    <div>
+      <div class="fw-600"><span class="font-mono" style="color:var(--accent)">{{ a.o.code }}</span> · {{ a.o.title }}</div>
+      <div class="text-xs text-muted">{{ a.o.program }} {{ a.o.year_level }} · {{ a.o.term }} S.Y. {{ a.o.school_year }}{% if a.o.schedule %} · {{ a.o.schedule }}{% endif %}</div>
+    </div>
+    <div class="flex gap-1 items-center">
+      {% if a.class_count %}<span class="badge badge-green">{{ a.class_count }} class{{ 'es' if a.class_count != 1 else '' }} created</span>{% else %}<span class="badge badge-gray">No class yet</span>{% endif %}
+      <a href="{{ url_for('teacher_create_class', offering_id=a.o.offering_id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Create Class</a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if classes %}
 {% set years = [] %}
 {% set progs = [] %}

@@ -6,6 +6,7 @@
   <div>
     <div class="page-title">{{ exam.title }}</div>
     <div class="page-subtitle">{{ exam.subject_name }}
+      · <span class="badge {{ 'badge-purple' if exam_category == 'periodic' else 'badge-gray' }}">{{ 'Periodic Exam' if exam_category == 'periodic' else 'Quiz' }}</span>
       · {% if exam.status == 'upcoming' and not exam.is_ready %}<span class="badge badge-gray">Draft</span>
         {% elif exam.status == 'upcoming' %}<span class="badge badge-gray">Upcoming</span>
         {% elif exam.status == 'active' %}<span class="badge badge-green">Active</span>
@@ -13,6 +14,9 @@
     </div>
   </div>
   <div style="display:flex;gap:0.5rem;align-items:center">
+    {% if exam_tos %}
+    <span class="btn btn-ghost" style="cursor:default;pointer-events:none" title="Table of Specification used by this exam"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> TOS: {{ exam_tos.original_name|tos_label }}</span>
+    {% endif %}
     {% if not exam.is_ready and exam.status == 'upcoming' %}
     <form method="POST" action="{{ url_for('teacher_finish_editing', exam_id=exam.id) }}" style="display:inline">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -25,6 +29,7 @@
     <a href="{{ url_for('teacher_class_detail', class_id=exam.class_id) }}" class="btn btn-ghost">← Back to Class</a>
   </div>
 </div>
+
 
 <div class="tabs">
   <button class="tab-btn active" data-tab="questions"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> Questions</button>
@@ -252,7 +257,7 @@
           <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('.add-question-form-wrap').style.display='none'" title="Close">✕</button>
         </div>
         <form method="POST" action="{{ url_for('teacher_add_question', section_id=sd.section.id) }}"
-              class="add-question-form" onsubmit="return submitAddQuestion(event)">
+              class="add-question-form" enctype="multipart/form-data" onsubmit="return submitAddQuestion(event)">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="form-group" style="max-width:220px">
             <label class="form-label">Question Type</label>
@@ -361,6 +366,26 @@
             </div>
           </div>
 
+          {% if exam_category == 'periodic' and exam_tos %}
+          <div class="form-hint" style="margin-top:0.75rem"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>
+            This question will use the exam's TOS: <strong>{{ exam_tos.original_name|tos_label }}</strong></div>
+          {% elif exam_category == 'periodic' %}
+          <div class="form-group" style="margin-top:0.75rem">
+            <label class="form-label">Table of Specification (TOS) for this question <span style="color:var(--danger)">*</span></label>
+            <input type="file" name="tos_file" class="form-control tos-file-input" accept=".xlsx,.xlsm" required style="padding:0.45rem 0.65rem;font-size:0.9rem">
+            <div class="form-hint">Required for Periodic Exam questions (Excel .xlsx).</div>
+            {% if tos_list %}
+            <div style="margin-top:0.5rem">
+              <label class="form-label" style="font-size:0.78rem;font-weight:500">…or reuse a TOS you already uploaded</label>
+              <select name="tos_id" class="form-select" style="max-width:340px" onchange="this.closest('.form-group').querySelector('.tos-file-input').required = !this.value">
+                <option value="">— Upload a new file instead —</option>
+                {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name|tos_label }}</option>{% endfor %}
+              </select>
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+
           <div class="flex gap-1 mt-1">
             <button type="submit" class="btn btn-success btn-sm">+ Add Question</button>
             <button type="button" class="btn btn-ghost btn-sm" onclick="this.closest('.add-question-form-wrap').style.display='none'">Cancel</button>
@@ -400,9 +425,13 @@
   <div class="modal-overlay" id="modal-import-bank">
     <div class="modal" style="max-width:640px;width:95vw">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-        <div class="modal-title" style="margin-bottom:0"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg> Import from Question Bank</div>
+        <div class="modal-title" style="margin-bottom:0"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg> Import from Question Bank
+          <span class="badge {{ 'badge-purple' if exam_category == 'periodic' else 'badge-gray' }}" style="margin-left:0.4rem;font-size:0.7rem">{{ 'Periodic Exam' if exam_category == 'periodic' else 'Quiz' }} bank</span></div>
         <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-import-bank')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
       </div>
+      {% if exam_tos %}
+      <div class="form-hint" style="margin-bottom:0.75rem">Showing only questions that use this exam's TOS: <strong>{{ exam_tos.original_name|tos_label }}</strong></div>
+      {% endif %}
 
       <form id="import-bank-form" onsubmit="return submitImportFromBank(event)">
         <div class="form-group" style="margin-bottom:0.85rem">
@@ -1403,7 +1432,7 @@ function ftbAddQuestion() {
 function ftbImportFromBank() {
   const modal = document.getElementById('modal-import-bank');
   if (!modal) {
-    alert('Add some questions to your Question Bank first, then you can import them here.');
+    alert('No Question Bank questions match this exam' + (document.querySelector('[title^="Table of Specification"]') ? "'s TOS" : '') + ' yet. Add questions with this TOS in the Question Bank first.');
     return;
   }
   const select = document.getElementById('importTargetSection');

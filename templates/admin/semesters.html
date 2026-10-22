@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}Semesters{% endblock %}
+{% block content %}
+{% include 'admin/_curriculum_tabs.html' %}
+<div class="page-header">
+  <div>
+    <div class="page-title">Semesters</div>
+    <div class="page-subtitle">School year and term. A class is Active or Ended based on its semester.</div>
+  </div>
+</div>
+
+<div class="card mb-2">
+  <div class="card-title mb-2">Add Semester</div>
+  <form method="POST" class="flex gap-2" style="flex-wrap:wrap;align-items:flex-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="add">
+    <div class="form-group" style="margin:0">
+      <label class="form-label">School Year</label>
+      <input type="text" name="school_year" class="form-control" placeholder="2026-2027" pattern="\d{4}-\d{4}" maxlength="9" required />
+    </div>
+    <div class="form-group" style="margin:0">
+      <label class="form-label">Semester</label>
+      <select name="term" class="form-select" required>
+        {% for t in terms %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Add</button>
+  </form>
+</div>
+
+{% if semesters %}
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>School Year</th><th>Semester</th><th>Status</th><th>Classes</th><th>Subjects Open</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for s in semesters %}
+        <tr>
+          <td class="fw-600 font-mono">{{ s.school_year }}</td>
+          <td>{{ s.term }}</td>
+          <td>{% if s.status == 'active' %}<span class="badge badge-green">Active</span>{% else %}<span class="badge badge-gray">Ended</span>{% endif %}</td>
+          <td class="font-mono text-sm">{{ s.class_count }}</td>
+          <td class="font-mono text-sm">{{ s.offering_count }}</td>
+          <td>
+            <div class="flex gap-1" style="flex-wrap:wrap">
+              <a href="{{ url_for('admin_offerings', semester_id=s.id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> Offerings</a>
+              <form method="POST" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="set_status">
+                <input type="hidden" name="semester_id" value="{{ s.id }}">
+                {% if s.status == 'active' %}
+                <input type="hidden" name="status" value="ended">
+                <button type="submit" class="btn btn-ghost btn-sm" onclick="return confirm('Mark this semester as Ended? Its classes will show as Ended.')"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> End</button>
+                {% else %}
+                <input type="hidden" name="status" value="active">
+                <button type="submit" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-unlock"/></svg> Set Active</button>
+                {% endif %}
+              </form>
+              <form method="POST" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="semester_id" value="{{ s.id }}">
+                <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this semester and its subject assignments? This cannot be undone.')"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg></div>
+  <div class="empty-state-title">No semesters yet</div>
+  <div class="empty-state-text">Add the current school year and semester above.</div>
+</div>
+{% endif %}
+{% endblock %}

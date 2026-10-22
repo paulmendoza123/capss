@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block title %}Subjects{% endblock %}
+{% block content %}
+{% include 'admin/_curriculum_tabs.html' %}
+<div class="page-header">
+  <div>
+    <div class="page-title">Subjects (Prospectus)</div>
+    <div class="page-subtitle">{{ subjects|length }} shown of {{ total_count }} subjects</div>
+  </div>
+  <div class="page-actions">
+    <a href="{{ url_for('admin_export', kind='subjects', program=f_program, year_level=f_year, term=f_term, q=q) }}" class="btn btn-ghost"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</a>
+  </div>
+</div>
+
+<div class="cards-grid mb-2">
+  <div class="card">
+    <div class="card-title mb-2">Add Subject</div>
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="add">
+      {% include 'admin/_subject_fields.html' %}
+      <button type="submit" class="btn btn-primary btn-block">Add Subject</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-title mb-2">Import from Excel</div>
+    <div class="text-sm text-muted mb-2">Use the SPARK prospectus .xlsx. Columns: Program, Year Level, Semester, Course Code, Course Title, Units (Lec/Lab), Total Units, Pre-requisite. Existing subjects (same program and code) are updated, not duplicated.</div>
+    <a href="{{ url_for('admin_subjects_template') }}" class="btn btn-ghost btn-sm mb-2"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Download Template</a>
+    <form method="POST" action="{{ url_for('admin_import_subjects') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-group"><input type="file" name="file" accept=".xlsx" class="form-control" required /></div>
+      <button type="submit" class="btn btn-primary btn-block"><svg class="icon" aria-hidden="true"><use href="#i-arrow-up"/></svg> Import</button>
+    </form>
+  </div>
+</div>
+
+<div class="card mb-2">
+  <form method="GET" class="flex gap-2 filter-bar" style="flex-wrap:wrap;align-items:center">
+    <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Search code or title…" style="flex:1;min-width:200px" />
+    <select name="program" class="form-select" style="width:auto;min-width:130px" onchange="this.form.submit()">
+      <option value="">All Programs</option>
+      {% for p in programs %}<option value="{{ p }}" {% if f_program == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
+    </select>
+    <select name="year_level" class="form-select" style="width:auto;min-width:130px" onchange="this.form.submit()">
+      <option value="">All Years</option>
+      {% for y in year_levels %}<option value="{{ y }}" {% if f_year == y %}selected{% endif %}>{{ y }}</option>{% endfor %}
+    </select>
+    <select name="term" class="form-select" style="width:auto;min-width:140px" onchange="this.form.submit()">
+      <option value="">All Prospectus Sems</option>
+      {% for t in terms %}<option value="{{ t }}" {% if f_term == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg> Search</button>
+    {% if f_program or f_year or f_term or q %}<a href="{{ url_for('admin_subjects') }}" class="btn btn-ghost btn-sm">Clear</a>{% endif %}
+  </form>
+</div>
+
+{% if subjects %}
+<div class="card">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Program</th><th>Year</th><th>Prospectus Sem</th><th>Code</th><th>Title</th><th>Units</th><th>Total</th><th>Pre-requisite</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for s in subjects %}
+        <tr>
+          <td class="text-sm">{{ s.program }}</td>
+          <td class="text-sm">{{ s.year_level }}</td>
+          <td class="text-sm">{{ s.term }}</td>
+          <td class="font-mono fw-600" style="color:var(--accent)">{{ s.code }}</td>
+          <td>{{ s.title }}</td>
+          <td class="font-mono text-sm">{{ s.units_text or '—' }}</td>
+          <td class="font-mono text-sm">{{ s.total_units|units or '—' }}</td>
+          <td class="text-sm text-muted">{{ s.prerequisite or '—' }}</td>
+          <td>
+            <div class="flex gap-1">
+              <a href="{{ url_for('admin_edit_subject', subject_id=s.id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Edit</a>
+              <form method="POST" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="subject_id" value="{{ s.id }}">
+                <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this subject and its offerings?')"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></div>
+  <div class="empty-state-title">{% if total_count %}No subjects match this filter{% else %}No subjects yet{% endif %}</div>
+  <div class="empty-state-text">{% if total_count %}Try clearing the filter.{% else %}Import the prospectus Excel file above, or add subjects one by one.{% endif %}</div>
+</div>
+{% endif %}
+{% endblock %}

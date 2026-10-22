@@ -1,0 +1,185 @@
+{% extends 'base.html' %}
+{% block title %}Offerings{% endblock %}
+{% macro slot_row(sid, p, k, sl) %}
+<div class="sched-slot">
+  <div class="sched-days">
+    {% for d in ['Mon','Tue','Wed','Thu','Fri','Sat'] %}
+    <label class="sched-day"><input type="checkbox" name="day_{{ sid }}_{{ p }}_{{ k }}_{{ d }}" value="1" {% if sl and d in sl.days %}checked{% endif %} /><span>{{ d }}</span></label>
+    {% endfor %}
+  </div>
+  <div class="sched-times">
+    <input type="time" name="start_{{ sid }}_{{ p }}_{{ k }}" class="form-control" value="{{ sl.start if sl else '' }}" aria-label="Start time" />
+    <span class="text-muted">to</span>
+    <input type="time" name="end_{{ sid }}_{{ p }}_{{ k }}" class="form-control" value="{{ sl.end if sl else '' }}" aria-label="End time" />
+  </div>
+</div>
+{% endmacro %}
+{% block content %}
+<style>
+.off-block{padding:8px 0;border-bottom:1px solid var(--border)}
+.off-block:last-of-type{border-bottom:0}
+.off-head{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.sched-days{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.sched-day input{position:absolute;opacity:0;pointer-events:none}
+.sched-day span{display:inline-block;padding:2px 8px;border:1px solid var(--border);border-radius:6px;font-size:0.75rem;cursor:pointer;color:var(--text2);background:var(--card)}
+.sched-day input:checked + span{background:var(--accent);border-color:var(--accent);color:#fff}
+.sched-day input:focus-visible + span{outline:2px solid var(--accent);outline-offset:1px}
+.sched-slot{margin-bottom:8px;padding-bottom:8px;border-bottom:1px dashed var(--border)}
+.sched-slots .sched-slot:last-child{border-bottom:0}
+.sched-times{display:flex;align-items:center;gap:6px}
+.sched-times .form-control{min-width:110px;padding:0.3rem 0.5rem}
+</style>
+{% include 'admin/_curriculum_tabs.html' %}
+<div class="page-header">
+  <div>
+    <div class="page-title">Subject Offerings</div>
+    <div class="page-subtitle">Per semester: assign teachers and schedules. A subject can have more than one teacher (e.g. Block A and Block B).</div>
+  </div>
+  {% if sem %}
+  <div class="page-actions">
+    <a href="{{ url_for('admin_export', kind='offerings', semester_id=sem.id) }}" class="btn btn-ghost"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</a>
+  </div>
+  {% endif %}
+</div>
+
+{% if not semesters %}
+<div class="empty-state">
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg></div>
+  <div class="empty-state-title">Add a semester first</div>
+  <div class="empty-state-text"><a href="{{ url_for('admin_semesters') }}" style="color:var(--accent)">Go to Semesters</a> and add the current school year and term.</div>
+</div>
+{% else %}
+<div class="card mb-2">
+  <form method="GET" class="flex gap-2 filter-bar" style="flex-wrap:wrap;align-items:center">
+    <select name="semester_id" class="form-select" style="width:auto;min-width:240px" onchange="this.form.submit()">
+      {% for s in semesters %}
+      <option value="{{ s.id }}" {% if sem and sem.id == s.id %}selected{% endif %}>S.Y. {{ s.school_year }} · {{ s.term }}{% if s.status == 'ended' %} (Ended){% endif %}</option>
+      {% endfor %}
+    </select>
+    <select name="program" class="form-select" style="width:auto;min-width:130px" onchange="this.form.submit()">
+      <option value="">All Programs</option>
+      {% for p in programs %}<option value="{{ p }}" {% if f_program == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
+    </select>
+    <select name="year_level" class="form-select" style="width:auto;min-width:130px" onchange="this.form.submit()">
+      <option value="">All Years</option>
+      {% for y in year_levels %}<option value="{{ y }}" {% if f_year == y %}selected{% endif %}>{{ y }}</option>{% endfor %}
+    </select>
+  </form>
+</div>
+
+{% if subjects %}
+<form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="semester_id" value="{{ sem.id }}">
+  <input type="hidden" name="program" value="{{ f_program }}">
+  <input type="hidden" name="year_level" value="{{ f_year }}">
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Program</th><th>Year</th><th>Code</th><th>Title</th><th>Units</th><th>Teachers &amp; Schedule</th></tr>
+        </thead>
+        <tbody>
+          {% for s in subjects %}
+          <tr>
+            <td class="text-sm">{{ s.program }}</td>
+            <td class="text-sm">{{ s.year_level }}</td>
+            <td class="font-mono fw-600" style="color:var(--accent)">{{ s.code }}</td>
+            <td>{{ s.title }}</td>
+            <td class="font-mono text-sm">{{ s.total_units|units or '—' }}</td>
+            <td>
+              <div class="off-blocks" data-sid="{{ s.id }}">
+                {% for b in blocks[s.id] %}
+                {% set p = b.position %}
+                <div class="off-block" data-p="{{ p }}">
+                  <div class="off-head">
+                    <select name="teacher_{{ s.id }}_{{ p }}" class="form-select" style="min-width:170px" aria-label="Teacher">
+                      <option value="">— Not assigned —</option>
+                      {% for t in teachers %}<option value="{{ t.id }}" {% if b.teacher_id == t.id %}selected{% endif %}>{{ t.full_name }}</option>{% endfor %}
+                    </select>
+                    <button type="button" class="btn btn-ghost btn-sm off-remove" title="Remove this teacher" aria-label="Remove this teacher"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
+                  </div>
+                  <div class="sched-slots">
+                    {% for sl in (b.slots or [none]) %}{{ slot_row(s.id, p, loop.index0, sl) }}{% endfor %}
+                  </div>
+                  <button type="button" class="btn btn-ghost btn-sm sched-add"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Add another time</button>
+                </div>
+                {% endfor %}
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm off-add" data-sid="{{ s.id }}"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg> Add another teacher</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="mt-2"><button type="submit" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-check-circle"/></svg> Save Offerings</button></div>
+</form>
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></div>
+  <div class="empty-state-title">No subjects for {{ sem.term }}</div>
+  <div class="empty-state-text">Subjects appear here when their semester matches. <a href="{{ url_for('admin_subjects') }}" style="color:var(--accent)">Add or import subjects</a>.</div>
+</div>
+{% endif %}
+{% endif %}
+<script>
+(function () {
+  var DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat'], MAX_SLOTS = 7, MAX_T = {{ max_teachers }};
+  var TEACHERS = {{ teachers|map(attribute='full_name')|list|tojson }};
+  var TEACHER_IDS = {{ teachers|map(attribute='id')|list|tojson }};
+  function slotHtml(sid, p, k) {
+    var days = DAYS.map(function (d) {
+      return '<label class="sched-day"><input type="checkbox" name="day_' + sid + '_' + p + '_' + k + '_' + d + '" value="1" /><span>' + d + '</span></label>';
+    }).join('');
+    return '<div class="sched-slot"><div class="sched-days">' + days + '</div><div class="sched-times">' +
+      '<input type="time" name="start_' + sid + '_' + p + '_' + k + '" class="form-control" aria-label="Start time" />' +
+      '<span class="text-muted">to</span>' +
+      '<input type="time" name="end_' + sid + '_' + p + '_' + k + '" class="form-control" aria-label="End time" /></div></div>';
+  }
+  function blockHtml(sid, p) {
+    var opts = '<option value="">— Not assigned —</option>' + TEACHERS.map(function (n, i) {
+      return '<option value="' + TEACHER_IDS[i] + '">' + n.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</option>';
+    }).join('');
+    return '<div class="off-block" data-p="' + p + '"><div class="off-head">' +
+      '<select name="teacher_' + sid + '_' + p + '" class="form-select" style="min-width:170px" aria-label="Teacher">' + opts + '</select>' +
+      '<button type="button" class="btn btn-ghost btn-sm off-remove" title="Remove this teacher" aria-label="Remove this teacher">&times;</button></div>' +
+      '<div class="sched-slots">' + slotHtml(sid, p, 0) + '</div>' +
+      '<button type="button" class="btn btn-ghost btn-sm sched-add">+ Add another time</button></div>';
+  }
+  document.addEventListener('click', function (e) {
+    var add = e.target.closest('.sched-add');
+    if (add) {
+      var blk = add.closest('.off-block'), box = blk.querySelector('.sched-slots');
+      var sid = blk.parentNode.dataset.sid, k = box.querySelectorAll('.sched-slot').length;
+      if (k >= MAX_SLOTS) { add.disabled = true; return; }
+      box.insertAdjacentHTML('beforeend', slotHtml(sid, blk.dataset.p, k));
+      if (k + 1 >= MAX_SLOTS) add.disabled = true;
+      return;
+    }
+    var addT = e.target.closest('.off-add');
+    if (addT) {
+      var sid2 = addT.dataset.sid, wrap = document.querySelector('.off-blocks[data-sid="' + sid2 + '"]');
+      var used = Array.prototype.map.call(wrap.querySelectorAll('.off-block'), function (b) { return +b.dataset.p; });
+      var p = used.length ? Math.max.apply(null, used) + 1 : 0;
+      if (p >= MAX_T) { addT.disabled = true; return; }
+      wrap.insertAdjacentHTML('beforeend', blockHtml(sid2, p));
+      if (p + 1 >= MAX_T) addT.disabled = true;
+      return;
+    }
+    var rm = e.target.closest('.off-remove');
+    if (rm) {
+      var b = rm.closest('.off-block'), wrap2 = b.parentNode;
+      if (wrap2.querySelectorAll('.off-block').length > 1) { b.remove(); }
+      else {
+        b.querySelector('select').value = '';
+        b.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.checked = false; });
+        b.querySelectorAll('input[type=time]').forEach(function (t) { t.value = ''; });
+      }
+      var btn = wrap2.parentNode.querySelector('.off-add'); if (btn) btn.disabled = false;
+    }
+  });
+})();
+</script>
+{% endblock %}

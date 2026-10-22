@@ -4,7 +4,7 @@
 <div class="page-header">
   <div>
     <div class="page-title">{{ exam.title }}</div>
-    <div class="page-subtitle">{{ class_info.subject_name }} · {{ class_info.block_name }} · {{ teacher_name }}</div>
+    <div class="page-subtitle">{{ 'Periodic Exam' if exam_category == 'periodic' else 'Quiz' }} · {{ class_info.subject_name }} · {{ class_info.block_name }} · {{ teacher_name }}</div>
   </div>
   <a href="{{ url_for('admin_exam_overview') }}" class="btn btn-ghost">← Back to Exams</a>
 </div>
@@ -48,6 +48,22 @@
   <!-- Exam Info -->
   <div class="card">
     <div class="card-title mb-2">Exam Details</div>
+    <div class="form-group">
+      <div class="form-label">Type</div>
+      {% if exam_category == 'periodic' %}<span class="badge badge-purple">Periodic Exam</span>
+      {% else %}<span class="badge badge-gray">Quiz</span>{% endif %}
+    </div>
+    {% if exam_category == 'periodic' %}
+    <div class="form-group">
+      <div class="form-label">Table of Specification (TOS)</div>
+      {% if exam_tos %}
+      <a href="{{ url_for('admin_download_tos', tos_id=exam_tos.id) }}" class="text-sm">{{ exam_tos.original_name.rsplit('.', 1)[0] if '.' in exam_tos.original_name else exam_tos.original_name }}</a>
+      <div class="text-xs text-muted">Uploaded {{ exam_tos.uploaded_at|time12 }}</div>
+      {% else %}
+      <div class="text-sm text-muted">No TOS attached yet</div>
+      {% endif %}
+    </div>
+    {% endif %}
     <div class="form-group">
       <div class="form-label">Duration</div>
       <div class="font-mono">{{ exam.duration_minutes }} minutes</div>

@@ -6,7 +6,10 @@
     <div class="page-title">All Users</div>
     <div class="page-subtitle">{{ users|length }} total accounts</div>
   </div>
-  <a href="{{ url_for('admin_create_user') }}" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Create User</a>
+  <div class="page-actions">
+    <a href="{{ url_for('admin_export', kind='users') }}" class="btn btn-ghost"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</a>
+    <a href="{{ url_for('admin_create_user') }}" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Create User</a>
+  </div>
 </div>
 
 <!-- Search & Filter Bar -->

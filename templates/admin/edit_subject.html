@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}Edit Subject{% endblock %}
+{% block content %}
+{% include 'admin/_curriculum_tabs.html' %}
+<div class="page-header">
+  <div class="page-title">Edit Subject</div>
+  <a href="{{ url_for('admin_subjects') }}" class="btn btn-ghost">← Back</a>
+</div>
+<div class="card" style="max-width:640px">
+  <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% include 'admin/_subject_fields.html' %}
+    <button type="submit" class="btn btn-primary btn-block">Save Changes</button>
+  </form>
+</div>
+{% endblock %}

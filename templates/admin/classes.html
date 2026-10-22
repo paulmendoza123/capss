@@ -6,7 +6,24 @@
     <div class="page-title">All Classes</div>
     <div class="page-subtitle">{{ classes|length }} classes across the system</div>
   </div>
+  <div class="page-actions">
+    <a href="{{ url_for('admin_export', kind='classes') }}" class="btn btn-ghost"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</a>
+  </div>
 </div>
+
+{% if unassigned and semesters %}
+<div class="card mb-2">
+  <form method="POST" action="{{ url_for('admin_assign_semester') }}" class="flex gap-2" style="flex-wrap:wrap;align-items:center"
+        onsubmit="return confirm('Assign all classes that have no semester to the selected semester?')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <span class="text-sm"><strong>{{ unassigned }}</strong> class(es) have no semester.</span>
+    <select name="semester_id" class="form-select" style="width:auto;min-width:220px" required>
+      {% for s in semesters %}<option value="{{ s.id }}">S.Y. {{ s.school_year }} · {{ s.term }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="btn btn-ghost btn-sm">Assign to this semester</button>
+  </form>
+</div>
+{% endif %}
 
 {% if classes %}
 <!-- Search & Filter -->
@@ -22,7 +39,7 @@
     <select id="class-status-filter" class="form-select" style="width:auto;min-width:120px">
       <option value="">All Status</option>
       <option value="1">Active</option>
-      <option value="0">Inactive</option>
+      <option value="0">Ended / Inactive</option>
     </select>
   </div>
 </div>
@@ -42,6 +59,7 @@
           <th>Subject</th>
           <th>Block</th>
           <th>Program / Year</th>
+          <th>Semester</th>
           <th>Teacher</th>
           <th>Students</th>
           <th>Status</th>
@@ -50,15 +68,20 @@
       </thead>
       <tbody>
         {% for c in classes %}
-        <tr data-subject="{{ c.subject_name|lower }}" data-block="{{ c.block_name|lower }}" data-teacher="{{ c.teacher_name|lower }}" data-program="{{ c.program }}" data-active="{{ c.is_active }}">
+        <tr data-subject="{{ c.subject_name|lower }}" data-block="{{ c.block_name|lower }}" data-teacher="{{ c.teacher_name|lower }}" data-program="{{ c.program }}" data-active="{{ 1 if (c.sem_status == 'active' or (not c.sem_status and c.is_active)) else 0 }}">
           <td class="font-mono fw-600" style="color:var(--accent)">{{ c.class_code }}</td>
           <td class="fw-600">{{ c.subject_name }}</td>
           <td class="text-sm">{{ c.block_name }}</td>
           <td class="text-sm">{{ c.program }} · {{ c.year_level }}</td>
+          <td class="text-sm">{% if c.sem_term %}{{ c.sem_term }}<div class="text-xs text-muted">S.Y. {{ c.sem_year }}</div>{% else %}<span class="text-muted">No semester</span>{% endif %}</td>
           <td class="text-sm">{{ c.teacher_name }}</td>
           <td class="font-mono text-sm">{{ c.enrollment_count }}</td>
           <td>
-            {% if c.is_active %}
+            {% if c.sem_status == 'active' %}
+              <span class="badge badge-green">Active</span>
+            {% elif c.sem_status == 'ended' %}
+              <span class="badge badge-gray">Ended</span>
+            {% elif c.is_active %}
               <span class="badge badge-green">Active</span>
             {% else %}
               <span class="badge badge-gray">Inactive</span>
@@ -94,7 +117,7 @@
   let activeCount = 0, inactiveCount = 0;
   rows.forEach(r => { r.dataset.active === '1' ? activeCount++ : inactiveCount++; });
   document.getElementById('class-active-count').textContent = activeCount + ' Active';
-  document.getElementById('class-inactive-count').textContent = inactiveCount + ' Inactive';
+  document.getElementById('class-inactive-count').textContent = inactiveCount + ' Ended / Inactive';
 
   function filter() {
     const q = search.value.toLowerCase();

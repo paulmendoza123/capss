@@ -291,6 +291,17 @@ def time12_filter(value):
     return f"{date_part} {h12}:{mm}{':' + ss if ss else ''} {suffix}"
 
 
+@app.template_filter('tos_label')
+def tos_label(name):
+    """TOS file name without its .xlsx/.xlsm extension, for display."""
+    n = (name or '').strip()
+    low = n.lower()
+    for ext in ('.xlsx', '.xlsm'):
+        if low.endswith(ext):
+            return n[:-len(ext)]
+    return n
+
+
 @app.template_filter('sa_alts')
 def _sa_alts_filter(correct_answer):
     return sa_parse_answer(correct_answer)
@@ -1251,6 +1262,119 @@ def init_db():
         conn.commit()
     except Exception:
         pass  # Column already exists
+
+    # Curriculum (admin-managed): semesters, prospectus subjects, and the
+    # per-semester offering (available / teacher / schedule) of each subject.
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS semesters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            school_year TEXT NOT NULL,
+            term TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
+            UNIQUE(school_year, term)
+        );
+        CREATE TABLE IF NOT EXISTS subjects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            program TEXT NOT NULL,
+            year_level TEXT NOT NULL,
+            term TEXT NOT NULL,
+            code TEXT NOT NULL,
+            title TEXT NOT NULL,
+            units_text TEXT,
+            total_units REAL,
+            prerequisite TEXT,
+            created_at TIMESTAMP DEFAULT (datetime('now','localtime')),
+            UNIQUE(program, code)
+        );
+        CREATE TABLE IF NOT EXISTS subject_offerings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            semester_id INTEGER NOT NULL,
+            subject_id INTEGER NOT NULL,
+            is_available INTEGER NOT NULL DEFAULT 0,
+            teacher_id INTEGER,
+            schedule TEXT,
+            sched_slots TEXT,
+            position INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(semester_id, subject_id, position)
+        );
+    ''')
+    conn.commit()
+    try:
+        conn.execute('ALTER TABLE classes ADD COLUMN semester_id INTEGER')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+    try:
+        conn.execute('ALTER TABLE classes ADD COLUMN subject_id INTEGER')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+    for _col in ('sched_days TEXT', 'sched_start TEXT', 'sched_end TEXT', 'sched_slots TEXT'):
+        try:
+            conn.execute(f'ALTER TABLE subject_offerings ADD COLUMN {_col}')
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
+    # Earlier single-slot schedules -> slot list (one-time, only where not yet converted)
+    for _r in conn.execute("""SELECT id, sched_days, sched_start, sched_end FROM subject_offerings
+                              WHERE sched_slots IS NULL AND COALESCE(sched_days, '') <> ''""").fetchall():
+        conn.execute('UPDATE subject_offerings SET sched_slots=? WHERE id=?',
+                     (json.dumps([{'days': _r['sched_days'].split(','), 'start': _r['sched_start'], 'end': _r['sched_end']}]), _r['id']))
+    conn.commit()
+    # One subject can have several teachers in a semester (e.g. Block A and Block B
+    # taught by different people): offerings get a 'position' and the old
+    # one-row-per-subject uniqueness is replaced. Existing rows become position 0.
+    if 'position' not in [r[1] for r in conn.execute('PRAGMA table_info(subject_offerings)').fetchall()]:
+        conn.executescript("""
+            ALTER TABLE subject_offerings RENAME TO subject_offerings_old;
+            CREATE TABLE subject_offerings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                semester_id INTEGER NOT NULL,
+                subject_id INTEGER NOT NULL,
+                is_available INTEGER NOT NULL DEFAULT 0,
+                teacher_id INTEGER,
+                schedule TEXT,
+                sched_slots TEXT,
+                position INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(semester_id, subject_id, position)
+            );
+            INSERT INTO subject_offerings (id, semester_id, subject_id, is_available, teacher_id, schedule, sched_slots, position)
+                SELECT id, semester_id, subject_id, is_available, teacher_id, schedule, sched_slots, 0 FROM subject_offerings_old;
+            DROP TABLE subject_offerings_old;
+        """)
+        conn.commit()
+
+    # Migration: Quiz vs Periodic Exam separation + Table of Specification (TOS).
+    # Every exam, question and bank group belongs to exactly one category
+    # ('quiz' or 'periodic'); everything that already exists defaults to 'quiz'.
+    # The TOS is an Excel file stored INSIDE the database (BLOB) so the existing
+    # Backup/Restore feature keeps working without extra files on disk.
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS tos_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            teacher_id INTEGER NOT NULL,
+            original_name TEXT NOT NULL,
+            file_data BLOB NOT NULL,
+            uploaded_at TIMESTAMP DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (teacher_id) REFERENCES users(id)
+        )
+    ''')
+    for _stmt in (
+        "ALTER TABLE exams ADD COLUMN exam_category TEXT DEFAULT 'quiz'",
+        "ALTER TABLE exams ADD COLUMN tos_id INTEGER REFERENCES tos_files(id)",
+        "ALTER TABLE questions ADD COLUMN exam_category TEXT DEFAULT 'quiz'",
+        "ALTER TABLE questions ADD COLUMN tos_id INTEGER REFERENCES tos_files(id)",
+        "ALTER TABLE question_bank_groups ADD COLUMN exam_category TEXT DEFAULT 'quiz'",
+    ):
+        try:
+            conn.execute(_stmt)
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
+    for _tbl in ('exams', 'questions', 'question_bank_groups'):
+        conn.execute(f"UPDATE {_tbl} SET exam_category='quiz' WHERE exam_category IS NULL OR exam_category=''")
+    conn.commit()
 
 
 def get_maintenance_db():
@@ -2289,7 +2413,12 @@ def teacher_home():
         ORDER BY c.id DESC
     ''', (session['user_id'],)).fetchall()
     programs = conn.execute('SELECT * FROM programs ORDER BY code').fetchall()
-    return render_template('teacher/classes.html', classes=classes, programs=programs)
+    assigned = []
+    for o in _teacher_open_offerings(conn, session['user_id']):
+        n = conn.execute('SELECT COUNT(*) FROM classes WHERE subject_id=? AND semester_id=? AND teacher_id=?',
+                         (o['subject_id'], o['sem_id'], session['user_id'])).fetchone()[0]
+        assigned.append({'o': o, 'class_count': n})
+    return render_template('teacher/classes.html', classes=classes, programs=programs, assigned=assigned)
 
 @app.route('/teacher/class/<int:class_id>/edit', methods=['POST'])
 @role_required('teacher')
@@ -2321,27 +2450,56 @@ def teacher_edit_class(class_id):
 @app.route('/teacher/class/create', methods=['GET', 'POST'])
 @role_required('teacher')
 def teacher_create_class():
+    """Teachers create classes only from the subjects the admin / program head
+    assigned to them (Curriculum > Offerings) in an Active semester."""
     conn = get_db()
-    programs = conn.execute('SELECT * FROM programs ORDER BY code').fetchall()
+    offerings = _teacher_open_offerings(conn, session['user_id'])
     if request.method == 'POST':
-        subject_code = request.form.get('subject_code', '').strip().upper()
-        subject_name = request.form.get('subject_name', '').strip()
-        block_name   = request.form.get('block_name', '').strip().upper()
-        program      = request.form.get('program', '').strip()
-        year_level   = request.form.get('year_level', '').strip()
-        if not all([subject_code, subject_name, block_name, program, year_level]):
-            flash('Please fill in all fields.', 'error')
+        offering_id = request.form.get('offering_id', type=int)
+        block_name = request.form.get('block_name', '').strip().upper()
+        off = next((o for o in offerings if o['offering_id'] == offering_id), None)
+        if not off:
+            flash('Please choose one of your assigned subjects.', 'error')
+        elif not re.match(r'^[A-Z0-9][A-Z0-9 \-]{0,19}$', block_name):
+            flash('Block name is required (letters/numbers, up to 20 characters).', 'error')
+        elif conn.execute('SELECT 1 FROM classes WHERE subject_id=? AND semester_id=? AND block_name=?',
+                          (off['subject_id'], off['sem_id'], block_name)).fetchone():
+            flash(f"Block {block_name} of {off['code']} already exists this semester.", 'error')
         else:
-            code = f"{subject_code}-{''.join(random.choices(string.ascii_uppercase + string.digits, k=5))}"
-            conn = get_db()
+            code = _new_class_code(conn, off['code'])
             conn.execute('''
-                INSERT INTO classes (class_code, subject_code, subject_name, block_name, program, year_level, teacher_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (code, subject_code, subject_name, block_name, program, year_level, session['user_id']))
+                INSERT INTO classes (class_code, subject_code, subject_name, block_name, program, year_level,
+                                     teacher_id, semester_id, subject_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (code, off['code'], off['title'], block_name, off['program'], off['year_level'],
+                  session['user_id'], off['sem_id'], off['subject_id']))
             conn.commit()
             flash(f'Class created! Code: {code}', 'success')
             return redirect(url_for('teacher_home'))
-    return render_template('teacher/create_class.html', programs=programs)
+    return render_template('teacher/create_class.html', offerings=offerings,
+                           preselect=request.args.get('offering_id', type=int))
+
+
+def _teacher_open_offerings(conn, teacher_id):
+    return conn.execute('''
+        SELECT o.id AS offering_id, o.schedule, s.id AS subject_id, s.program, s.year_level, s.code, s.title,
+               sem.id AS sem_id, sem.school_year, sem.term
+        FROM subject_offerings o
+        JOIN subjects s ON o.subject_id = s.id
+        JOIN semesters sem ON o.semester_id = sem.id
+        WHERE o.teacher_id = ? AND sem.status = 'active'
+        ORDER BY sem.school_year DESC, s.program, s.year_level, s.code
+    ''', (teacher_id,)).fetchall()
+
+
+def _new_class_code(conn, subject_code):
+    """Class code = the prospectus course code (letters/digits only) + 5 random
+    characters, e.g. 'IT 101' -> 'IT101-K3F9Q'. Always unique."""
+    prefix = re.sub(r'[^A-Z0-9]', '', (subject_code or '').upper())[:12] or 'CLS'
+    while True:
+        code = f"{prefix}-{''.join(random.choices(string.ascii_uppercase + string.digits, k=5))}"
+        if not conn.execute('SELECT 1 FROM classes WHERE class_code=?', (code,)).fetchone():
+            return code
 
 @app.route('/teacher/class/<int:class_id>')
 @role_required('teacher')
@@ -2408,8 +2566,19 @@ def teacher_class_detail(class_id):
     if reset_notice and reset_notice.get('class_id') != class_id:
         reset_notice = None
 
+    # Old classes of this teacher whose exams can be imported (same subject first)
+    import_sources = conn.execute('''
+        SELECT c.id, c.subject_code, c.subject_name, c.block_name, sem.school_year, sem.term,
+               (SELECT COUNT(*) FROM exams e WHERE e.class_id = c.id) AS exam_count,
+               CASE WHEN c.subject_id = ? OR c.subject_code = ? THEN 0 ELSE 1 END AS other_subject
+        FROM classes c LEFT JOIN semesters sem ON c.semester_id = sem.id
+        WHERE c.teacher_id = ? AND c.id != ?
+          AND EXISTS (SELECT 1 FROM exams e WHERE e.class_id = c.id)
+        ORDER BY other_subject, sem.school_year DESC, c.subject_name, c.block_name
+    ''', (cls['subject_id'], cls['subject_code'], session['user_id'], class_id)).fetchall()
     return render_template('teacher/class_detail.html', cls=cls, students=students, exams=exams,
-                           allowed_emails=allowed_emails_view, reset_notice=reset_notice)
+                           allowed_emails=allowed_emails_view, reset_notice=reset_notice,
+                           import_sources=import_sources)
 
 def _get_owned_class(conn, class_id):
     """Fetch a class only if it belongs to the currently logged-in teacher."""
@@ -2685,29 +2854,11 @@ def teacher_delete_class(class_id):
     flash(f'Class "{cls["subject_name"]}" has been deleted.', 'success')
     return redirect(url_for('teacher_home'))
 
-@app.route('/teacher/class/<int:class_id>/copy', methods=['POST'])
-@role_required('teacher')
-def teacher_copy_class(class_id):
-    conn = get_db()
-    cls = conn.execute(
-        'SELECT * FROM classes WHERE id = ? AND teacher_id = ?',
-        (class_id, session['user_id'])
-    ).fetchone()
-    if not cls:
-        flash('Class not found.', 'error')
-        return redirect(url_for('teacher_home'))
-
-    # Generate a fresh, unique class code for the copy
-    new_code = f"{cls['subject_code']}-{''.join(random.choices(string.ascii_uppercase + string.digits, k=5))}"
-    new_name = f"{cls['subject_name']} (Copy)"
-
-    cur = conn.execute('''
-        INSERT INTO classes (class_code, subject_code, subject_name, block_name, program, year_level, teacher_id, is_active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (new_code, cls['subject_code'], new_name, cls['block_name'], cls['program'], cls['year_level'],
-          session['user_id'], cls['is_active']))
-    new_class_id = cur.lastrowid
-
+def _copy_class_exams(conn, src_class_id, dst_class_id):
+    """Duplicate every exam of one class (with sections, questions and choices)
+    into another. Student data is never copied; copies start closed/unscheduled."""
+    class_id = src_class_id
+    new_class_id = dst_class_id
     # Duplicate every exam that belongs to the class, along with its sections,
     # questions and choices. Student-specific data (enrollments, exam sessions,
     # answers, logs) is intentionally NOT copied — the new class starts fresh.
@@ -2718,12 +2869,13 @@ def teacher_copy_class(class_id):
             INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, activated_at, status,
                                 show_results, randomize_questions, tab_switch_limit, tab_switch_enabled,
                                 manually_closed, passing_score, exam_code, fullscreen_required,
-                                time_warning_minutes)
-            VALUES (?, ?, ?, NULL, NULL, 'upcoming', ?, ?, ?, ?, 0, ?, ?, ?, ?)
+                                time_warning_minutes, exam_category, tos_id)
+            VALUES (?, ?, ?, NULL, NULL, 'upcoming', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
         ''', (exam['title'], new_class_id, exam['duration_minutes'],
               exam['show_results'], exam['randomize_questions'], exam['tab_switch_limit'], exam['tab_switch_enabled'],
               exam['passing_score'], new_exam_code, exam['fullscreen_required'],
-              exam['time_warning_minutes'] if exam['time_warning_minutes'] is not None else DEFAULT_TIME_WARNING_MINUTES))
+              exam['time_warning_minutes'] if exam['time_warning_minutes'] is not None else DEFAULT_TIME_WARNING_MINUTES,
+              _q_get(exam, 'exam_category', 'quiz') or 'quiz', _q_get(exam, 'tos_id', None)))
         new_exam_id = ecur.lastrowid
 
         section_id_map = {}
@@ -2740,10 +2892,11 @@ def teacher_copy_class(class_id):
         for q in questions:
             new_section_id = section_id_map.get(q['section_id']) if q['section_id'] else None
             qcur = conn.execute('''
-                INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive, exam_category, tos_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (new_exam_id, new_section_id, q['question_text'], q['question_type'], q['points'],
-                  q['correct_answer'], q['order_index'], _q_get(q, 'case_sensitive', 0)))
+                  q['correct_answer'], q['order_index'], _q_get(q, 'case_sensitive', 0),
+                  _q_get(q, 'exam_category', 'quiz') or 'quiz', _q_get(q, 'tos_id', None)))
             new_question_id = qcur.lastrowid
 
             choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (q['id'],)).fetchall()
@@ -2753,9 +2906,171 @@ def teacher_copy_class(class_id):
                     VALUES (?, ?, ?)
                 ''', (new_question_id, c['choice_label'], c['choice_text']))
 
+    return len(exams)
+
+
+@app.route('/teacher/class/<int:class_id>/import-content', methods=['POST'])
+@role_required('teacher')
+def teacher_import_class_content(class_id):
+    """Copy the exams of one of the teacher's OLD classes into this (new) class."""
+    conn = get_db()
+    dst = _get_owned_class(conn, class_id)
+    src_id = request.form.get('source_class_id', type=int)
+    src = _get_owned_class(conn, src_id) if src_id else None
+    if not dst or not src or src['id'] == dst['id']:
+        flash('Choose one of your other classes to import from.', 'error')
+        return redirect(url_for('teacher_class_detail', class_id=class_id))
+    n = _copy_class_exams(conn, src['id'], dst['id'])
+    conn.commit()
+    if n:
+        flash(f'Imported {n} exam(s) from {src["subject_name"]} ({src["block_name"]}). They are closed and unscheduled; review them before opening.', 'success')
+    else:
+        flash('That class has no exams to import.', 'info')
+    return redirect(url_for('teacher_class_detail', class_id=class_id))
+
+
+@app.route('/teacher/class/<int:class_id>/copy', methods=['POST'])
+@role_required('teacher')
+def teacher_copy_class(class_id):
+    conn = get_db()
+    cls = conn.execute(
+        'SELECT * FROM classes WHERE id = ? AND teacher_id = ?',
+        (class_id, session['user_id'])
+    ).fetchone()
+    if not cls:
+        flash('Class not found.', 'error')
+        return redirect(url_for('teacher_home'))
+
+    # Generate a fresh, unique class code for the copy
+    new_code = _new_class_code(conn, cls['subject_code'])
+    new_name = f"{cls['subject_name']} (Copy)"
+
+    cur = conn.execute('''
+        INSERT INTO classes (class_code, subject_code, subject_name, block_name, program, year_level, teacher_id, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (new_code, cls['subject_code'], new_name, cls['block_name'], cls['program'], cls['year_level'],
+          session['user_id'], cls['is_active']))
+    new_class_id = cur.lastrowid
+
+    _copy_class_exams(conn, class_id, new_class_id)
+
     conn.commit()
     flash(f'"{cls["subject_name"]}" has been copied as "{new_name}" (code: {new_code}).', 'success')
     return redirect(url_for('teacher_home'))
+
+# ── Quiz vs Periodic Exam + Table of Specification (TOS) ─────────────────────
+EXAM_CATEGORIES = ('quiz', 'periodic')
+EXAM_CATEGORY_LABELS = {'quiz': 'Quiz', 'periodic': 'Periodic Exam'}
+TOS_EXTENSIONS = ('xlsx', 'xlsm')
+
+
+def _norm_category(value, default=None):
+    """'quiz' / 'periodic' (case-insensitive) or `default` when missing/invalid."""
+    v = (value or '').strip().lower()
+    return v if v in EXAM_CATEGORIES else default
+
+
+def _bank_url(category=None):
+    """Question Bank URL opened on the right Quiz / Periodic Exam tab."""
+    category = _norm_category(category)
+    if category:
+        return url_for('teacher_question_bank', category=category)
+    return url_for('teacher_question_bank')
+
+
+def _teacher_tos_list(conn, teacher_id, with_usage=False):
+    """This teacher's uploaded TOS files (newest first).
+    With with_usage=True each file also carries question_count / exam_count,
+    i.e. how many questions and exams currently use it (a TOS that is in use
+    can't be deleted)."""
+    if not with_usage:
+        return [dict(r) for r in conn.execute(
+            'SELECT id, original_name, uploaded_at FROM tos_files WHERE teacher_id=? ORDER BY id DESC',
+            (teacher_id,)).fetchall()]
+    return [dict(r) for r in conn.execute('''
+        SELECT t.id, t.original_name, t.uploaded_at,
+               (SELECT COUNT(*) FROM questions q WHERE q.tos_id = t.id) AS question_count,
+               (SELECT COUNT(*) FROM exams e WHERE e.tos_id = t.id) AS exam_count
+        FROM tos_files t WHERE t.teacher_id=? ORDER BY t.id DESC
+    ''', (teacher_id,)).fetchall()]
+
+
+def _resolve_tos(conn, teacher_id, form, files, existing_tos_id=None):
+    """Work out which TOS a periodic-exam question must be linked to.
+
+    Order: a newly uploaded Excel file > a previously uploaded TOS picked from
+    the dropdown > `existing_tos_id` (e.g. the exam already has one).
+    Returns (tos_id, error_message). tos_id is None only when error_message is set.
+    """
+    upload = files.get('tos_file') if files else None
+    if upload and upload.filename:
+        if _upload_too_large(upload):
+            return None, f'The TOS file is too large. The maximum allowed size is {MAX_UPLOAD_MB} MB.'
+        name = os.path.basename(upload.filename)
+        ext = name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+        if ext not in TOS_EXTENSIONS:
+            return None, 'The Table of Specification (TOS) must be an Excel file (.xlsx).'
+        data = upload.read()
+        try:
+            import io
+            from openpyxl import load_workbook
+            load_workbook(io.BytesIO(data), read_only=True).close()
+        except Exception:
+            return None, 'Could not read the TOS file. Make sure it is a valid Excel (.xlsx) file.'
+        cur = conn.execute(
+            'INSERT INTO tos_files (teacher_id, original_name, file_data) VALUES (?,?,?)',
+            (teacher_id, name, data))
+        return cur.lastrowid, None
+    picked = (form.get('tos_id') or '').strip()
+    if picked.isdigit():
+        row = conn.execute('SELECT id FROM tos_files WHERE id=? AND teacher_id=?',
+                           (int(picked), teacher_id)).fetchone()
+        if row:
+            return row['id'], None
+    if existing_tos_id:
+        return existing_tos_id, None
+    return None, ('A Table of Specification (TOS) Excel file is required for Periodic Exam questions. '
+                  'Please upload one.')
+
+
+@app.route('/teacher/tos/<int:tos_id>/download')
+@role_required('teacher')
+def teacher_download_tos(tos_id):
+    conn = get_db()
+    row = conn.execute('SELECT * FROM tos_files WHERE id=? AND teacher_id=?',
+                       (tos_id, session['user_id'])).fetchone()
+    if not row:
+        flash('TOS file not found.', 'error')
+        return redirect(url_for('teacher_home'))
+    from flask import Response
+    safe_name = row['original_name'].replace('"', '')
+    return Response(
+        row['file_data'],
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename="{safe_name}"'})
+
+
+@app.route('/teacher/tos/<int:tos_id>/delete', methods=['POST'])
+@role_required('teacher')
+def teacher_delete_tos(tos_id):
+    """Delete one of the teacher's TOS files — only when nothing uses it."""
+    conn = get_db()
+    row = conn.execute('SELECT * FROM tos_files WHERE id=? AND teacher_id=?',
+                       (tos_id, session['user_id'])).fetchone()
+    if not row:
+        flash('TOS file not found.', 'error')
+        return redirect(_bank_url('periodic'))
+    q_n = conn.execute('SELECT COUNT(*) FROM questions WHERE tos_id=?', (tos_id,)).fetchone()[0]
+    e_n = conn.execute('SELECT COUNT(*) FROM exams WHERE tos_id=?', (tos_id,)).fetchone()[0]
+    if q_n or e_n:
+        flash(f'"{row["original_name"]}" is still used by {q_n} question(s) and {e_n} exam(s), '
+              f'so it can\'t be deleted. Remove those questions or replace the exam\'s TOS first.', 'error')
+        return redirect(_bank_url('periodic'))
+    conn.execute('DELETE FROM tos_files WHERE id=?', (tos_id,))
+    conn.commit()
+    flash(f'TOS file "{row["original_name"]}" deleted.', 'success')
+    return redirect(_bank_url('periodic'))
+
 
 @app.route('/teacher/class/<int:class_id>/create-exam', methods=['GET', 'POST'])
 @role_required('teacher')
@@ -2781,20 +3096,34 @@ def teacher_create_exam(class_id):
         fullscreen_required = 1 if request.form.get('fullscreen_required') else 0
         passing_score = request.form.get('passing_score', 50, type=int)
         time_warning = clean_time_warning(request.form.get('time_warning_minutes'), duration)
+        exam_category = _norm_category(request.form.get('exam_category'))
+        tos_list = _teacher_tos_list(conn, session['user_id'])
         if not title or not duration:
             flash('Title and duration are required.', 'error')
-            return render_template('teacher/create_exam.html', cls=cls)
+            return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
+        if not exam_category:
+            flash('Please choose whether this is a Quiz or a Periodic Exam.', 'error')
+            return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
+        # A Periodic Exam is built on ONE Table of Specification, chosen here.
+        # Only questions that belong to this TOS can be added to / imported into the exam.
+        exam_tos_id = None
+        if exam_category == 'periodic':
+            exam_tos_id, tos_err = _resolve_tos(conn, session['user_id'], request.form, request.files)
+            if tos_err:
+                conn.rollback()
+                flash(tos_err, 'error')
+                return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
         exam_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         cur = conn.execute('''
-            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, show_results, randomize_questions, tab_switch_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning_minutes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning))
+            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, show_results, randomize_questions, tab_switch_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning_minutes, exam_category, tos_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning, exam_category, exam_tos_id))
         exam_id = cur.lastrowid
 
         conn.commit()
         flash('Exam created!', 'success')
         return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
-    return render_template('teacher/create_exam.html', cls=cls)
+    return render_template('teacher/create_exam.html', cls=cls, tos_list=_teacher_tos_list(conn, session['user_id']))
 
 @app.route('/teacher/exam/<int:exam_id>')
 @role_required('teacher')
@@ -2811,6 +3140,12 @@ def teacher_exam_detail(exam_id):
     locked = _exam_locked_response(exam_id)
     if locked:
         return locked
+    exam_category = _q_get(exam, 'exam_category', 'quiz') or 'quiz'
+    tos_list = _teacher_tos_list(conn, session['user_id']) if exam_category == 'periodic' else []
+    exam_tos = None
+    if exam_category == 'periodic' and _q_get(exam, 'tos_id'):
+        t = conn.execute('SELECT id, original_name FROM tos_files WHERE id=?', (exam['tos_id'],)).fetchone()
+        exam_tos = dict(t) if t else None
     sections = conn.execute('SELECT * FROM sections WHERE exam_id=? ORDER BY order_index', (exam_id,)).fetchall()
     section_data = []
     for sec in sections:
@@ -2847,18 +3182,21 @@ def teacher_exam_detail(exam_id):
         LEFT JOIN question_bank_groups g ON q.bank_group_id = g.id
         LEFT JOIN classes gc ON g.class_id = gc.id
         WHERE q.is_bank_only = 1 AND q.teacher_id = ?
+          AND COALESCE(q.exam_category, 'quiz') = ?
+          AND (? IS NULL OR q.tos_id = ?)
         ORDER BY q.bank_group_id IS NULL ASC, COALESCE(g.name,''), COALESCE(c.subject_name,''), COALESCE(c.block_name,''), e.title
-    ''', (session['user_id'],)).fetchall()
+    ''', (session['user_id'], exam_category, exam_tos['id'] if exam_tos else None, exam_tos['id'] if exam_tos else None)).fetchall()
     bank_questions = [dict(bq) for bq in raw_bank]
     # Get teacher's bank groups for the import filter (with class info)
     exam_bank_groups = [dict(g) for g in conn.execute('''
         SELECT g.*, c.subject_name, c.block_name
         FROM question_bank_groups g
         LEFT JOIN classes c ON g.class_id = c.id
-        WHERE g.teacher_id=? ORDER BY g.name
-    ''', (session['user_id'],)).fetchall()]
+        WHERE g.teacher_id=? AND COALESCE(g.exam_category, 'quiz') = ? ORDER BY g.name
+    ''', (session['user_id'], exam_category)).fetchall()]
     return render_template('teacher/exam_detail.html', exam=exam, section_data=section_data,
-                           bank_questions=bank_questions, exam_bank_groups=exam_bank_groups)
+                           bank_questions=bank_questions, exam_bank_groups=exam_bank_groups,
+                           exam_category=exam_category, exam_tos=exam_tos, tos_list=tos_list)
 
 @app.route('/teacher/exam/<int:exam_id>/preview')
 @role_required('teacher')
@@ -3904,13 +4242,28 @@ def teacher_import_from_bank(section_id):
     if locked:
         return locked
     question_ids = request.form.getlist('question_ids')
+    exam_row = conn.execute('SELECT exam_category, tos_id FROM exams WHERE id=?', (exam_id,)).fetchone()
+    exam_category = _q_get(exam_row, 'exam_category', 'quiz') or 'quiz'
+    exam_tos_id = _q_get(exam_row, 'tos_id', None) if exam_category == 'periodic' else None
     imported = 0
     skipped = 0
+    wrong_category = 0
     for qid in question_ids:
         # Only this teacher's own bank questions may be imported.
         src = conn.execute('SELECT * FROM questions WHERE id=? AND is_bank_only=1 AND teacher_id=?',
                            (qid, session['user_id'])).fetchone()
         if not src:
+            continue
+        # Quiz and Periodic Exam questions are kept strictly separate.
+        if (_q_get(src, 'exam_category', 'quiz') or 'quiz') != exam_category:
+            wrong_category += 1
+            continue
+        src_tos_id = _q_get(src, 'tos_id', None)
+        if exam_category == 'periodic' and not src_tos_id:
+            wrong_category += 1  # periodic question without a TOS can't be used
+            continue
+        if exam_tos_id and src_tos_id != exam_tos_id:
+            wrong_category += 1  # question belongs to a different TOS than this exam's
             continue
         # Skip if same question text+type already exists in this section
         existing = conn.execute(
@@ -3924,11 +4277,12 @@ def teacher_import_from_bank(section_id):
         # Imported copy becomes a regular exam question — it is NOT part of
         # the bank (is_bank_only left at its default 0) and is not linked to
         # any bank group. Only the Question Bank page can create groups.
+        new_tos_id = src_tos_id if exam_category == 'periodic' else None
         cur = conn.execute('''
-            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive)
-            VALUES (?,?,?,?,?,?,?,?)
+            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive, exam_category, tos_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
         ''', (exam_id, section_id, src['question_text'], src['question_type'], src['points'], src['correct_answer'], count,
-              _q_get(src, 'case_sensitive', 0)))
+              _q_get(src, 'case_sensitive', 0), exam_category, new_tos_id))
         new_qid = cur.lastrowid
         if src['question_type'] == 'multiple_choice':
             choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (qid,)).fetchall()
@@ -3949,6 +4303,9 @@ def teacher_import_from_bank(section_id):
     msg = f'{imported} question(s) imported from bank.'
     if skipped:
         msg += f' {skipped} duplicate(s) skipped.'
+    if wrong_category:
+        msg += (f' {wrong_category} question(s) skipped because they do not belong to this '
+                f'{EXAM_CATEGORY_LABELS[exam_category]}.')
     flash(msg, 'success')
     if _wants_json():
         return jsonify({'ok': True, 'imported': imported, 'skipped': skipped, 'section_id': section_id})
@@ -4026,14 +4383,31 @@ def teacher_add_question(section_id):
             return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
         points = sum(p for _, p in rubric_criteria)  # question's max points = sum of rubric points
     if q_text:
+        # Periodic Exam questions need their own Table of Specification (TOS).
+        # It is not shared at exam level - every question links to its own TOS.
+        exam_row = conn.execute('SELECT exam_category, tos_id FROM exams WHERE id=?', (exam_id,)).fetchone()
+        exam_category = _q_get(exam_row, 'exam_category', 'quiz') or 'quiz'
+        q_tos_id = None
+        if exam_category == 'periodic':
+            # The exam's TOS (picked when the exam was created) applies to every question.
+            q_tos_id = _q_get(exam_row, 'tos_id', None)
+            tos_err = None
+            if not q_tos_id:  # older exams created before this change
+                q_tos_id, tos_err = _resolve_tos(conn, session['user_id'], request.form, request.files)
+            if tos_err:
+                conn.rollback()
+                flash(tos_err, 'error')
+                if _wants_json():
+                    return jsonify({'ok': False, 'error': tos_err}), 400
+                return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
         count = conn.execute('SELECT COUNT(*) FROM questions WHERE section_id=?', (section_id,)).fetchone()[0]
         # Questions added directly to an exam section are NOT part of the
         # question bank and are never linked to a bank group — only the
         # Question Bank page can create/assign bank groups.
         cur = conn.execute('''
-            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive)
-            VALUES (?,?,?,?,?,?,?,?)
-        ''', (exam_id, section_id, q_text, q_type, points, correct, count, case_sensitive))
+            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive, exam_category, tos_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+        ''', (exam_id, section_id, q_text, q_type, points, correct, count, case_sensitive, exam_category, q_tos_id))
         q_id = cur.lastrowid
         if mc_choices is not None:
             for label, ct in mc_choices:
@@ -4111,10 +4485,10 @@ def teacher_delete_question(question_id):
         conn.execute('DELETE FROM questions WHERE id=?', (question_id,))
         conn.commit()
         if request.form.get('redirect_to') == 'bank':
-            return redirect(url_for('teacher_question_bank'))
+            return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
         if exam_id:
             return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
     return redirect(url_for('teacher_home'))
 
 @app.route('/teacher/question/<int:question_id>/edit', methods=['POST'])
@@ -4141,6 +4515,14 @@ def teacher_edit_question(question_id):
     points = request.form.get('points', 1, type=int)
     bank_group_id = request.form.get('bank_group_id') or None
     case_sensitive = 1 if request.form.get('case_sensitive') else 0
+    if bank_group_id:
+        grp = conn.execute(
+            'SELECT id, exam_category FROM question_bank_groups WHERE id=? AND teacher_id=?',
+            (bank_group_id, session['user_id'])
+        ).fetchone()
+        if not grp or (_q_get(grp, 'exam_category', 'quiz') or 'quiz') != (_q_get(q, 'exam_category', 'quiz') or 'quiz'):
+            flash('That group belongs to a different category (Quiz / Periodic Exam).', 'error')
+            return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
     if q['question_type'] == 'fill_blank':
         blank_count = fib_count_blanks(q_text)
         answer_count = len(correct.split('|')) if correct else 0
@@ -4148,7 +4530,7 @@ def teacher_edit_question(question_id):
             flash(f'Fill in the Blank questions need one "___" per answer. Found {blank_count} blank(s) but {answer_count} answer group(s).', 'error')
             redirect_to = request.form.get('redirect_to', '')
             if redirect_to == 'bank' or not exam_id:
-                return redirect(url_for('teacher_question_bank'))
+                return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
             return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
     mc_choices = None
     if q['question_type'] == 'multiple_choice':
@@ -4158,13 +4540,13 @@ def teacher_edit_question(question_id):
             flash(err, 'error')
             redirect_to = request.form.get('redirect_to', '')
             if redirect_to == 'bank' or not exam_id:
-                return redirect(url_for('teacher_question_bank'))
+                return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
             return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
     if q['question_type'] == 'true_false' and correct not in ('True', 'False'):
         flash('Please select whether True or False is the correct answer.', 'error')
         redirect_to = request.form.get('redirect_to', '')
         if redirect_to == 'bank' or not exam_id:
-            return redirect(url_for('teacher_question_bank'))
+            return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
         return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
     rubric_criteria = None
     if q['question_type'] == 'essay':
@@ -4174,12 +4556,26 @@ def teacher_edit_question(question_id):
             flash(err, 'error')
             redirect_to = request.form.get('redirect_to', '')
             if redirect_to == 'bank' or not exam_id:
-                return redirect(url_for('teacher_question_bank'))
+                return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
             return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
         correct = None
         points = sum(p for _, p in rubric_criteria)
+    # A Periodic Exam bank question may get a different TOS (new upload or an
+    # already-uploaded one). It can be swapped but never removed.
+    new_tos_id = None
+    tos_up = request.files.get('tos_file')
+    if (q['is_bank_only'] and (_q_get(q, 'exam_category', 'quiz') or 'quiz') == 'periodic'
+            and ((tos_up and tos_up.filename) or request.form.get('tos_id'))):
+        new_tos_id, tos_err = _resolve_tos(conn, session['user_id'], request.form, request.files,
+                                           _q_get(q, 'tos_id', None))
+        if tos_err:
+            conn.rollback()
+            flash(tos_err, 'error')
+            return redirect(_bank_url('periodic'))
     conn.execute('UPDATE questions SET question_text=?, correct_answer=?, points=?, bank_group_id=?, case_sensitive=? WHERE id=?',
                  (q_text, correct, points, bank_group_id, case_sensitive, question_id))
+    if new_tos_id:
+        conn.execute('UPDATE questions SET tos_id=? WHERE id=?', (new_tos_id, question_id))
     if mc_choices is not None:
         conn.execute('DELETE FROM choices WHERE question_id=?', (question_id,))
         for label, ct in mc_choices:
@@ -4196,7 +4592,7 @@ def teacher_edit_question(question_id):
     flash('Question updated.', 'success')
     redirect_to = request.form.get('redirect_to', '')
     if redirect_to == 'bank' or not exam_id:
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(_q_get(q, 'exam_category', 'quiz')))
     return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
 
 @app.route('/teacher/exams')
@@ -4234,24 +4630,28 @@ def teacher_create_bank_group():
     name = request.form.get('name', '').strip()
     description = request.form.get('description', '').strip()
     class_id = request.form.get('class_id') or None
+    category = _norm_category(request.form.get('exam_category'))
     if not name:
         flash('Group name is required.', 'error')
-        return redirect(url_for('teacher_question_bank'))
-    # Allow same name if it belongs to a different class
+        return redirect(_bank_url(category))
+    if not category:
+        flash('Please choose Quiz or Periodic Exam for this group.', 'error')
+        return redirect(_bank_url())
+    # Allow same name if it belongs to a different class or a different category
     existing = conn.execute(
-        'SELECT id FROM question_bank_groups WHERE teacher_id=? AND name=? AND (class_id=? OR (class_id IS NULL AND ? IS NULL))',
-        (session['user_id'], name, class_id, class_id)
+        'SELECT id FROM question_bank_groups WHERE teacher_id=? AND name=? AND COALESCE(exam_category,\'quiz\')=? AND (class_id=? OR (class_id IS NULL AND ? IS NULL))',
+        (session['user_id'], name, category, class_id, class_id)
     ).fetchone()
     if existing:
         flash(f'A group named "{name}" already exists for that class.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
     conn.execute(
-        'INSERT INTO question_bank_groups (teacher_id, name, description, class_id) VALUES (?,?,?,?)',
-        (session['user_id'], name, description, class_id)
+        'INSERT INTO question_bank_groups (teacher_id, name, description, class_id, exam_category) VALUES (?,?,?,?,?)',
+        (session['user_id'], name, description, class_id, category)
     )
     conn.commit()
     flash(f'Group "{name}" created successfully.', 'success')
-    return redirect(url_for('teacher_question_bank'))
+    return redirect(_bank_url(category))
 
 @app.route('/teacher/question-bank/groups/<int:group_id>/delete', methods=['POST'])
 @role_required('teacher')
@@ -4263,7 +4663,7 @@ def teacher_delete_bank_group(group_id):
     ).fetchone()
     if not grp:
         flash('Group not found.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url())
 
     delete_questions = request.form.get('delete_questions') == '1'
     if delete_questions:
@@ -4283,7 +4683,7 @@ def teacher_delete_bank_group(group_id):
         conn.execute('DELETE FROM question_bank_groups WHERE id=?', (group_id,))
         conn.commit()
         flash(f'Group "{grp["name"]}" deleted. Questions are now ungrouped.', 'success')
-    return redirect(url_for('teacher_question_bank'))
+    return redirect(_bank_url(_q_get(grp, 'exam_category', 'quiz')))
 
 @app.route('/teacher/question-bank/groups/<int:group_id>/rename', methods=['POST'])
 @role_required('teacher')
@@ -4295,16 +4695,16 @@ def teacher_rename_bank_group(group_id):
     ).fetchone()
     if not grp:
         flash('Group not found.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url())
     new_name = request.form.get('name', '').strip()
     if not new_name:
         flash('Group name cannot be empty.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(_q_get(grp, 'exam_category', 'quiz')))
     new_class_id = request.form.get('class_id') or None
     conn.execute('UPDATE question_bank_groups SET name=?, class_id=? WHERE id=?', (new_name, new_class_id, group_id))
     conn.commit()
     flash(f'Group updated to "{new_name}".', 'success')
-    return redirect(url_for('teacher_question_bank'))
+    return redirect(_bank_url(_q_get(grp, 'exam_category', 'quiz')))
 
 @app.route('/teacher/question/<int:question_id>/assign-group', methods=['POST'])
 @role_required('teacher')
@@ -4313,11 +4713,16 @@ def teacher_assign_question_group(question_id):
     group_id = request.form.get('bank_group_id') or None
     if group_id:
         grp = conn.execute(
-            'SELECT id FROM question_bank_groups WHERE id=? AND teacher_id=?',
+            'SELECT id, exam_category FROM question_bank_groups WHERE id=? AND teacher_id=?',
             (group_id, session['user_id'])
         ).fetchone()
         if not grp:
             flash('Invalid group.', 'error')
+            return redirect(url_for('teacher_question_bank'))
+        qrow = conn.execute('SELECT exam_category FROM questions WHERE id=? AND teacher_id=?',
+                            (question_id, session['user_id'])).fetchone()
+        if not qrow or (_q_get(qrow, 'exam_category', 'quiz') or 'quiz') != (_q_get(grp, 'exam_category', 'quiz') or 'quiz'):
+            flash('A question can only be put in a group of the same category (Quiz / Periodic Exam).', 'error')
             return redirect(url_for('teacher_question_bank'))
     conn.execute('UPDATE questions SET bank_group_id=? WHERE id=?', (group_id, question_id))
     conn.commit()
@@ -4329,6 +4734,7 @@ def teacher_assign_question_group(question_id):
 def teacher_bank_add_question():
     """Add a standalone bank-only question (not tied to any exam or section)."""
     conn = get_db()
+    category = _norm_category(request.form.get('exam_category'))
     q_text = request.form.get('question_text', '').strip()
     q_type = request.form.get('question_type', '').strip()
     points = request.form.get('points', 1, type=int)
@@ -4338,9 +4744,12 @@ def teacher_bank_add_question():
     bank_group_id = request.form.get('bank_group_id') or None
     case_sensitive = 1 if request.form.get('case_sensitive') else 0
 
+    if not category:
+        flash('Please choose whether this question is for a Quiz or a Periodic Exam.', 'error')
+        return redirect(_bank_url())
     if not q_text or q_type not in ('multiple_choice', 'short_answer', 'fill_blank', 'essay', 'true_false'):
         flash('Question text and type are required.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
 
     mc_choices = None
     if q_type == 'multiple_choice':
@@ -4348,18 +4757,18 @@ def teacher_bank_add_question():
         ok, correct, err = mc_validate(mc_choices, correct)
         if not ok:
             flash(err, 'error')
-            return redirect(url_for('teacher_question_bank'))
+            return redirect(_bank_url(category))
 
     if q_type == 'fill_blank':
         blank_count = fib_count_blanks(q_text)
         answer_count = len(correct.split('|')) if correct else 0
         if blank_count == 0 or blank_count != answer_count:
             flash(f'Fill in the Blank questions need one "___" per answer. Found {blank_count} blank(s) but {answer_count} answer group(s).', 'error')
-            return redirect(url_for('teacher_question_bank'))
+            return redirect(_bank_url(category))
 
     if q_type == 'true_false' and correct not in ('True', 'False'):
         flash('Please select whether True or False is the correct answer.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
 
     rubric_criteria = None
     if q_type == 'essay':
@@ -4368,7 +4777,7 @@ def teacher_bank_add_question():
         ok, err = rubric_validate(rubric_criteria)
         if not ok:
             flash(err, 'error')
-            return redirect(url_for('teacher_question_bank'))
+            return redirect(_bank_url(category))
         points = sum(p for _, p in rubric_criteria)  # points = sum of rubric criteria
 
     if bank_group_id:
@@ -4379,12 +4788,29 @@ def teacher_bank_add_question():
         if not grp:
             bank_group_id = None
 
+    # A group only holds questions of its own category.
+    if bank_group_id:
+        grp_cat = conn.execute('SELECT exam_category FROM question_bank_groups WHERE id=?',
+                               (bank_group_id,)).fetchone()
+        if (_q_get(grp_cat, 'exam_category', 'quiz') or 'quiz') != category:
+            flash('That group belongs to a different category (Quiz / Periodic Exam).', 'error')
+            return redirect(_bank_url(category))
+
+    # Periodic Exam questions must come with a Table of Specification (Excel).
+    tos_id = None
+    if category == 'periodic':
+        tos_id, tos_err = _resolve_tos(conn, session['user_id'], request.form, request.files)
+        if tos_err:
+            conn.rollback()
+            flash(tos_err, 'error')
+            return redirect(_bank_url(category))
+
     cur = conn.execute(
         '''INSERT INTO questions
            (exam_id, section_id, question_text, question_type, points, correct_answer,
-            order_index, bank_group_id, is_bank_only, teacher_id, case_sensitive)
-           VALUES (NULL, NULL, ?, ?, ?, ?, 0, ?, 1, ?, ?)''',
-        (q_text, q_type, points, correct, bank_group_id, session['user_id'], case_sensitive)
+            order_index, bank_group_id, is_bank_only, teacher_id, case_sensitive, exam_category, tos_id)
+           VALUES (NULL, NULL, ?, ?, ?, ?, 0, ?, 1, ?, ?, ?, ?)''',
+        (q_text, q_type, points, correct, bank_group_id, session['user_id'], case_sensitive, category, tos_id)
     )
     q_id = cur.lastrowid
     if mc_choices is not None:
@@ -4401,7 +4827,7 @@ def teacher_bank_add_question():
             ''', (q_id, crit_text, max_pts, idx))
     conn.commit()
     flash('Question added to bank.', 'success')
-    return redirect(url_for('teacher_question_bank'))
+    return redirect(_bank_url(category))
 
 @app.route('/teacher/question-bank/import', methods=['POST'])
 @role_required('teacher')
@@ -4409,21 +4835,32 @@ def teacher_bank_import_file():
     """Parse an uploaded .txt or .docx file and bulk-add questions to the bank."""
     import re as _re
     conn = get_db()
+    category = _norm_category(request.form.get('exam_category'))
+    if not category:
+        flash('Please choose whether you are importing Quiz or Periodic Exam questions.', 'error')
+        return redirect(_bank_url())
     uploaded = request.files.get('import_file')
     if not uploaded or uploaded.filename == '':
         flash('No file selected.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
+    # Periodic Exam imports must come with a Table of Specification (TOS) Excel
+    # file — check it up front so nothing is parsed or saved without one.
+    tos_upload = request.files.get('tos_file')
+    picked_tos = (request.form.get('tos_id') or '').strip()
+    if category == 'periodic' and (not tos_upload or not tos_upload.filename) and not picked_tos:
+        flash('A Table of Specification (TOS) is required when importing Periodic Exam questions — upload an Excel file or choose one you already uploaded.', 'error')
+        return redirect(_bank_url(category))
 
     if _upload_too_large(uploaded):
         flash(f'File is too large. The maximum allowed size is {MAX_UPLOAD_MB} MB.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
 
     raw_name = uploaded.filename
     ext = raw_name.rsplit('.', 1)[-1].lower() if '.' in raw_name else ''
 
     if ext not in ('txt', 'docx'):
         flash('Unsupported file type. Please upload a .txt or .docx file.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
 
     # Derive group name from filename (strip extension)
     group_name = _re.sub(r'\.[^.]+$', '', raw_name).strip()
@@ -4440,7 +4877,7 @@ def teacher_bank_import_file():
             content = '\n'.join(p.text for p in document.paragraphs)
     except Exception:
         flash('Could not read file. Make sure it is a valid (.txt or .docx) file.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
 
     # ── Parse questions ──────────────────────────────────────────────────────
     # Supported formats:
@@ -4714,19 +5151,28 @@ def teacher_bank_import_file():
             )
         else:
             flash('No questions found. Make sure your file uses the required format.', 'error')
-        return redirect(url_for('teacher_question_bank'))
+        return redirect(_bank_url(category))
 
     # ── Create group (or reuse existing) ────────────────────────────────────
+    # Save the TOS only now that the questions parsed successfully.
+    tos_id = None
+    if category == 'periodic':
+        tos_id, tos_err = _resolve_tos(conn, session['user_id'], request.form, request.files)
+        if tos_err:
+            conn.rollback()
+            flash(tos_err, 'error')
+            return redirect(_bank_url(category))
+
     existing_grp = conn.execute(
-        'SELECT id FROM question_bank_groups WHERE teacher_id=? AND name=?',
-        (session['user_id'], group_name)
+        'SELECT id FROM question_bank_groups WHERE teacher_id=? AND name=? AND COALESCE(exam_category, \'quiz\')=?',
+        (session['user_id'], group_name, category)
     ).fetchone()
     if existing_grp:
         group_id = existing_grp['id']
     else:
         cur = conn.execute(
-            'INSERT INTO question_bank_groups (teacher_id, name, description, class_id) VALUES (?,?,?,NULL)',
-            (session['user_id'], group_name, f'Imported from {raw_name}')
+            'INSERT INTO question_bank_groups (teacher_id, name, description, class_id, exam_category) VALUES (?,?,?,NULL,?)',
+            (session['user_id'], group_name, f'Imported from {raw_name}', category)
         )
         group_id = cur.lastrowid
 
@@ -4750,9 +5196,9 @@ def teacher_bank_import_file():
         cur = conn.execute(
             '''INSERT INTO questions
                (exam_id, section_id, question_text, question_type, points, correct_answer,
-                order_index, bank_group_id, is_bank_only, teacher_id)
-               VALUES (NULL, NULL, ?, ?, ?, ?, 0, ?, 1, ?)''',
-            (q['text'], q['type'], points, q.get('answer'), group_id, session['user_id'])
+                order_index, bank_group_id, is_bank_only, teacher_id, exam_category, tos_id)
+               VALUES (NULL, NULL, ?, ?, ?, ?, 0, ?, 1, ?, ?, ?)''',
+            (q['text'], q['type'], points, q.get('answer'), group_id, session['user_id'], category, tos_id)
         )
         q_id = cur.lastrowid
         if q['type'] == 'multiple_choice':
@@ -4771,7 +5217,7 @@ def teacher_bank_import_file():
         added += 1
 
     conn.commit()
-    msg = f'Imported {added} question{"s" if added != 1 else ""} into group "{group_name}".'
+    msg = f'Imported {added} {EXAM_CATEGORY_LABELS[category]} question{"s" if added != 1 else ""} into group "{group_name}".'
     if duplicates:
         msg += f' Skipped {duplicates} already in this group (same question text).'
     skipped_total = skipped_no_answer + skipped_blank_mismatch + skipped_essay_no_rubric
@@ -4788,13 +5234,15 @@ def teacher_bank_import_file():
         flash(msg, 'info')
     else:
         flash(msg, 'success')
-    return redirect(url_for('teacher_question_bank'))
+    return redirect(_bank_url(category))
 
 
 @app.route('/teacher/question-bank')
 @role_required('teacher')
 def teacher_question_bank():
     conn = get_db()
+    # The bank is split into two separate banks: Quiz and Periodic Exam.
+    category = _norm_category(request.args.get('category'), 'quiz')
     # Fetch only questions explicitly added to the bank (is_bank_only=1).
     # Regular exam-section questions are NOT part of the bank and must not
     # appear here — the bank only contains what the teacher added via
@@ -4806,16 +5254,19 @@ def teacher_question_bank():
                c.subject_name as exam_subject, c.block_name as exam_block,
                s.title as section_title,
                g.name as group_name,
-               gc.subject_name as group_subject, gc.block_name as group_block, gc.id as group_class_id
+               gc.subject_name as group_subject, gc.block_name as group_block, gc.id as group_class_id,
+               q.tos_id, t.original_name as tos_name
         FROM questions q
         LEFT JOIN exams e ON q.exam_id = e.id
         LEFT JOIN classes c ON e.class_id = c.id
         LEFT JOIN sections s ON q.section_id = s.id
         LEFT JOIN question_bank_groups g ON q.bank_group_id = g.id
         LEFT JOIN classes gc ON g.class_id = gc.id
+        LEFT JOIN tos_files t ON q.tos_id = t.id
         WHERE q.is_bank_only = 1 AND q.teacher_id = ?
+          AND COALESCE(q.exam_category, 'quiz') = ?
         ORDER BY q.bank_group_id IS NULL ASC, COALESCE(g.name,''), COALESCE(c.subject_name,''), e.title
-    ''', (session['user_id'],)).fetchall()
+    ''', (session['user_id'], category)).fetchall()
     questions = []
     for q in raw:
         qd = dict(q)
@@ -4847,10 +5298,28 @@ def teacher_question_bank():
         SELECT g.*, c.subject_name, c.block_name, c.year_level
         FROM question_bank_groups g
         LEFT JOIN classes c ON g.class_id = c.id
-        WHERE g.teacher_id=?
+        WHERE g.teacher_id=? AND COALESCE(g.exam_category, 'quiz') = ?
         ORDER BY g.name
-    ''', (session['user_id'],)).fetchall()
+    ''', (session['user_id'], category)).fetchall()
     bank_groups = [dict(g) for g in groups]
+    # Every group of every category, so the Add Question modal can offer the
+    # right groups once the teacher picks Quiz or Periodic Exam in it.
+    all_bank_groups = [dict(g) for g in conn.execute('''
+        SELECT g.*, c.subject_name FROM question_bank_groups g
+        LEFT JOIN classes c ON g.class_id = c.id
+        WHERE g.teacher_id=? ORDER BY g.name
+    ''', (session['user_id'],)).fetchall()]
+
+    # Question counts for the Quiz / Periodic Exam tabs.
+    category_counts = {'quiz': 0, 'periodic': 0}
+    for r in conn.execute('''
+        SELECT COALESCE(exam_category, 'quiz') AS cat, COUNT(*) AS n
+        FROM questions WHERE is_bank_only = 1 AND teacher_id = ? GROUP BY cat
+    ''', (session['user_id'],)).fetchall():
+        if r['cat'] in category_counts:
+            category_counts[r['cat']] = r['n']
+    tos_list = _teacher_tos_list(conn, session['user_id'])
+    tos_files = _teacher_tos_list(conn, session['user_id'], with_usage=True)
 
     # Get teacher's classes for the group create/edit form
     teacher_classes = conn.execute(
@@ -4859,7 +5328,10 @@ def teacher_question_bank():
     ).fetchall()
     teacher_classes = [dict(c) for c in teacher_classes]
 
-    return render_template('teacher/question_bank.html', questions=questions, bank_sections=bank_sections, bank_groups=bank_groups, teacher_classes=teacher_classes)
+    return render_template('teacher/question_bank.html', questions=questions, bank_sections=bank_sections,
+                           bank_groups=bank_groups, all_bank_groups=all_bank_groups, teacher_classes=teacher_classes,
+                           category=category, category_counts=category_counts, tos_list=tos_list,
+                           tos_files=tos_files)
 
 @app.route('/teacher/profile', methods=['GET', 'POST'])
 @role_required('teacher')
@@ -4951,6 +5423,10 @@ def admin_home():
         'active_exams': conn.execute("SELECT COUNT(*) FROM exams WHERE status='active'").fetchone()[0],
         'completed_exams': conn.execute("SELECT COUNT(*) FROM exams WHERE status='completed'").fetchone()[0],
         'upcoming_exams': conn.execute("SELECT COUNT(*) FROM exams WHERE status='upcoming'").fetchone()[0],
+        # Quiz vs Periodic Exam split (teacher side) + uploaded Tables of Specification
+        'quiz_exams':     conn.execute("SELECT COUNT(*) FROM exams WHERE COALESCE(exam_category,'quiz')='quiz'").fetchone()[0],
+        'periodic_exams': conn.execute("SELECT COUNT(*) FROM exams WHERE exam_category='periodic'").fetchone()[0],
+        'tos_files':      conn.execute("SELECT COUNT(*) FROM tos_files").fetchone()[0],
     }
     recent_logins = conn.execute("""
         SELECT ll.email, ll.success, ll.logged_at, u.full_name
@@ -5105,17 +5581,28 @@ def admin_exam_overview():
     f_program = request.args.get('program', '').strip()
     f_year_level = request.args.get('year_level', '').strip()
     f_section = request.args.get('section', '').strip()
+    f_status = request.args.get('status', '').strip()
+    if f_status not in ('upcoming', 'active', 'completed'):
+        f_status = ''
+    # Quiz / Periodic Exam filter (teacher side keeps the two categories separate)
+    f_category = _norm_category(request.args.get('category'), '')
 
     query = '''
-        SELECT e.*, c.subject_name, c.block_name, c.program, c.year_level, u.full_name as teacher_name,
+        SELECT e.*, COALESCE(e.exam_category, 'quiz') AS category,
+               t.original_name AS tos_name,
+               c.subject_name, c.block_name, c.program, c.year_level, u.full_name as teacher_name,
                COUNT(DISTINCT es.id) as session_count
         FROM exams e
         JOIN classes c ON e.class_id = c.id
         JOIN users u ON c.teacher_id = u.id
+        LEFT JOIN tos_files t ON e.tos_id = t.id
         LEFT JOIN exam_sessions es ON e.id = es.exam_id
         WHERE 1=1
     '''
     params = []
+    if f_category:
+        query += " AND COALESCE(e.exam_category, 'quiz') = ?"
+        params.append(f_category)
     if f_program:
         query += ' AND c.program = ?'
         params.append(f_program)
@@ -5125,6 +5612,9 @@ def admin_exam_overview():
     if f_section:
         query += ' AND c.block_name = ?'
         params.append(f_section)
+    if f_status:
+        query += ' AND e.status = ?'
+        params.append(f_status)
     query += ' GROUP BY e.id ORDER BY e.created_at DESC'
 
     exams = conn.execute(query, params).fetchall()
@@ -5137,7 +5627,8 @@ def admin_exam_overview():
 
     return render_template('admin/exam_overview.html', exams=exams,
                            programs=programs, year_levels=year_levels, sections=sections,
-                           f_program=f_program, f_year_level=f_year_level, f_section=f_section)
+                           f_program=f_program, f_year_level=f_year_level, f_section=f_section,
+                           f_category=f_category, f_status=f_status)
 
 @app.route('/admin/logs')
 @role_required('admin')
@@ -5295,6 +5786,11 @@ def admin_reports():
     for r in exam_rows:
         exam_status[r['status']] = r['cnt']
         total_exams += r['cnt']
+    exam_category_counts = {'quiz': 0, 'periodic': 0}
+    for r in conn.execute("SELECT COALESCE(exam_category,'quiz') AS cat, COUNT(*) AS cnt FROM exams GROUP BY cat").fetchall():
+        if r['cat'] in exam_category_counts:
+            exam_category_counts[r['cat']] = r['cnt']
+    tos_count = conn.execute("SELECT COUNT(*) FROM tos_files").fetchone()[0]
     total_logins = conn.execute("SELECT COUNT(*) FROM login_logs").fetchone()[0]
     failed_logins = conn.execute("SELECT COUNT(*) FROM login_logs WHERE success = 0").fetchone()[0]
     login_activity = conn.execute("""
@@ -5324,6 +5820,7 @@ def admin_reports():
         'role_counts': role_counts, 'program_enrollment': program_enrollment,
         'exam_status': exam_status, 'login_activity': login_activity,
         'suspicious_summary': suspicious_summary,
+        'exam_category_counts': exam_category_counts, 'tos_count': tos_count,
     }
     return render_template('admin/reports.html', report=report)
 
@@ -5434,6 +5931,11 @@ def admin_exam_analytics(exam_id):
     class_info = conn.execute('SELECT * FROM classes WHERE id=?', (exam['class_id'],)).fetchone()
     teacher = conn.execute('SELECT full_name FROM users WHERE id=?', (class_info['teacher_id'],)).fetchone()
     teacher_name = teacher['full_name'] if teacher else '—'
+    exam_category = _q_get(exam, 'exam_category', 'quiz') or 'quiz'
+    exam_tos = None
+    if _q_get(exam, 'tos_id'):
+        t = conn.execute('SELECT id, original_name, uploaded_at FROM tos_files WHERE id=?', (exam['tos_id'],)).fetchone()
+        exam_tos = dict(t) if t else None
     sessions = conn.execute("""
         SELECT es.*, u.full_name FROM exam_sessions es
         JOIN users u ON es.student_id = u.id WHERE es.exam_id=? ORDER BY es.score DESC
@@ -5516,7 +6018,23 @@ def admin_exam_analytics(exam_id):
     return render_template('admin/exam_analytics.html',
         exam=exam, class_info=class_info, teacher_name=teacher_name,
         stats=stats, sessions=sessions, hard_questions=hard_questions_list, suspicious=suspicious,
-        section_stats=section_stats)
+        section_stats=section_stats, exam_category=exam_category, exam_tos=exam_tos)
+
+@app.route('/admin/tos/<int:tos_id>/download')
+@role_required('admin')
+def admin_download_tos(tos_id):
+    """Admins can open any teacher's Table of Specification (read-only)."""
+    conn = get_db()
+    row = conn.execute('SELECT * FROM tos_files WHERE id=?', (tos_id,)).fetchone()
+    if not row:
+        flash('TOS file not found.', 'error')
+        return redirect(url_for('admin_exam_overview'))
+    from flask import Response
+    safe_name = row['original_name'].replace('"', '')
+    return Response(
+        row['file_data'],
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename="{safe_name}"'})
 
 # ── Class Management ──
 @app.route('/admin/classes')
@@ -5525,12 +6043,16 @@ def admin_classes():
     conn = get_db()
     classes = conn.execute("""
         SELECT c.*, u.full_name as teacher_name,
+               sem.school_year AS sem_year, sem.term AS sem_term, sem.status AS sem_status,
                COUNT(DISTINCT ce.student_id) as enrollment_count
         FROM classes c JOIN users u ON c.teacher_id = u.id
+        LEFT JOIN semesters sem ON c.semester_id = sem.id
         LEFT JOIN class_enrollments ce ON c.id = ce.class_id
         GROUP BY c.id ORDER BY c.is_active DESC, c.subject_name
     """).fetchall()
-    return render_template('admin/classes.html', classes=classes)
+    semesters = conn.execute('SELECT * FROM semesters ORDER BY school_year DESC, term DESC').fetchall()
+    unassigned = sum(1 for c in classes if c['semester_id'] is None)
+    return render_template('admin/classes.html', classes=classes, semesters=semesters, unassigned=unassigned)
 
 # ── Edit Class ──
 @app.route('/admin/classes/edit/<int:class_id>', methods=['GET', 'POST'])
@@ -5552,16 +6074,626 @@ def admin_edit_class(class_id):
         block_name = request.form.get('block_name', '').strip()
         teacher_id = request.form.get('teacher_id', type=int)
         is_active = request.form.get('is_active', type=int)
+        semester_id = request.form.get('semester_id', type=int)
+        if semester_id and not conn.execute('SELECT 1 FROM semesters WHERE id=?', (semester_id,)).fetchone():
+            semester_id = None
         if subject_name and block_name and teacher_id is not None:
             conn.execute("""
-                UPDATE classes SET subject_name=?, block_name=?, teacher_id=?, is_active=? WHERE id=?
-            """, (subject_name, block_name, teacher_id, is_active, class_id))
+                UPDATE classes SET subject_name=?, block_name=?, teacher_id=?, is_active=?, semester_id=? WHERE id=?
+            """, (subject_name, block_name, teacher_id, is_active, semester_id, class_id))
             conn.commit()
             flash('Class updated successfully!', 'success')
             return redirect(url_for('admin_classes'))
         else:
             flash('Please fill in all fields.', 'error')
-    return render_template('admin/edit_class.html', cls=cls, teachers=teachers, enrolled=enrolled)
+    semesters = conn.execute('SELECT * FROM semesters ORDER BY school_year DESC, term DESC').fetchall()
+    return render_template('admin/edit_class.html', cls=cls, teachers=teachers, enrolled=enrolled, semesters=semesters)
+
+# ── Curriculum: semesters, subjects (prospectus), offerings ─────────────────
+YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year']
+TERMS = ['1st Semester', '2nd Semester', 'Summer']
+
+
+def _parse_units(text):
+    """'2/1' -> (2.0, 1.0); '3' -> (3.0, 0.0); anything else -> None."""
+    t = (text or '').replace(' ', '')
+    m = re.match(r'^(\d+(?:\.\d+)?)(?:/(\d+(?:\.\d+)?))?$', t)
+    if not m:
+        return None
+    return float(m.group(1)), float(m.group(2) or 0)
+
+
+def _units_label(v):
+    if v is None:
+        return ''
+    return str(int(v)) if float(v).is_integer() else str(v)
+
+
+@app.template_filter('units')
+def units_filter(v):
+    return _units_label(v)
+
+
+@app.template_filter('exam_end')
+def exam_end_filter(start, minutes):
+    """Exam start + duration, as 'YYYY-MM-DD HH:MM' (display only)."""
+    if not isinstance(start, str) or not minutes:
+        return '—'
+    try:
+        s = datetime.strptime(start.strip().replace('T', ' ')[:16], '%Y-%m-%d %H:%M')
+        return (s + timedelta(minutes=int(minutes))).strftime('%Y-%m-%d %H:%M')
+    except (ValueError, TypeError):
+        return '—'
+
+
+SCHED_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+
+def _fmt_clock(hhmm):
+    h, m = int(hhmm[:2]), hhmm[3:5]
+    return f"{h % 12 or 12}:{m} {'PM' if h >= 12 else 'AM'}"
+
+
+MAX_SCHED_SLOTS = 7
+MAX_TEACHERS_PER_SUBJECT = 5
+
+
+def _schedule_label(slots):
+    """'Mon 7:30 AM - 10:00 AM; Wed, Fri 1:00 PM - 3:00 PM' (kept in offerings.schedule)."""
+    return '; '.join(f"{', '.join(sl['days'])} {_fmt_clock(sl['start'])} - {_fmt_clock(sl['end'])}" for sl in slots)
+
+
+def _parse_schedule(form, key):
+    """Read the day/time rows of one subject. Each row = some days + one start/end
+    time, so every day can have its own time. Returns (slots, error); no rows
+    filled in means 'no schedule yet'."""
+    tre = re.compile(r'^([01]\d|2[0-3]):[0-5]\d$')
+    slots = []
+    for k in range(MAX_SCHED_SLOTS):
+        days = [d for d in SCHED_DAYS if form.get(f'day_{key}_{k}_{d}')]
+        start = (form.get(f'start_{key}_{k}') or '').strip()
+        end = (form.get(f'end_{key}_{k}') or '').strip()
+        if not days and not start and not end:
+            continue
+        if not days or not tre.match(start) or not tre.match(end):
+            return None, 'each time row needs at least one day and both start and end time'
+        if start >= end:
+            return None, 'end time must be after start time'
+        slots.append({'days': days, 'start': start, 'end': end})
+    for i, x in enumerate(slots):
+        for y in slots[i + 1:]:
+            if set(x['days']) & set(y['days']) and x['start'] < y['end'] and y['start'] < x['end']:
+                return None, 'two time rows overlap on the same day'
+    return slots, None
+
+
+def _slots_of(row):
+    try:
+        return json.loads(row['sched_slots']) if row['sched_slots'] else []
+    except (ValueError, TypeError):
+        return []
+
+
+def _teacher_conflicts(conn, semester_id):
+    """Messages for teachers whose assigned subjects overlap in time on a day."""
+    rows = conn.execute("""
+        SELECT o.teacher_id, u.full_name, s.code, o.sched_slots
+        FROM subject_offerings o JOIN subjects s ON o.subject_id = s.id
+        JOIN users u ON o.teacher_id = u.id
+        WHERE o.semester_id = ? AND o.teacher_id IS NOT NULL AND COALESCE(o.sched_slots, '') <> ''
+        ORDER BY u.full_name, s.code
+    """, (semester_id,)).fetchall()
+    out, seen = [], set()
+    for i, a in enumerate(rows):
+        for b in rows[i + 1:]:
+            if a['teacher_id'] != b['teacher_id']:
+                continue
+            shared = set()
+            for x in _slots_of(a):
+                for y in _slots_of(b):
+                    if x['start'] < y['end'] and y['start'] < x['end']:
+                        shared |= set(x['days']) & set(y['days'])
+            if shared and (a['code'], b['code']) not in seen:
+                seen.add((a['code'], b['code']))
+                out.append(f"Schedule overlap: {a['full_name']} has {a['code']} and {b['code']} at the same time ({', '.join(sorted(shared, key=SCHED_DAYS.index))}).")
+    return out
+
+
+def _clean_subject(form):
+    """Validate subject form fields. Returns (data, error_message)."""
+    program = (form.get('program') or '').strip().upper()
+    year_level = (form.get('year_level') or '').strip()
+    term = (form.get('term') or '').strip()
+    code = (form.get('code') or '').strip().upper()
+    title = (form.get('title') or '').strip()
+    units_text = (form.get('units_text') or '').strip()
+    total_raw = (form.get('total_units') or '').strip()
+    prereq = (form.get('prerequisite') or '').strip()
+    if not (program and year_level and term and code and title):
+        return None, 'Program, year level, semester, course code and title are required.'
+    if year_level not in YEAR_LEVELS:
+        return None, 'Invalid year level.'
+    if term not in TERMS:
+        return None, 'Invalid semester term.'
+    if len(code) > 20 or len(title) > 200 or len(prereq) > 200:
+        return None, 'Code, title or pre-requisite is too long.'
+    parsed = _parse_units(units_text) if units_text else None
+    if units_text and parsed is None:
+        return None, 'Units must look like 2/1 (lecture/lab) or just 3.'
+    total = None
+    if total_raw:
+        try:
+            total = float(total_raw)
+        except ValueError:
+            return None, 'Total units must be a number.'
+        if total < 0 or total > 30:
+            return None, 'Total units is out of range.'
+    elif parsed:
+        total = parsed[0] + parsed[1]
+    if parsed and total is not None and abs((parsed[0] + parsed[1]) - total) > 1e-9:
+        return None, f'Units {units_text} add up to {_units_label(parsed[0] + parsed[1])}, not {_units_label(total)}.'
+    return dict(program=program, year_level=year_level, term=term, code=code, title=title,
+                units_text=units_text, total_units=total, prerequisite=prereq), None
+
+
+# ── Semesters ──
+@app.route('/admin/semesters', methods=['GET', 'POST'])
+@role_required('admin')
+def admin_semesters():
+    conn = get_db()
+    if request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'add':
+            sy = request.form.get('school_year', '').strip()
+            term = request.form.get('term', '').strip()
+            m = re.match(r'^(\d{4})-(\d{4})$', sy)
+            if not m or int(m.group(2)) != int(m.group(1)) + 1:
+                flash('School year must look like 2026-2027.', 'error')
+            elif term not in TERMS:
+                flash('Choose a valid semester.', 'error')
+            else:
+                try:
+                    conn.execute("INSERT INTO semesters (school_year, term, status) VALUES (?,?, 'active')", (sy, term))
+                    conn.commit()
+                    flash(f'Semester {term}, S.Y. {sy} added.', 'success')
+                except sqlite3.IntegrityError:
+                    flash('That semester already exists.', 'error')
+        elif action == 'set_status':
+            sid = request.form.get('semester_id', type=int)
+            status = request.form.get('status')
+            if sid and status in ('active', 'ended'):
+                conn.execute('UPDATE semesters SET status=? WHERE id=?', (status, sid))
+                conn.commit()
+                flash('Semester ' + ('set to Active.' if status == 'active' else 'marked as Ended.'), 'success')
+        elif action == 'delete':
+            sid = request.form.get('semester_id', type=int)
+            used_classes = conn.execute('SELECT COUNT(*) FROM classes WHERE semester_id=?', (sid,)).fetchone()[0]
+            if used_classes:
+                flash(f'{used_classes} class(es) belong to this semester. Move them to another semester (Classes) or End the semester instead of deleting.', 'error')
+            else:
+                conn.execute('DELETE FROM subject_offerings WHERE semester_id=?', (sid,))
+                conn.execute('DELETE FROM semesters WHERE id=?', (sid,))
+                conn.commit()
+                flash('Semester deleted (its subject assignments were removed too).', 'success')
+        return redirect(url_for('admin_semesters'))
+    semesters = conn.execute("""
+        SELECT s.*,
+          (SELECT COUNT(*) FROM classes c WHERE c.semester_id = s.id) AS class_count,
+          (SELECT COUNT(DISTINCT o.subject_id) FROM subject_offerings o WHERE o.semester_id = s.id AND o.is_available = 1) AS offering_count
+        FROM semesters s ORDER BY s.school_year DESC, s.term DESC
+    """).fetchall()
+    return render_template('admin/semesters.html', semesters=semesters, terms=TERMS)
+
+
+# ── Subjects (prospectus) ──
+def _subject_filters():
+    return (request.args.get('program', '').strip(), request.args.get('year_level', '').strip(),
+            request.args.get('term', '').strip(), request.args.get('q', '').strip())
+
+
+def _subjects_query(conn, f_program, f_year, f_term, q):
+    sql = 'SELECT * FROM subjects WHERE 1=1'
+    params = []
+    for val, col in ((f_program, 'program'), (f_year, 'year_level'), (f_term, 'term')):
+        if val:
+            sql += f' AND {col} = ?'
+            params.append(val)
+    if q:
+        sql += ' AND (code LIKE ? OR title LIKE ?)'
+        params += [f'%{q}%', f'%{q}%']
+    sql += ' ORDER BY program, year_level, term, code'
+    return conn.execute(sql, params).fetchall()
+
+
+@app.route('/admin/subjects', methods=['GET', 'POST'])
+@role_required('admin')
+def admin_subjects():
+    conn = get_db()
+    if request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'add':
+            data, err = _clean_subject(request.form)
+            if err:
+                flash(err, 'error')
+            else:
+                try:
+                    conn.execute("""INSERT INTO subjects (program, year_level, term, code, title, units_text, total_units, prerequisite)
+                        VALUES (:program,:year_level,:term,:code,:title,:units_text,:total_units,:prerequisite)""", data)
+                    conn.commit()
+                    flash(f"Subject {data['code']} added.", 'success')
+                except sqlite3.IntegrityError:
+                    flash(f"{data['code']} already exists for {data['program']}.", 'error')
+        elif action == 'delete':
+            sid = request.form.get('subject_id', type=int)
+            conn.execute('DELETE FROM subject_offerings WHERE subject_id=?', (sid,))
+            conn.execute('DELETE FROM subjects WHERE id=?', (sid,))
+            conn.commit()
+            flash('Subject deleted.', 'success')
+        return redirect(url_for('admin_subjects', **{k: v for k, v in request.args.items() if v}))
+    f_program, f_year, f_term, q = _subject_filters()
+    subjects = _subjects_query(conn, f_program, f_year, f_term, q)
+    programs = [r['code'] for r in conn.execute('SELECT code FROM programs ORDER BY code').fetchall()]
+    total_count = conn.execute('SELECT COUNT(*) FROM subjects').fetchone()[0]
+    return render_template('admin/subjects.html', subjects=subjects, programs=programs,
+                           year_levels=YEAR_LEVELS, terms=TERMS, total_count=total_count,
+                           f_program=f_program, f_year=f_year, f_term=f_term, q=q)
+
+
+@app.route('/admin/subjects/<int:subject_id>/edit', methods=['GET', 'POST'])
+@role_required('admin')
+def admin_edit_subject(subject_id):
+    conn = get_db()
+    subj = conn.execute('SELECT * FROM subjects WHERE id=?', (subject_id,)).fetchone()
+    if not subj:
+        flash('Subject not found.', 'error')
+        return redirect(url_for('admin_subjects'))
+    if request.method == 'POST':
+        data, err = _clean_subject(request.form)
+        if err:
+            flash(err, 'error')
+        else:
+            data['id'] = subject_id
+            try:
+                conn.execute("""UPDATE subjects SET program=:program, year_level=:year_level, term=:term, code=:code,
+                    title=:title, units_text=:units_text, total_units=:total_units, prerequisite=:prerequisite WHERE id=:id""", data)
+                conn.commit()
+                flash('Subject updated.', 'success')
+                return redirect(url_for('admin_subjects'))
+            except sqlite3.IntegrityError:
+                flash(f"{data['code']} already exists for {data['program']}.", 'error')
+    programs = [r['code'] for r in conn.execute('SELECT code FROM programs ORDER BY code').fetchall()]
+    return render_template('admin/edit_subject.html', subj=subj, programs=programs,
+                           year_levels=YEAR_LEVELS, terms=TERMS)
+
+
+SUBJECT_IMPORT_HEADERS = {
+    'program': 'program', 'year level': 'year_level', 'semester': 'term',
+    'course code': 'code', 'course title': 'title', 'units (lec/lab)': 'units_text',
+    'total units': 'total_units', 'pre-requisite': 'prerequisite', 'prerequisite': 'prerequisite',
+}
+
+
+@app.route('/admin/subjects/template')
+@role_required('admin')
+def admin_subjects_template():
+    """Blank import file: right headers, one example row, and a short guide."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Subjects'
+    ws.append(['Program', 'Year Level', 'Semester', 'Course Code', 'Course Title',
+               'Units (Lec/Lab)', 'Total Units', 'Pre-requisite'])
+    ws.append(['BSIT', '1st Year', '1st Semester', 'IT 101', 'Example Subject Title', '2/1', 3, 'None'])
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for col, w in zip('ABCDEFGH', (10, 12, 14, 14, 44, 16, 12, 20)):
+        ws.column_dimensions[col].width = w
+    guide = wb.create_sheet('Guide')
+    for line in ('Delete the example row, then add one subject per row.',
+                 'Year Level: 1st Year, 2nd Year, 3rd Year or 4th Year.',
+                 'Semester: 1st Semester, 2nd Semester or Summer.',
+                 'Units (Lec/Lab): lecture/lab, e.g. 2/1. Total Units must equal their sum (2/1 = 3).',
+                 'Keep the header row as is. Importing again updates existing subjects (same Program and Course Code).'):
+        guide.append([line])
+    guide.column_dimensions['A'].width = 100
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name='SPARK_Subjects_Template.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/admin/subjects/import', methods=['POST'])
+@role_required('admin')
+def admin_import_subjects():
+    f = request.files.get('file')
+    if not f or not f.filename:
+        flash('Choose the .xlsx file first.', 'error')
+        return redirect(url_for('admin_subjects'))
+    if not f.filename.lower().endswith('.xlsx'):
+        flash('Only .xlsx files are accepted.', 'error')
+        return redirect(url_for('admin_subjects'))
+    try:
+        wb = load_workbook(f, read_only=True, data_only=True)
+        ws = wb['Subjects'] if 'Subjects' in wb.sheetnames else wb.worksheets[0]
+        rows = list(ws.iter_rows(values_only=True))
+    except Exception:
+        flash('Could not read that file. Use the SPARK prospectus .xlsx.', 'error')
+        return redirect(url_for('admin_subjects'))
+    if not rows:
+        flash('The file is empty.', 'error')
+        return redirect(url_for('admin_subjects'))
+    colmap = {}
+    for i, h in enumerate(rows[0]):
+        key = SUBJECT_IMPORT_HEADERS.get(str(h or '').strip().lower())
+        if key:
+            colmap[key] = i
+    missing = [k for k in ('program', 'year_level', 'term', 'code', 'title') if k not in colmap]
+    if missing:
+        flash('Missing column(s): ' + ', '.join(missing) + '. Keep the original header row.', 'error')
+        return redirect(url_for('admin_subjects'))
+    conn = get_db()
+    added = updated = 0
+    errors = []
+    for n, row in enumerate(rows[1:], start=2):
+        if not row or all(c is None or str(c).strip() == '' for c in row):
+            continue
+        def cell(k):
+            i = colmap.get(k)
+            v = row[i] if i is not None and i < len(row) else None
+            if v is None:
+                return ''
+            if isinstance(v, float) and v.is_integer():
+                v = int(v)
+            return str(v).strip()
+        form = {k: cell(k) for k in ('program', 'year_level', 'term', 'code', 'title', 'units_text', 'total_units', 'prerequisite')}
+        data, err = _clean_subject(form)
+        if err:
+            errors.append(f'row {n}: {err}')
+            continue
+        existing = conn.execute('SELECT id FROM subjects WHERE program=? AND code=?',
+                                (data['program'], data['code'])).fetchone()
+        if existing:
+            data['id'] = existing['id']
+            conn.execute("""UPDATE subjects SET year_level=:year_level, term=:term, title=:title, units_text=:units_text,
+                total_units=:total_units, prerequisite=:prerequisite WHERE id=:id""", data)
+            updated += 1
+        else:
+            conn.execute("""INSERT INTO subjects (program, year_level, term, code, title, units_text, total_units, prerequisite)
+                VALUES (:program,:year_level,:term,:code,:title,:units_text,:total_units,:prerequisite)""", data)
+            added += 1
+    conn.commit()
+    flash(f'Import done: {added} added, {updated} updated, {len(errors)} skipped.', 'success' if not errors else 'info')
+    if errors:
+        flash('Skipped: ' + '; '.join(errors[:5]) + (' ...' if len(errors) > 5 else ''), 'error')
+    return redirect(url_for('admin_subjects'))
+
+
+# ── Offerings: per semester, which subjects are open, who teaches, when ──
+@app.route('/admin/offerings', methods=['GET', 'POST'])
+@role_required('admin')
+def admin_offerings():
+    conn = get_db()
+    semesters = conn.execute('SELECT * FROM semesters ORDER BY school_year DESC, term DESC').fetchall()
+    sem_id = request.values.get('semester_id', type=int)
+    sem = None
+    if sem_id:
+        sem = conn.execute('SELECT * FROM semesters WHERE id=?', (sem_id,)).fetchone()
+    if not sem:
+        sem = next((s for s in semesters if s['status'] == 'active'), semesters[0] if semesters else None)
+    f_program = request.values.get('program', '').strip()
+    f_year = request.values.get('year_level', '').strip()
+    teachers = conn.execute("SELECT id, full_name FROM users WHERE role='teacher' ORDER BY full_name").fetchall()
+    teacher_ids = {t['id'] for t in teachers}
+
+    def load_subjects():
+        sql = 'SELECT * FROM subjects WHERE term = ?'
+        params = [sem['term']]
+        if f_program:
+            sql += ' AND program = ?'
+            params.append(f_program)
+        if f_year:
+            sql += ' AND year_level = ?'
+            params.append(f_year)
+        return conn.execute(sql + ' ORDER BY program, year_level, code', params).fetchall()
+
+    if request.method == 'POST' and sem:
+        saved = removed = 0
+        errors = []
+        for s in load_subjects():
+            sid = s['id']
+            for p in range(MAX_TEACHERS_PER_SUBJECT):
+                key = f'{sid}_{p}'
+                tid = request.form.get(f'teacher_{key}', type=int)
+                if tid not in teacher_ids:
+                    tid = None
+                slots, serr = _parse_schedule(request.form, key)
+                if serr:
+                    errors.append(f"{s['code']}: {serr}")
+                    continue
+                if not tid and not slots:
+                    # nothing filled in for this teacher row -> make sure no stale row stays
+                    removed += conn.execute('DELETE FROM subject_offerings WHERE semester_id=? AND subject_id=? AND position=?',
+                                            (sem['id'], sid, p)).rowcount
+                    continue
+                conn.execute("""INSERT INTO subject_offerings (semester_id, subject_id, is_available, teacher_id, schedule, sched_slots, position)
+                    VALUES (?,?,?,?,?,?,?)
+                    ON CONFLICT(semester_id, subject_id, position) DO UPDATE SET
+                      is_available=excluded.is_available, teacher_id=excluded.teacher_id,
+                      schedule=excluded.schedule, sched_slots=excluded.sched_slots""",
+                    (sem['id'], sid, 1 if tid else 0, tid, _schedule_label(slots) if slots else '',
+                     json.dumps(slots) if slots else None, p))
+                saved += 1
+        conn.commit()
+        if errors:
+            flash('Not saved (fix the schedule): ' + '; '.join(errors[:5]), 'error')
+        for msg in _teacher_conflicts(conn, sem['id']):
+            flash(msg, 'info')
+        if saved or removed:
+            flash(f'Saved {saved} assignment(s)' + (f', removed {removed}.' if removed else '.'), 'success')
+        return redirect(url_for('admin_offerings', semester_id=sem['id'], program=f_program, year_level=f_year))
+    subjects = load_subjects() if sem else []
+    blocks = {}  # subject id -> list of assignment rows (blank one if none yet)
+    if sem:
+        for o in conn.execute('SELECT * FROM subject_offerings WHERE semester_id=? ORDER BY subject_id, position', (sem['id'],)).fetchall():
+            blocks.setdefault(o['subject_id'], []).append({'position': o['position'], 'teacher_id': o['teacher_id'], 'slots': _slots_of(o)})
+    for sub in subjects:
+        blocks.setdefault(sub['id'], [{'position': 0, 'teacher_id': None, 'slots': []}])
+    programs = [r['program'] for r in conn.execute('SELECT DISTINCT program FROM subjects ORDER BY program').fetchall()]
+    return render_template('admin/offerings.html', semesters=semesters, sem=sem, subjects=subjects, blocks=blocks,
+                           teachers=teachers, programs=programs, year_levels=YEAR_LEVELS,
+                           f_program=f_program, f_year=f_year, max_teachers=MAX_TEACHERS_PER_SUBJECT)
+
+
+@app.route('/admin/classes/assign-semester', methods=['POST'])
+@role_required('admin')
+def admin_assign_semester():
+    conn = get_db()
+    sid = request.form.get('semester_id', type=int)
+    if not sid or not conn.execute('SELECT 1 FROM semesters WHERE id=?', (sid,)).fetchone():
+        flash('Choose a semester first.', 'error')
+    else:
+        cur = conn.execute('UPDATE classes SET semester_id=? WHERE semester_id IS NULL', (sid,))
+        conn.commit()
+        flash(f'{cur.rowcount} class(es) assigned to the semester.', 'success')
+    return redirect(url_for('admin_classes'))
+
+
+# ── Admin table exports (CSV) ──
+def _admin_csv_response(filename, header, rows):
+    """Build a UTF-8 (with BOM, so Excel opens it correctly) CSV download."""
+    import csv
+    buf = io.StringIO()
+    w = csv.writer(buf, quoting=csv.QUOTE_ALL)
+    w.writerow(header)
+    for r in rows:
+        w.writerow([_csv_safe(v) for v in r])
+    resp = app.response_class('\ufeff' + buf.getvalue(), mimetype='text/csv')
+    resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return resp
+
+
+@app.route('/admin/export/<kind>')
+@role_required('admin')
+def admin_export(kind):
+    """One export endpoint for every admin table. Passwords are never included."""
+    conn = get_db()
+    stamp = datetime.now().strftime('%Y%m%d')
+    if kind == 'users':
+        rows = conn.execute('''
+            SELECT u.full_name, u.email, u.role, u.program, u.year_level, u.created_at,
+                   creator.full_name AS created_by_name
+            FROM users u LEFT JOIN users creator ON u.created_by = creator.id
+            ORDER BY u.role, u.full_name
+        ''').fetchall()
+        return _admin_csv_response(f'SPARK_Users_{stamp}.csv',
+            ['Name', 'Email', 'Role', 'Program', 'Year Level', 'Created At', 'Created By'],
+            [(r['full_name'], r['email'], r['role'], r['program'] or '', r['year_level'] or '',
+              r['created_at'] or '', r['created_by_name'] or '') for r in rows])
+    if kind == 'classes':
+        rows = conn.execute('''
+            SELECT c.*, u.full_name AS teacher_name,
+                   COUNT(DISTINCT ce.student_id) AS enrollment_count
+            FROM classes c JOIN users u ON c.teacher_id = u.id
+            LEFT JOIN class_enrollments ce ON c.id = ce.class_id
+            GROUP BY c.id ORDER BY c.is_active DESC, c.subject_name
+        ''').fetchall()
+        return _admin_csv_response(f'SPARK_Classes_{stamp}.csv',
+            ['Subject Code', 'Subject Name', 'Block', 'Program', 'Year Level', 'Teacher',
+             'Class Code', 'Students Enrolled', 'Active'],
+            [(r['subject_code'], r['subject_name'], r['block_name'], r['program'], r['year_level'],
+              r['teacher_name'], r['class_code'], r['enrollment_count'],
+              'Yes' if r['is_active'] else 'No') for r in rows])
+    if kind == 'exams':
+        # Same optional filters as the Exam Overview page
+        query = '''
+            SELECT e.*, c.subject_name, c.block_name, c.program, c.year_level,
+                   u.full_name AS teacher_name, COUNT(DISTINCT es.id) AS session_count
+            FROM exams e
+            JOIN classes c ON e.class_id = c.id
+            JOIN users u ON c.teacher_id = u.id
+            LEFT JOIN exam_sessions es ON e.id = es.exam_id
+            WHERE 1=1
+        '''
+        params = []
+        for arg, col in (('program', 'c.program'), ('year_level', 'c.year_level'), ('section', 'c.block_name'), ('status', 'e.status'),
+                         ('category', "COALESCE(e.exam_category, 'quiz')")):
+            val = request.args.get(arg, '').strip()
+            if val:
+                query += f' AND {col} = ?'
+                params.append(val)
+        query += ' GROUP BY e.id ORDER BY e.created_at DESC'
+        rows = conn.execute(query, params).fetchall()
+        return _admin_csv_response(f'SPARK_Exams_{stamp}.csv',
+            ['Exam Title', 'Type', 'Subject', 'Block', 'Program', 'Year Level', 'Teacher',
+             'Duration (min)', 'Status', 'Start Time', 'End Time', 'Created At', 'Sessions'],
+            [(r['title'], 'Periodic Exam' if (r['exam_category'] or 'quiz') == 'periodic' else 'Quiz',
+              r['subject_name'], r['block_name'], r['program'], r['year_level'],
+              r['teacher_name'], r['duration_minutes'], r['status'], (r['scheduled_at'] or ''),
+              exam_end_filter(r['scheduled_at'], r['duration_minutes']).replace('—', ''),
+              r['created_at'] or '', r['session_count']) for r in rows])
+    if kind == 'login-logs':
+        rows = conn.execute('''
+            SELECT ll.*, u.full_name FROM login_logs ll
+            LEFT JOIN users u ON ll.user_id = u.id
+            ORDER BY ll.logged_at DESC
+        ''').fetchall()
+        return _admin_csv_response(f'SPARK_Login_History_{stamp}.csv',
+            ['User', 'Email', 'Result', 'Time'],
+            [(r['full_name'] or '', r['email'] or '', 'Success' if r['success'] else 'Failed',
+              r['logged_at'] or '') for r in rows])
+    if kind == 'suspicious-logs':
+        rows = conn.execute('''
+            SELECT sl.event_type, sl.logged_at, u.full_name, e.title AS exam_title
+            FROM suspicious_logs sl
+            JOIN users u ON sl.student_id = u.id
+            JOIN exams e ON sl.exam_id = e.id
+            WHERE sl.event_type IN ('tab_switch', 'lost_focus', 'window_minimize',
+                                    'window_blur', 'fullscreen_exit')
+            ORDER BY sl.logged_at DESC
+        ''').fetchall()
+        return _admin_csv_response(f'SPARK_Suspicious_Activity_{stamp}.csv',
+            ['Student', 'Exam', 'Event', 'Time'],
+            [(r['full_name'], r['exam_title'], r['event_type'], r['logged_at'] or '') for r in rows])
+    if kind == 'password-resets':
+        rows = conn.execute('''
+            SELECT pr.reset_at, s.full_name AS student_name, s.email AS student_email,
+                   t.full_name AS teacher_name, c.subject_name, c.block_name
+            FROM password_reset_logs pr
+            LEFT JOIN users s ON pr.student_id = s.id
+            LEFT JOIN users t ON pr.teacher_id = t.id
+            LEFT JOIN classes c ON pr.class_id = c.id
+            ORDER BY pr.reset_at DESC, pr.id DESC
+        ''').fetchall()
+        return _admin_csv_response(f'SPARK_Password_Resets_{stamp}.csv',
+            ['Student', 'Student Email', 'Reset By (Teacher)', 'Class', 'Time'],
+            [(r['student_name'] or '', r['student_email'] or '', r['teacher_name'] or '',
+              f"{r['subject_name']} ({r['block_name']})" if r['subject_name'] else '',
+              r['reset_at'] or '') for r in rows])
+    if kind == 'subjects':
+        rows = _subjects_query(conn, *_subject_filters())
+        return _admin_csv_response(f'SPARK_Subjects_{stamp}.csv',
+            ['Program', 'Year Level', 'Semester', 'Course Code', 'Course Title', 'Units (Lec/Lab)', 'Total Units', 'Pre-requisite'],
+            [(r['program'], r['year_level'], r['term'], r['code'], r['title'], r['units_text'] or '',
+              _units_label(r['total_units']), r['prerequisite'] or '') for r in rows])
+    if kind == 'offerings':
+        sid = request.args.get('semester_id', type=int)
+        rows = conn.execute("""
+            SELECT s.program, s.year_level, s.code, s.title, sem.school_year, sem.term,
+                   o.is_available, o.schedule, t.full_name AS teacher_name
+            FROM subject_offerings o
+            JOIN subjects s ON o.subject_id = s.id
+            JOIN semesters sem ON o.semester_id = sem.id
+            LEFT JOIN users t ON o.teacher_id = t.id
+            WHERE (? IS NULL OR o.semester_id = ?)
+            ORDER BY sem.school_year DESC, sem.term, s.program, s.year_level, s.code
+        """, (sid, sid)).fetchall()
+        return _admin_csv_response(f'SPARK_Offerings_{stamp}.csv',
+            ['School Year', 'Semester', 'Program', 'Year Level', 'Course Code', 'Course Title', 'Available', 'Teacher', 'Schedule'],
+            [(r['school_year'], r['term'], r['program'], r['year_level'], r['code'], r['title'],
+              'Yes' if r['is_available'] else 'No', r['teacher_name'] or '', r['schedule'] or '') for r in rows])
+    flash('Unknown export.', 'error')
+    return redirect(url_for('admin_home'))
+
 
 # ── Database Backup / Restore ──
 RESTORE_REQUIRED_TABLES = {'users', 'classes', 'exams', 'questions', 'exam_sessions', 'settings'}

@@ -1,0 +1,5 @@
+<div class="tabs mb-2">
+  <a href="{{ url_for('admin_semesters') }}" style="text-decoration:none" class="tab-btn {% if request.endpoint == 'admin_semesters' %}active{% endif %}"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> 1. Semesters</a>
+  <a href="{{ url_for('admin_subjects') }}" style="text-decoration:none" class="tab-btn {% if request.endpoint in ['admin_subjects','admin_edit_subject'] %}active{% endif %}"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> 2. Subjects</a>
+  <a href="{{ url_for('admin_offerings') }}" style="text-decoration:none" class="tab-btn {% if request.endpoint == 'admin_offerings' %}active{% endif %}"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg> 3. Offerings</a>
+</div>
