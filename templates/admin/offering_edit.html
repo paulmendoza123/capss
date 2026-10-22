@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% block title %}Edit Offering{% endblock %}
+{% macro slot_row(p, k, sl) %}
+<div class="sched-slot">
+  <div class="sched-days">
+    {% for d in ['Mon','Tue','Wed','Thu','Fri','Sat'] %}
+    <label class="sched-day"><input type="checkbox" name="day_{{ subj.id }}_{{ p }}_{{ k }}_{{ d }}" value="1" {% if sl and d in sl.days %}checked{% endif %} /><span>{{ d }}</span></label>
+    {% endfor %}
+  </div>
+  <div class="sched-times">
+    <input type="time" name="start_{{ subj.id }}_{{ p }}_{{ k }}" class="form-control" value="{{ sl.start if sl else '' }}" aria-label="Start time" />
+    <span class="text-muted">to</span>
+    <input type="time" name="end_{{ subj.id }}_{{ p }}_{{ k }}" class="form-control" value="{{ sl.end if sl else '' }}" aria-label="End time" />
+    <button type="button" class="btn btn-ghost btn-sm slot-remove" title="Remove this time" aria-label="Remove this time"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
+  </div>
+</div>
+{% endmacro %}
+{% block content %}
+<style>
+.off-block{padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;background:var(--card2, var(--card))}
+.off-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.sched-days{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.sched-day input{position:absolute;opacity:0;pointer-events:none}
+.sched-day span{display:inline-block;padding:3px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.8rem;cursor:pointer;color:var(--text2);background:var(--card)}
+.sched-day input:checked + span{background:var(--accent);border-color:var(--accent);color:#fff}
+.sched-day input:focus-visible + span{outline:2px solid var(--accent);outline-offset:1px}
+.sched-slot{margin-bottom:8px;padding-bottom:8px;border-bottom:1px dashed var(--border)}
+.sched-slots .sched-slot:last-child{border-bottom:0}
+.sched-times{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sched-times .form-control{width:auto;min-width:130px}
+</style>
+<div class="page-header">
+  <div>
+    <div class="page-title">Assign Teachers &amp; Schedule</div>
+    <div class="page-subtitle"><span class="font-mono" style="color:var(--accent)">{{ subj.code }}</span> · {{ subj.title }} · {{ subj.program }} {{ subj.year_level }} · S.Y. {{ sem.school_year }} {{ sem.term }}</div>
+  </div>
+  <a href="{{ back }}" class="btn btn-ghost">← Back</a>
+</div>
+
+<form method="POST" action="{{ url_for('admin_edit_offering', subject_id=subj.id, semester_id=sem.id, program=f_program, year_level=f_year) }}" id="off-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card" style="max-width:760px">
+    <div class="text-sm text-muted mb-2">One subject can have several teachers (for example Block A and Block B). Each teacher has their own days and times. Removing a teacher or a time only takes effect when you press <strong>Save</strong>.</div>
+    <div id="off-blocks">
+      {% for b in blocks %}
+      {% set p = loop.index0 %}
+      <div class="off-block" data-p="{{ p }}">
+        <div class="off-head">
+          <select name="teacher_{{ subj.id }}_{{ p }}" class="form-select" aria-label="Teacher">
+            <option value="">— Select teacher —</option>
+            {% for t in teachers %}<option value="{{ t.id }}" {% if b.teacher_id == t.id %}selected{% endif %}>{{ t.full_name }}</option>{% endfor %}
+          </select>
+          <button type="button" class="btn btn-danger btn-sm off-remove" title="Remove this teacher" aria-label="Remove this teacher"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
+        </div>
+        <div class="sched-slots">
+          {% for sl in (b.slots or [none]) %}{{ slot_row(p, loop.index0, sl) }}{% endfor %}
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm sched-add"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Add another time</button>
+      </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn btn-ghost btn-sm" id="off-add"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg> Add another teacher</button>
+    <div class="flex gap-2 mt-3" style="padding-top:12px;border-top:1px solid var(--border)">
+      <button type="submit" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-check-circle"/></svg> Save</button>
+      <a href="{{ back }}" class="btn btn-ghost">Cancel</a>
+    </div>
+  </div>
+</form>
+
+<script>
+(function () {
+  var SID = {{ subj.id }}, MAX_SLOTS = {{ max_slots }}, MAX_T = {{ max_teachers }};
+  var DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat'];
+  var TEACHERS = {{ teachers|map(attribute='full_name')|list|tojson }};
+  var TEACHER_IDS = {{ teachers|map(attribute='id')|list|tojson }};
+  var wrap = document.getElementById('off-blocks'), addT = document.getElementById('off-add');
+  var TRASH = '<svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>';
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  function nextFree(used, max) { for (var i = 0; i < max; i++) { if (used.indexOf(i) === -1) return i; } return -1; }
+  function slotHtml(p, k) {
+    var days = DAYS.map(function (d) {
+      return '<label class="sched-day"><input type="checkbox" name="day_' + SID + '_' + p + '_' + k + '_' + d + '" value="1" /><span>' + d + '</span></label>';
+    }).join('');
+    return '<div class="sched-slot"><div class="sched-days">' + days + '</div><div class="sched-times">' +
+      '<input type="time" name="start_' + SID + '_' + p + '_' + k + '" class="form-control" aria-label="Start time" />' +
+      '<span class="text-muted">to</span>' +
+      '<input type="time" name="end_' + SID + '_' + p + '_' + k + '" class="form-control" aria-label="End time" />' +
+      '<button type="button" class="btn btn-ghost btn-sm slot-remove" title="Remove this time" aria-label="Remove this time">' + TRASH + '</button></div></div>';
+  }
+  function blockHtml(p) {
+    var opts = '<option value="">— Select teacher —</option>' + TEACHERS.map(function (n, i) {
+      return '<option value="' + TEACHER_IDS[i] + '">' + esc(n) + '</option>';
+    }).join('');
+    return '<div class="off-block" data-p="' + p + '"><div class="off-head">' +
+      '<select name="teacher_' + SID + '_' + p + '" class="form-select" aria-label="Teacher">' + opts + '</select>' +
+      '<button type="button" class="btn btn-danger btn-sm off-remove" title="Remove this teacher" aria-label="Remove this teacher">' + TRASH + '</button></div>' +
+      '<div class="sched-slots">' + slotHtml(p, 0) + '</div>' +
+      '<button type="button" class="btn btn-ghost btn-sm sched-add">+ Add another time</button></div>';
+  }
+  function hasData(root) {
+    var sel = root.querySelector('select');
+    if (sel && sel.value) return true;
+    return Array.prototype.some.call(root.querySelectorAll('input[type=checkbox], input[type=time]'), function (el) {
+      return el.type === 'checkbox' ? el.checked : !!el.value;
+    });
+  }
+  function clearFields(root) {
+    root.querySelectorAll('select').forEach(function (s) { s.value = ''; });
+    root.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.checked = false; });
+    root.querySelectorAll('input[type=time]').forEach(function (x) { x.value = ''; });
+  }
+  function refresh() {
+    addT.disabled = wrap.querySelectorAll('.off-block').length >= MAX_T;
+    wrap.querySelectorAll('.off-block').forEach(function (b) {
+      var add = b.querySelector('.sched-add');
+      add.disabled = b.querySelectorAll('.sched-slot').length >= MAX_SLOTS;
+    });
+  }
+  addT.addEventListener('click', function () {
+    var used = Array.prototype.map.call(wrap.querySelectorAll('.off-block'), function (b) { return +b.dataset.p; });
+    var p = nextFree(used, 50);
+    if (wrap.querySelectorAll('.off-block').length >= MAX_T) return;
+    wrap.insertAdjacentHTML('beforeend', blockHtml(p));
+    refresh();
+  });
+  wrap.addEventListener('click', function (e) {
+    var add = e.target.closest('.sched-add');
+    if (add) {
+      var blk = add.closest('.off-block'), box = blk.querySelector('.sched-slots');
+      if (box.querySelectorAll('.sched-slot').length >= MAX_SLOTS) return;
+      var used = Array.prototype.map.call(box.querySelectorAll('.sched-slot input[type=time]:first-of-type'), function (el) {
+        return +el.name.match(/_(\d+)$/)[1];
+      });
+      box.insertAdjacentHTML('beforeend', slotHtml(blk.dataset.p, nextFree(used, 50)));
+      refresh(); return;
+    }
+    var rmSlot = e.target.closest('.slot-remove');
+    if (rmSlot) {
+      var row = rmSlot.closest('.sched-slot');
+      if (hasData(row) && !confirm('Remove this time? It is deleted when you press Save.')) return;
+      if (row.parentNode.querySelectorAll('.sched-slot').length > 1) row.remove(); else clearFields(row);
+      refresh(); return;
+    }
+    var rm = e.target.closest('.off-remove');
+    if (rm) {
+      var b = rm.closest('.off-block');
+      if (hasData(b) && !confirm('Remove this teacher and their schedule from this subject? It is deleted when you press Save.')) return;
+      if (wrap.querySelectorAll('.off-block').length > 1) b.remove(); else clearFields(b);
+      refresh();
+    }
+  });
+  refresh();
+})();
+</script>
+{% endblock %}

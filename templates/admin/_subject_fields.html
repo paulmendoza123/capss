@@ -2,8 +2,11 @@
 <div class="form-row">
   <div class="form-group">
     <label class="form-label">Program</label>
-    <input type="text" name="program" class="form-control" list="program-list" value="{{ s.program if s else '' }}" maxlength="20" required />
-    <datalist id="program-list">{% for p in programs %}<option value="{{ p }}">{% endfor %}</datalist>
+    <select name="program" class="form-select" required>
+      {% if not s %}<option value="">Select program</option>{% endif %}
+      {% for p in programs %}<option value="{{ p }}" {% if s and s.program == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
+      {% if s and s.program not in programs %}<option value="{{ s.program }}" selected>{{ s.program }} (not in Programs)</option>{% endif %}
+    </select>
   </div>
   <div class="form-group">
     <label class="form-label">Year Level</label>

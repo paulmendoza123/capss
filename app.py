@@ -6143,28 +6143,57 @@ def _schedule_label(slots):
     return '; '.join(f"{', '.join(sl['days'])} {_fmt_clock(sl['start'])} - {_fmt_clock(sl['end'])}" for sl in slots)
 
 
-def _parse_schedule(form, key):
-    """Read the day/time rows of one subject. Each row = some days + one start/end
-    time, so every day can have its own time. Returns (slots, error); no rows
-    filled in means 'no schedule yet'."""
-    tre = re.compile(r'^([01]\d|2[0-3]):[0-5]\d$')
-    slots = []
-    for k in range(MAX_SCHED_SLOTS):
+def _read_raw_slots(form, key):
+    """Time rows exactly as typed (no validation), skipping completely empty rows."""
+    raw = []
+    for k in range(50):
         days = [d for d in SCHED_DAYS if form.get(f'day_{key}_{k}_{d}')]
         start = (form.get(f'start_{key}_{k}') or '').strip()
         end = (form.get(f'end_{key}_{k}') or '').strip()
-        if not days and not start and not end:
-            continue
-        if not days or not tre.match(start) or not tre.match(end):
+        if days or start or end:
+            raw.append({'days': days, 'start': start, 'end': end})
+    return raw
+
+
+def _validate_slots(raw):
+    """Returns (slots, error). Each row = some days + one start/end time, so every
+    day can have its own time."""
+    tre = re.compile(r'^([01]\d|2[0-3]):[0-5]\d$')
+    if len(raw) > MAX_SCHED_SLOTS:
+        return None, f'at most {MAX_SCHED_SLOTS} time rows per teacher'
+    for sl in raw:
+        if not sl['days'] or not tre.match(sl['start']) or not tre.match(sl['end']):
             return None, 'each time row needs at least one day and both start and end time'
-        if start >= end:
+        if sl['start'] >= sl['end']:
             return None, 'end time must be after start time'
-        slots.append({'days': days, 'start': start, 'end': end})
-    for i, x in enumerate(slots):
-        for y in slots[i + 1:]:
+    for i, x in enumerate(raw):
+        for y in raw[i + 1:]:
             if set(x['days']) & set(y['days']) and x['start'] < y['end'] and y['start'] < x['end']:
                 return None, 'two time rows overlap on the same day'
-    return slots, None
+    return raw, None
+
+
+def _read_offering_form(form, sid, teacher_ids):
+    """Read every teacher block of one subject from the edit form.
+    Returns (blocks, error). Blocks: [{'teacher_id', 'slots'(raw)}], blank ones dropped."""
+    blocks = []
+    for p in range(50):
+        tid = form.get(f'teacher_{sid}_{p}', type=int)
+        if tid not in teacher_ids:
+            tid = None
+        raw = _read_raw_slots(form, f'{sid}_{p}')
+        if tid or raw:
+            blocks.append({'teacher_id': tid, 'slots': raw})
+    err = None
+    if len(blocks) > MAX_TEACHERS_PER_SUBJECT:
+        err = f'at most {MAX_TEACHERS_PER_SUBJECT} teachers per subject'
+    else:
+        for n, bl in enumerate(blocks, 1):
+            _, e = _validate_slots(bl['slots'])
+            if e:
+                err = f'teacher {n}: {e}'
+                break
+    return blocks, err
 
 
 def _slots_of(row):
@@ -6211,6 +6240,8 @@ def _clean_subject(form):
     prereq = (form.get('prerequisite') or '').strip()
     if not (program and year_level and term and code and title):
         return None, 'Program, year level, semester, course code and title are required.'
+    if not get_db().execute('SELECT 1 FROM programs WHERE code=?', (program,)).fetchone():
+        return None, f'Unknown program {program}. Add it first under Programs.'
     if year_level not in YEAR_LEVELS:
         return None, 'Invalid year level.'
     if term not in TERMS:
@@ -6469,79 +6500,96 @@ def admin_import_subjects():
 
 
 # ── Offerings: per semester, which subjects are open, who teaches, when ──
-@app.route('/admin/offerings', methods=['GET', 'POST'])
-@role_required('admin')
-def admin_offerings():
-    conn = get_db()
+def _pick_semester(conn):
     semesters = conn.execute('SELECT * FROM semesters ORDER BY school_year DESC, term DESC').fetchall()
     sem_id = request.values.get('semester_id', type=int)
-    sem = None
-    if sem_id:
-        sem = conn.execute('SELECT * FROM semesters WHERE id=?', (sem_id,)).fetchone()
+    sem = conn.execute('SELECT * FROM semesters WHERE id=?', (sem_id,)).fetchone() if sem_id else None
     if not sem:
-        sem = next((s for s in semesters if s['status'] == 'active'), semesters[0] if semesters else None)
-    f_program = request.values.get('program', '').strip()
-    f_year = request.values.get('year_level', '').strip()
-    teachers = conn.execute("SELECT id, full_name FROM users WHERE role='teacher' ORDER BY full_name").fetchall()
-    teacher_ids = {t['id'] for t in teachers}
+        sem = next((x for x in semesters if x['status'] == 'active'), semesters[0] if semesters else None)
+    return semesters, sem
 
-    def load_subjects():
-        sql = 'SELECT * FROM subjects WHERE term = ?'
-        params = [sem['term']]
+
+@app.route('/admin/offerings')
+@role_required('admin')
+def admin_offerings():
+    """Read-only overview of who teaches what (and when) in a semester."""
+    conn = get_db()
+    semesters, sem = _pick_semester(conn)
+    f_program = request.args.get('program', '').strip()
+    f_year = request.args.get('year_level', '').strip()
+    subjects, summaries = [], {}
+    if sem:
+        sql, params = 'SELECT * FROM subjects WHERE term = ?', [sem['term']]
         if f_program:
             sql += ' AND program = ?'
             params.append(f_program)
         if f_year:
             sql += ' AND year_level = ?'
             params.append(f_year)
-        return conn.execute(sql + ' ORDER BY program, year_level, code', params).fetchall()
-
-    if request.method == 'POST' and sem:
-        saved = removed = 0
-        errors = []
-        for s in load_subjects():
-            sid = s['id']
-            for p in range(MAX_TEACHERS_PER_SUBJECT):
-                key = f'{sid}_{p}'
-                tid = request.form.get(f'teacher_{key}', type=int)
-                if tid not in teacher_ids:
-                    tid = None
-                slots, serr = _parse_schedule(request.form, key)
-                if serr:
-                    errors.append(f"{s['code']}: {serr}")
-                    continue
-                if not tid and not slots:
-                    # nothing filled in for this teacher row -> make sure no stale row stays
-                    removed += conn.execute('DELETE FROM subject_offerings WHERE semester_id=? AND subject_id=? AND position=?',
-                                            (sem['id'], sid, p)).rowcount
-                    continue
-                conn.execute("""INSERT INTO subject_offerings (semester_id, subject_id, is_available, teacher_id, schedule, sched_slots, position)
-                    VALUES (?,?,?,?,?,?,?)
-                    ON CONFLICT(semester_id, subject_id, position) DO UPDATE SET
-                      is_available=excluded.is_available, teacher_id=excluded.teacher_id,
-                      schedule=excluded.schedule, sched_slots=excluded.sched_slots""",
-                    (sem['id'], sid, 1 if tid else 0, tid, _schedule_label(slots) if slots else '',
-                     json.dumps(slots) if slots else None, p))
-                saved += 1
-        conn.commit()
-        if errors:
-            flash('Not saved (fix the schedule): ' + '; '.join(errors[:5]), 'error')
-        for msg in _teacher_conflicts(conn, sem['id']):
-            flash(msg, 'info')
-        if saved or removed:
-            flash(f'Saved {saved} assignment(s)' + (f', removed {removed}.' if removed else '.'), 'success')
-        return redirect(url_for('admin_offerings', semester_id=sem['id'], program=f_program, year_level=f_year))
-    subjects = load_subjects() if sem else []
-    blocks = {}  # subject id -> list of assignment rows (blank one if none yet)
-    if sem:
-        for o in conn.execute('SELECT * FROM subject_offerings WHERE semester_id=? ORDER BY subject_id, position', (sem['id'],)).fetchall():
-            blocks.setdefault(o['subject_id'], []).append({'position': o['position'], 'teacher_id': o['teacher_id'], 'slots': _slots_of(o)})
-    for sub in subjects:
-        blocks.setdefault(sub['id'], [{'position': 0, 'teacher_id': None, 'slots': []}])
+        subjects = conn.execute(sql + ' ORDER BY program, year_level, code', params).fetchall()
+        for o in conn.execute("""SELECT o.subject_id, o.schedule, u.full_name AS teacher_name
+                                 FROM subject_offerings o LEFT JOIN users u ON o.teacher_id = u.id
+                                 WHERE o.semester_id = ? ORDER BY o.subject_id, o.position""", (sem['id'],)).fetchall():
+            summaries.setdefault(o['subject_id'], []).append(o)
     programs = [r['program'] for r in conn.execute('SELECT DISTINCT program FROM subjects ORDER BY program').fetchall()]
-    return render_template('admin/offerings.html', semesters=semesters, sem=sem, subjects=subjects, blocks=blocks,
-                           teachers=teachers, programs=programs, year_levels=YEAR_LEVELS,
-                           f_program=f_program, f_year=f_year, max_teachers=MAX_TEACHERS_PER_SUBJECT)
+    return render_template('admin/offerings.html', semesters=semesters, sem=sem, subjects=subjects, summaries=summaries,
+                           programs=programs, year_levels=YEAR_LEVELS, f_program=f_program, f_year=f_year)
+
+
+@app.route('/admin/offerings/<int:subject_id>/edit', methods=['GET', 'POST'])
+@role_required('admin')
+def admin_edit_offering(subject_id):
+    """Assign teachers and schedules for ONE subject in ONE semester."""
+    conn = get_db()
+    semesters, sem = _pick_semester(conn)
+    subj = conn.execute('SELECT * FROM subjects WHERE id=?', (subject_id,)).fetchone()
+    if not sem or not subj:
+        flash('Subject or semester not found.', 'error')
+        return redirect(url_for('admin_offerings'))
+    f_program = request.values.get('program', '').strip()
+    f_year = request.values.get('year_level', '').strip()
+    teachers = conn.execute("SELECT id, full_name FROM users WHERE role='teacher' ORDER BY full_name").fetchall()
+    teacher_ids = {t['id'] for t in teachers}
+    back = url_for('admin_offerings', semester_id=sem['id'], program=f_program, year_level=f_year)
+    blocks = None
+    if request.method == 'POST':
+        blocks, err = _read_offering_form(request.form, subject_id, teacher_ids)
+        if err:
+            flash('Not saved: ' + err + '.', 'error')
+        else:
+            conn.execute('DELETE FROM subject_offerings WHERE semester_id=? AND subject_id=?', (sem['id'], subject_id))
+            for pos, bl in enumerate(blocks):
+                slots, _ = _validate_slots(bl['slots'])
+                conn.execute("""INSERT INTO subject_offerings (semester_id, subject_id, is_available, teacher_id, schedule, sched_slots, position)
+                    VALUES (?,?,?,?,?,?,?)""",
+                    (sem['id'], subject_id, 1 if bl['teacher_id'] else 0, bl['teacher_id'],
+                     _schedule_label(slots) if slots else '', json.dumps(slots) if slots else None, pos))
+            conn.commit()
+            for msg in _teacher_conflicts(conn, sem['id']):
+                flash(msg, 'info')
+            flash(f"{subj['code']} saved." if blocks else f"{subj['code']}: all assignments removed.", 'success')
+            return redirect(back)
+    if blocks is None:
+        blocks = [{'teacher_id': o['teacher_id'], 'slots': _slots_of(o)} for o in conn.execute(
+            'SELECT * FROM subject_offerings WHERE semester_id=? AND subject_id=? ORDER BY position', (sem['id'], subject_id)).fetchall()]
+    if not blocks:
+        blocks = [{'teacher_id': None, 'slots': []}]
+    return render_template('admin/offering_edit.html', sem=sem, subj=subj, blocks=blocks, teachers=teachers,
+                           f_program=f_program, f_year=f_year, back=back,
+                           max_teachers=MAX_TEACHERS_PER_SUBJECT, max_slots=MAX_SCHED_SLOTS)
+
+
+@app.route('/admin/offerings/<int:subject_id>/clear', methods=['POST'])
+@role_required('admin')
+def admin_clear_offering(subject_id):
+    conn = get_db()
+    semesters, sem = _pick_semester(conn)
+    if sem:
+        n = conn.execute('DELETE FROM subject_offerings WHERE semester_id=? AND subject_id=?', (sem['id'], subject_id)).rowcount
+        conn.commit()
+        flash(f'Removed {n} assignment(s).' if n else 'Nothing to remove.', 'success' if n else 'info')
+    return redirect(url_for('admin_offerings', semester_id=sem['id'] if sem else None,
+                            program=request.form.get('program', ''), year_level=request.form.get('year_level', '')))
 
 
 @app.route('/admin/classes/assign-semester', methods=['POST'])
