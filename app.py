@@ -1263,7 +1263,6 @@ def init_db():
     except Exception:
         pass  # Column already exists
 
-<<<<<<< HEAD
     # Curriculum (admin-managed): semesters, prospectus subjects, and the
     # per-semester offering (available / teacher / schedule) of each subject.
     conn.executescript('''
@@ -1346,8 +1345,6 @@ def init_db():
         """)
         conn.commit()
 
-=======
->>>>>>> origin/main
     # Migration: Quiz vs Periodic Exam separation + Table of Specification (TOS).
     # Every exam, question and bank group belongs to exactly one category
     # ('quiz' or 'periodic'); everything that already exists defaults to 'quiz'.
@@ -5584,12 +5581,9 @@ def admin_exam_overview():
     f_program = request.args.get('program', '').strip()
     f_year_level = request.args.get('year_level', '').strip()
     f_section = request.args.get('section', '').strip()
-<<<<<<< HEAD
     f_status = request.args.get('status', '').strip()
     if f_status not in ('upcoming', 'active', 'completed'):
         f_status = ''
-=======
->>>>>>> origin/main
     # Quiz / Periodic Exam filter (teacher side keeps the two categories separate)
     f_category = _norm_category(request.args.get('category'), '')
 
@@ -5634,11 +5628,7 @@ def admin_exam_overview():
     return render_template('admin/exam_overview.html', exams=exams,
                            programs=programs, year_levels=year_levels, sections=sections,
                            f_program=f_program, f_year_level=f_year_level, f_section=f_section,
-<<<<<<< HEAD
                            f_category=f_category, f_status=f_status)
-=======
-                           f_category=f_category)
->>>>>>> origin/main
 
 @app.route('/admin/logs')
 @role_required('admin')

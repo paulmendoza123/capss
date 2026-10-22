@@ -38,7 +38,6 @@
       <option value="{{ s }}" {% if f_section == s %}selected{% endif %}>{{ s }}</option>
       {% endfor %}
     </select>
-<<<<<<< HEAD
     <select name="status" class="form-select" style="width:auto;min-width:160px" onchange="this.form.submit()">
       <option value="">All Statuses</option>
       <option value="active" {% if f_status == 'active' %}selected{% endif %}>Ongoing</option>
@@ -46,9 +45,6 @@
       <option value="upcoming" {% if f_status == 'upcoming' %}selected{% endif %}>Upcoming</option>
     </select>
     {% if f_program or f_year_level or f_section or f_category or f_status %}
-=======
-    {% if f_program or f_year_level or f_section or f_category %}
->>>>>>> origin/main
     <a href="{{ url_for('admin_exam_overview') }}" class="btn btn-ghost btn-sm">✕ Clear Filters</a>
     {% endif %}
   </form>
@@ -147,11 +143,7 @@
 {% else %}
 <div class="empty-state">
   <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></div>
-<<<<<<< HEAD
   {% if f_program or f_year_level or f_section or f_category or f_status %}
-=======
-  {% if f_program or f_year_level or f_section or f_category %}
->>>>>>> origin/main
   <div class="empty-state-title">No exams match this filter</div>
   <div class="empty-state-text">Try a different program, year level, or section — or clear the filter above.</div>
   {% else %}
