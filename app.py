@@ -2417,7 +2417,8 @@ def teacher_home():
     for o in _teacher_open_offerings(conn, session['user_id']):
         n = conn.execute('SELECT COUNT(*) FROM classes WHERE subject_id=? AND semester_id=? AND teacher_id=?',
                          (o['subject_id'], o['sem_id'], session['user_id'])).fetchone()[0]
-        assigned.append({'o': o, 'class_count': n})
+        if n == 0:  # hide subjects that already have a class; they show up as class cards below
+            assigned.append({'o': o, 'class_count': n})
     return render_template('teacher/classes.html', classes=classes, programs=programs, assigned=assigned)
 
 @app.route('/teacher/class/<int:class_id>/edit', methods=['POST'])
