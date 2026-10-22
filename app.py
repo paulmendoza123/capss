@@ -3297,37 +3297,8 @@ def teacher_exam_monitoring(exam_id):
         ORDER BY sl.logged_at DESC LIMIT 100
     ''', (exam_id,)).fetchall()
 
-    # Results data for the Results tab
-    results = conn.execute('''
-        SELECT u.full_name, u.id as student_id, es.score, es.total_points, es.status, es.submitted_at, es.tab_switch_count,
-               COALESCE(es.needs_grading, 0) as needs_grading
-        FROM exam_sessions es JOIN users u ON es.student_id = u.id
-        WHERE es.exam_id=?
-        ORDER BY es.score DESC
-    ''', (exam_id,)).fetchall()
-
-    submitted_sessions = conn.execute(
-        "SELECT id FROM exam_sessions WHERE exam_id=? AND status='submitted'",
-        (exam_id,)).fetchall()
-    total_submitted = len(submitted_sessions)
-    session_ids = [r['id'] for r in submitted_sessions]
-
-    questions_raw = conn.execute('''
-        SELECT q.id, q.question_text, q.question_type, q.points, q.correct_answer,
-               COALESCE(q.case_sensitive, 0) AS case_sensitive,
-               s.title as section_title, q.order_index, s.order_index as sec_order
-        FROM questions q
-        LEFT JOIN sections s ON q.section_id = s.id
-        WHERE q.exam_id = ?
-        ORDER BY s.order_index, q.order_index
-    ''', (exam_id,)).fetchall()
-
-    question_stats = build_question_stats(conn, exam_id, questions_raw, total_submitted)
-
     return render_template('teacher/exam_monitoring.html', exam=exam,
-                           sessions=active_sessions, past_logs=past_logs, total_q=total_q,
-                           results=results, question_stats=question_stats,
-                           total_submitted=total_submitted)
+                           sessions=active_sessions, past_logs=past_logs, total_q=total_q)
 
 @app.route('/teacher/exam/<int:exam_id>/results')
 @role_required('teacher')
@@ -3340,63 +3311,9 @@ def teacher_exam_results(exam_id):
     if not exam or int(exam["teacher_id"]) != int(session["user_id"]):
         flash('Exam not found.', 'error')
         return redirect(url_for('teacher_home'))
-    results = conn.execute('''
-        SELECT u.full_name, u.first_name, u.last_name, u.id as student_id, es.score, es.total_points, es.status, es.submitted_at, es.tab_switch_count,
-               COALESCE(es.needs_grading, 0) as needs_grading
-        FROM exam_sessions es JOIN users u ON es.student_id = u.id
-        WHERE es.exam_id=?
-        ORDER BY es.score DESC
-    ''', (exam_id,)).fetchall()
-    # (student_id already selected above — used to link to the full result review)
-
-    # Question analysis — how many students answered each question correctly
-    questions_raw = conn.execute('''
-        SELECT q.id, q.question_text, q.question_type, q.points, q.correct_answer,
-               COALESCE(q.case_sensitive, 0) AS case_sensitive,
-               s.title as section_title, q.order_index, s.order_index as sec_order
-        FROM questions q
-        LEFT JOIN sections s ON q.section_id = s.id
-        WHERE q.exam_id = ?
-        ORDER BY s.order_index, q.order_index
-    ''', (exam_id,)).fetchall()
-
-    submitted_sessions = conn.execute('''
-        SELECT id FROM exam_sessions WHERE exam_id=? AND status='submitted'
-    ''', (exam_id,)).fetchall()
-    total_submitted = len(submitted_sessions)
-    session_ids = [r['id'] for r in submitted_sessions]
-
-    question_stats = build_question_stats(conn, exam_id, questions_raw, total_submitted)
-
-    # Per-Section Analytics: aggregate the question stats above by exam section
-    # (e.g. "Section A: Multiple Choice"), so a teacher can see which section
-    # students struggled with overall, not just individual questions.
-    section_order = []
-    section_agg = {}
-    for q in questions_raw:
-        if q['question_type'] == 'essay':
-            continue  # manually graded — not part of the auto-graded analytics
-        title = q['section_title'] or 'Untitled Section'
-        if title not in section_agg:
-            section_agg[title] = {'section_title': title, 'question_count': 0, 'pct_sum': 0}
-            section_order.append(title)
-        section_agg[title]['question_count'] += 1
-    for qs in question_stats:
-        title = qs['section_title'] or 'Untitled Section'
-        section_agg[title]['pct_sum'] += qs['pct']
-    section_stats = []
-    for title in section_order:
-        s = section_agg[title]
-        avg_pct = round(s['pct_sum'] / s['question_count']) if s['question_count'] else 0
-        section_stats.append({
-            'section_title': title,
-            'question_count': s['question_count'],
-            'avg_pct': avg_pct,
-        })
-
-    return render_template('teacher/exam_results.html', exam=exam, results=results,
-                           question_stats=question_stats, total_submitted=total_submitted,
-                           section_stats=section_stats)
+    # The scores table and question analysis are loaded by the page itself
+    # from /api/results/<exam_id> (same data the live monitoring page used to show).
+    return render_template('teacher/exam_results.html', exam=exam)
 
 @app.route('/teacher/exam/<int:exam_id>/student/<int:student_id>/result')
 @role_required('teacher')
@@ -3417,7 +3334,7 @@ def teacher_view_student_result(exam_id, student_id):
     student = conn.execute('SELECT * FROM users WHERE id=?', (student_id,)).fetchone()
     if not student:
         flash('Student not found.', 'error')
-        return redirect(url_for('teacher_exam_monitoring', exam_id=exam_id) + '#results')
+        return redirect(url_for('teacher_exam_results', exam_id=exam_id))
 
     exam_sess = conn.execute(
         'SELECT * FROM exam_sessions WHERE exam_id=? AND student_id=?',
@@ -3425,11 +3342,11 @@ def teacher_view_student_result(exam_id, student_id):
     ).fetchone()
     if not exam_sess:
         flash('This student has not taken this exam yet.', 'error')
-        return redirect(url_for('teacher_exam_monitoring', exam_id=exam_id) + '#results')
+        return redirect(url_for('teacher_exam_results', exam_id=exam_id))
 
     if exam_sess['status'] == 'ongoing':
         flash('This student is still taking the exam.', 'error')
-        return redirect(url_for('teacher_exam_monitoring', exam_id=exam_id) + '#results')
+        return redirect(url_for('teacher_exam_results', exam_id=exam_id))
 
     qs = conn.execute('''
         SELECT q.*, s.title as section_title
@@ -3583,7 +3500,7 @@ def teacher_grade_essay(exam_id, student_id, question_id):
     ).fetchone()
     if not exam_sess:
         flash('Submission not found.', 'error')
-        return redirect(url_for('teacher_exam_monitoring', exam_id=exam_id) + '#results')
+        return redirect(url_for('teacher_exam_results', exam_id=exam_id))
 
     ans = conn.execute(
         'SELECT * FROM answers WHERE session_id=? AND question_id=?', (exam_sess['id'], question_id)
@@ -7176,10 +7093,10 @@ def api_results(exam_id):
 
     results = conn.execute('''
         SELECT u.full_name, u.first_name, u.last_name, u.id as student_id, es.score, es.total_points,
-               es.status, es.submitted_at, es.tab_switch_count
+               es.status, es.submitted_at, es.started_at, es.tab_switch_count
         FROM exam_sessions es JOIN users u ON es.student_id = u.id
         WHERE es.exam_id=?
-        ORDER BY es.score DESC
+        ORDER BY es.started_at ASC, es.id ASC
     ''', (exam_id,)).fetchall()
 
     results_list = []

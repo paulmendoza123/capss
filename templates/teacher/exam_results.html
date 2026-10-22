@@ -6,267 +6,301 @@
     <div class="page-title">{{ exam.title }}</div>
     <div class="page-subtitle">{{ exam.subject_name }} · {{ exam.block_name }}</div>
   </div>
-  <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-    {% set has_essays = question_stats | selectattr('question_type', 'eq', 'essay') | list %}
-    {% if has_essays %}
-    <a href="{{ url_for('teacher_export_essays', exam_id=exam.id) }}" class="btn btn-ghost" style="font-size:0.85rem">⬇️ Export Essays for Grading</a>
-    <button type="button" onclick="document.getElementById('importEssaysModal').style.display='flex'" class="btn btn-ghost" style="font-size:0.85rem"><svg class="icon" aria-hidden="true"><use href="#i-arrow-up"/></svg> Import Graded Essays</button>
-    {% endif %}
-    {% if results %}
-    <button onclick="generateReport()" class="btn btn-primary" style="font-size:0.85rem"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> Generate Report</button>
-    {% endif %}
+  <div class="page-actions">
+    <a href="{{ url_for('teacher_exam_monitoring', exam_id=exam.id) }}" class="btn btn-ghost"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg> Live Monitoring</a>
     <a href="{{ url_for('teacher_class_detail', class_id=exam.class_id) }}" class="btn btn-ghost">← Back to Class</a>
   </div>
 </div>
 
-{% set has_essays = question_stats | selectattr('question_type', 'eq', 'essay') | list %}
-{% if has_essays %}
-<div id="importEssaysModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999;align-items:center;justify-content:center">
-  <div class="card" style="max-width:480px;width:90%;padding:1.5rem">
-    <div class="fw-600" style="font-size:1.05rem;margin-bottom:0.5rem"><svg class="icon" aria-hidden="true"><use href="#i-arrow-up"/></svg> Import Graded Essays</div>
-    <p class="text-muted" style="font-size:0.85rem;margin-bottom:1rem">
-      Upload the same .xlsx file you exported, after filling in rubric scores and feedback offline.
-      This will apply every score in the file and recompute affected students' totals — no need to stay connected to the Raspberry Pi.
-    </p>
-    <form method="POST" action="{{ url_for('teacher_import_essays', exam_id=exam.id) }}" enctype="multipart/form-data">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="file" name="essay_file" accept=".xlsx" required style="width:100%">
-      <div class="form-hint" style="margin-bottom:1rem">Maximum file size: 10 MB</div>
-      <div style="display:flex;gap:0.5rem;justify-content:flex-end">
-        <button type="button" onclick="document.getElementById('importEssaysModal').style.display='none'" class="btn btn-ghost">Cancel</button>
-        <button type="submit" class="btn btn-primary">Upload &amp; Apply Grades</button>
-      </div>
-    </form>
-  </div>
-</div>
-{% endif %}
-
-{% if results %}
-{% set submitted = results | selectattr('status', 'eq', 'submitted') | list %}
-{% set ongoing = results | selectattr('status', 'eq', 'ongoing') | list %}
-{% set terminated = results | selectattr('status', 'eq', 'terminated') | list %}
-{% set pass_pct = exam.passing_score if exam.passing_score is not none else 75 %}
-{% set pass_count = [] %}
-{% for r in submitted %}
-  {% if r.total_points and r.score is not none and (r.score * 100 / r.total_points) >= pass_pct %}
-    {% if pass_count.append(1) %}{% endif %}
-  {% endif %}
-{% endfor %}
-
-<div class="stat-cards mb-3">
+<!-- Summary stats — filled in by JS -->
+<div class="stat-cards mb-3" style="margin-bottom:1.25rem;">
   <div class="stat-card">
-    <div class="stat-label">Submitted</div>
-    <div class="stat-value blue">{{ submitted | length }}</div>
+    <div class="stat-label">Total</div>
+    <div class="stat-value blue" id="res-total">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Ongoing</div>
+    <div class="stat-value orange" id="res-ongoing">—</div>
   </div>
   <div class="stat-card">
     <div class="stat-label">Passed</div>
-    <div class="stat-value green">{{ pass_count | length }}</div>
+    <div class="stat-value green" id="res-passed">—</div>
   </div>
   <div class="stat-card">
     <div class="stat-label">Failed</div>
-    <div class="stat-value red">{{ submitted | length - pass_count | length }}</div>
+    <div class="stat-value red" id="res-failed">—</div>
   </div>
-  {% if ongoing %}
-  <div class="stat-card">
-    <div class="stat-label">Still In Progress</div>
-    <div class="stat-value orange">{{ ongoing | length }}</div>
-  </div>
-  {% endif %}
-  {% if terminated %}
-  <div class="stat-card">
-    <div class="stat-label">Terminated</div>
-    <div class="stat-value red">{{ terminated | length }}</div>
-  </div>
-  {% endif %}
 </div>
 
-<div class="card" style="padding:0;overflow:visible">
-  <div class="table-wrap table-scroll-10">
-    <table style="min-width:540px">
-      <thead>
-        <tr>
-          <th>Student</th>
-          <th>Score</th>
-          <th>Percentage</th>
-          <th>Status</th>
-          <th>Submitted</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in results %}
-        {% set pct = (r.score * 100 / r.total_points)|int if r.total_points and r.score is not none else 0 %}
-        <tr>
-          <td class="fw-600">{{ r.full_name }}</td>
-          <td class="font-mono">
-            {% if r.score is not none %}{{ r.score|score_fmt }} / {{ r.total_points }}{% else %}—{% endif %}
-          </td>
-          <td>
-            {% if r.score is not none and r.total_points %}
-            <span class="fw-600 {% if pct >= pass_pct %}text-success{% else %}text-danger{% endif %}">{{ pct }}%</span>
-            {% else %}—{% endif %}
-          </td>
-          <td>
-            {% if r.status == 'terminated' %}
-              <span class="badge badge-red">Terminated</span>
-            {% elif r.status == 'ongoing' %}
-              <span class="badge badge-yellow">Ongoing</span>
-            {% elif pct >= pass_pct %}
-              <span class="badge badge-green">Passed</span>
-            {% else %}
-              <span class="badge badge-red">Failed</span>
-            {% endif %}
-            {% if r.needs_grading %}
-              <span class="badge badge-yellow text-xs" title="Has essay answers awaiting manual grading">⏳ Needs Grading</span>
-            {% endif %}
-          </td>
-          <td class="text-sm text-muted">{{ (r.submitted_at or '—')|time12 }}</td>
-          <td>
-            {% if r.status == 'submitted' or r.status == 'terminated' %}
-            <a href="{{ url_for('teacher_view_student_result', exam_id=exam.id, student_id=r.student_id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg> View Results</a>
-            {% else %}
-            <span class="text-muted text-sm">—</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<!-- Results table — filled in by JS -->
+<div id="results-container">
+  <div class="empty-state" id="results-loading">
+    <div class="empty-state-icon">⏳</div>
+    <div class="empty-state-title">Loading results…</div>
   </div>
 </div>
-{% if section_stats and total_submitted > 0 %}
-<div class="card mt-3" style="padding:1.25rem">
-  <div class="card-title mb-1">Per-Section Analytics</div>
-  <div class="text-sm text-muted mb-2">Average correctness per exam section, based on {{ total_submitted }} submission(s).</div>
-  <div class="table-wrap">
-    <table style="min-width:420px">
-      <thead>
-        <tr>
-          <th>Section</th>
-          <th>Questions</th>
-          <th>Average Score</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for ss in section_stats %}
-        <tr>
-          <td class="fw-600">{{ ss.section_title }}</td>
-          <td class="font-mono text-sm">{{ ss.question_count }}</td>
-          <td style="min-width:140px">
-            <div style="display:flex;align-items:center;gap:0.5rem">
-              <div style="flex:1;background:var(--border);border-radius:99px;height:8px;overflow:hidden">
-                <div style="height:100%;border-radius:99px;width:{{ ss.avg_pct }}%;
-                  background:{% if ss.avg_pct >= pass_pct %}var(--accent2){% elif ss.avg_pct >= 40 %}#f7c94f{% else %}var(--danger){% endif %}">
-                </div>
-              </div>
-              <span class="text-sm fw-600 {% if ss.avg_pct >= pass_pct %}text-success{% elif ss.avg_pct >= 40 %}text-accent{% else %}text-danger{% endif %}">
-                {{ ss.avg_pct }}%
-              </span>
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
-{% if question_stats and total_submitted > 0 %}
-{% set qtype_meta = {
-  'multiple_choice': ['Multiple Choice', 'badge-blue'],
-  'true_false':      ['True / False',    'badge-green'],
-  'short_answer':    ['Short Answer',    'badge-orange'],
-  'fill_blank':      ['Fill in the Blank','badge-yellow'],
-  'essay':           ['Essay',           'badge-purple']
-} %}
-<div class="card mt-3" style="padding:0;overflow:visible">
-  <div style="padding:1.25rem 1.25rem 0.75rem">
-    <div class="card-title mb-1">Question Analysis</div>
-    <div class="text-sm text-muted mb-2">Sorted by most answered correctly — based on {{ total_submitted }} submission(s). Essays are excluded (graded manually). A student counts as correct only if the whole answer is right.</div>
-  </div>
-  <div class="table-wrap table-scroll-10">
-    <table style="min-width:600px">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Question</th>
-          <th>Type</th>
-          <th>Section</th>
-          <th>Correct</th>
-          <th>Rate</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for qs in question_stats %}
-        <tr>
-          <td class="font-mono text-xs text-muted">{{ qs.number }}</td>
-          <td style="max-width:320px">{{ qs.question_text }}</td>
-          <td class="text-sm">{% set qt = qtype_meta.get(qs.question_type, [qs.question_type or '—', 'badge-gray']) %}<span class="badge {{ qt[1] }}" style="white-space:nowrap">{{ qt[0] }}</span></td>
-          <td class="text-sm text-muted">{{ qs.section_title or '—' }}</td>
-          <td class="font-mono text-sm">{{ qs.correct_count }} / {{ qs.total }}</td>
-          <td style="min-width:140px">
-            <div style="display:flex;align-items:center;gap:0.5rem">
-              <div style="flex:1;background:var(--border);border-radius:99px;height:8px;overflow:hidden">
-                <div style="height:100%;border-radius:99px;width:{{ qs.pct }}%;
-                  background:{% if qs.pct >= pass_pct %}var(--accent2){% elif qs.pct >= 40 %}#f7c94f{% else %}var(--danger){% endif %}">
-                </div>
-              </div>
-              <span class="text-sm fw-600 {% if qs.pct >= pass_pct %}text-success{% elif qs.pct >= 40 %}text-accent{% else %}text-danger{% endif %}">
-                {{ qs.pct }}%
-              </span>
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
 
-{% else %}
-<div class="empty-state">
-  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg></div>
-  <div class="empty-state-title">No submissions yet</div>
-  <div class="empty-state-text">Results will appear here once students submit the exam.</div>
-</div>
-{% endif %}
+<!-- Question analysis — filled in by JS -->
+<div id="question-stats-container"></div>
 
 <script>
-function generateReport() {
-  const examTitle = {{ exam.title | tojson }};
-  const passPct = {{ exam.passing_score if exam.passing_score is not none else 75 }};
+const EXAM_ID = {{ exam.id }};
+const EXAM_TITLE = {{ exam.title | tojson }};
+let lastResultsData = null;
+let lastResultsJson = '';
+let lastQStatsJson = '';
+let resultsSortKey = 'default';
 
-  const rows = [
-    {% for r in results %}
-    {% set pct = (r.score * 100 / r.total_points)|int if r.total_points and r.score is not none else 0 %}
-    {
-      first_name: {{ (r.first_name if (r.first_name or r.last_name) else (r.full_name | first_name)) | tojson }},
-      last_name: {{ (r.last_name if (r.first_name or r.last_name) else (r.full_name | last_name)) | tojson }},
-      score: {{ (r.score|score_fmt|string) | tojson if r.score is not none else '"—"' }},
-      percentage: {{ (pct|string ~ '%') | tojson if r.score is not none and r.total_points else '"—"' }},
-      status: {% if r.status == 'terminated' %}"Terminated"{% elif r.status == 'ongoing' %}"Ongoing"{% elif pct >= pass_pct %}"Passed"{% else %}"Failed"{% endif %},
-      submitted: {{ ((r.submitted_at | string) | time12) | tojson if r.submitted_at else '"—"' }}
-    }{% if not loop.last %},{% endif %}
-    {% endfor %}
-  ];
+function esc(v) {
+  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
+// Display only: 'YYYY-MM-DD HH:MM[:SS]' -> 12-hour time with AM/PM.
+function fmtTime12(v) {
+  if (typeof v !== 'string') return v;
+  const m = v.trim().match(/^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return v;
+  const h = parseInt(m[2], 10);
+  return `${m[1]} ${h % 12 || 12}:${m[3]}${m[4] ? ':' + m[4] : ''} ${h >= 12 ? 'PM' : 'AM'}`;
+}
+
+function getResultStatusLabel(r, passPct) {
+  if (r.status === 'terminated') return 'Terminated';
+  if (r.status === 'ongoing') return 'Ongoing';
+  if (r.pct !== null && r.pct >= passPct) return 'Passed';
+  return 'Failed';
+}
+
+function sortResults(results, passPct) {
+  const sorted = results.slice();
+  const byPct = dir => (a, b) => {
+    if (a.pct === null && b.pct === null) return 0;
+    if (a.pct === null) return 1;   // no score yet (ongoing) sinks to the bottom
+    if (b.pct === null) return -1;
+    return dir * (a.pct - b.pct);
+  };
+  switch (resultsSortKey) {
+    case 'name_asc':  sorted.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '')); break;
+    case 'name_desc': sorted.sort((a, b) => (b.full_name || '').localeCompare(a.full_name || '')); break;
+    case 'score_high': sorted.sort(byPct(-1)); break;
+    case 'score_low':  sorted.sort(byPct(1)); break;
+    case 'status': {
+      const rank = { 'Ongoing': 0, 'Passed': 1, 'Failed': 2, 'Terminated': 3 };
+      sorted.sort((a, b) => rank[getResultStatusLabel(a, passPct)] - rank[getResultStatusLabel(b, passPct)]);
+      break;
+    }
+    case 'submitted_new': sorted.sort((a, b) => (b.submitted_at || '').localeCompare(a.submitted_at || '')); break;
+    case 'submitted_old': sorted.sort((a, b) => (a.submitted_at || '').localeCompare(b.submitted_at || '')); break;
+    default:
+      // Order of entry: first student to enter the exam at the top.
+      sorted.sort((a, b) => {
+        if (!a.started_at && !b.started_at) return 0;
+        if (!a.started_at) return 1;
+        if (!b.started_at) return -1;
+        return String(a.started_at).localeCompare(String(b.started_at));
+      });
+  }
+  return sorted;
+}
+
+const RESULTS_SORT_OPTIONS = [
+  ['default', 'Default'],
+  ['name_asc', 'Name (A–Z)'],
+  ['name_desc', 'Name (Z–A)'],
+  ['score_high', 'Score (High–Low)'],
+  ['score_low', 'Score (Low–High)'],
+  ['status', 'Status'],
+  ['submitted_new', 'Submitted (Newest)'],
+  ['submitted_old', 'Submitted (Oldest)'],
+];
+
+function onResultsSortChange(value) {
+  resultsSortKey = value;
+  renderResultsTable();
+}
+
+function renderResultsTable() {
+  const data = lastResultsData;
+  const container = document.getElementById('results-container');
+  if (!data || !container) return;
+
+  const results = data.results || [];
+  const passPct = data.passing_score ?? 75;
+
+  if (results.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg></div>
+        <div class="empty-state-title">No submissions yet</div>
+        <div class="empty-state-text">Results will appear here once students submit the exam.</div>
+      </div>`;
+    return;
+  }
+
+  const rows = sortResults(results, passPct).map(r => {
+    const scoreCell = r.status === 'ongoing'
+      ? '<span class="text-muted text-sm">In progress…</span>'
+      : r.score !== null && r.total_points ? `${parseInt(r.score)} / ${r.total_points}` : '—';
+    const pctCell = r.status === 'ongoing'
+      ? '—'
+      : r.pct !== null
+        ? `<span class="fw-600 ${r.pct >= passPct ? 'text-success' : 'text-danger'}">${r.pct}%</span>` : '—';
+    let statusBadge;
+    if (r.status === 'terminated') statusBadge = '<span class="badge badge-red">Terminated</span>';
+    else if (r.status === 'ongoing') statusBadge = '<span class="badge badge-yellow">● Ongoing</span>';
+    else if (r.pct !== null && r.pct >= passPct) statusBadge = '<span class="badge badge-green">Passed</span>';
+    else statusBadge = '<span class="badge badge-red">Failed</span>';
+    const actionCell = (r.status === 'submitted' || r.status === 'terminated')
+      ? `<a href="/teacher/exam/${EXAM_ID}/student/${r.student_id}/result" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg> View Results</a>`
+      : '<span class="text-muted text-sm">—</span>';
+    return `<tr>
+      <td class="fw-600">${esc(r.full_name)}</td>
+      <td>${scoreCell}</td>
+      <td>${pctCell}</td>
+      <td>${statusBadge}</td>
+      <td class="text-sm text-muted">${fmtTime12(r.submitted_at) || '—'}</td>
+      <td>${actionCell}</td>
+    </tr>`;
+  }).join('');
+
+  const sortOptionsHtml = RESULTS_SORT_OPTIONS.map(([val, label]) =>
+    `<option value="${val}" ${resultsSortKey === val ? 'selected' : ''}>${label}</option>`).join('');
+
+  const prevScroll = container.querySelector('.table-scroll-10')?.scrollTop || 0;
+  container.innerHTML = `
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;">
+      <label for="results-sort" class="text-sm text-muted">Sort by:</label>
+      <select id="results-sort" class="form-select" style="max-width:190px;padding:0.4rem 0.75rem;font-size:0.85rem"
+              onchange="onResultsSortChange(this.value)">${sortOptionsHtml}</select>
+      <button onclick="generateResultsReport()" class="btn btn-primary" style="font-size:0.85rem"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> Export CSV</button>
+    </div>
+    <div class="card" style="padding:0">
+      <div class="table-wrap table-scroll-10">
+        <table>
+          <thead><tr><th>Student</th><th>Score</th><th>Percentage</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  const newWrap = container.querySelector('.table-scroll-10');
+  if (newWrap) newWrap.scrollTop = prevScroll;
+}
+
+const QUESTION_TYPE_META = {
+  multiple_choice: ['Multiple Choice', 'badge-blue'],
+  true_false:      ['True / False', 'badge-green'],
+  short_answer:    ['Short Answer', 'badge-orange'],
+  fill_blank:      ['Fill in the Blank', 'badge-yellow'],
+  essay:           ['Essay', 'badge-purple']
+};
+function questionTypeBadge(type) {
+  const m = QUESTION_TYPE_META[type] || [type || '\u2014', 'badge-gray'];
+  return `<span class="badge ${m[1]}" style="white-space:nowrap">${m[0]}</span>`;
+}
+
+function updateResults(data) {
+  lastResultsData = data;
+  const results = data.results || [];
+  const passPct = data.passing_score ?? 75;
+  const totalSubmitted = data.total_submitted || 0;
+  const questionStats = data.question_stats || [];
+
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('res-total', results.length);
+  set('res-passed', results.filter(r => r.pct !== null && r.pct >= passPct && r.status === 'submitted').length);
+  set('res-failed', results.filter(r => r.status === 'submitted' && (r.pct === null || r.pct < passPct)).length);
+  set('res-ongoing', results.filter(r => r.status === 'ongoing').length);
+
+  const resultsJson = JSON.stringify(results) + '|' + passPct;
+  if (resultsJson !== lastResultsJson) {
+    lastResultsJson = resultsJson;
+    renderResultsTable();
+  }
+
+  const qContainer = document.getElementById('question-stats-container');
+  const qJson = JSON.stringify(questionStats) + '|' + totalSubmitted + '|' + passPct;
+  if (qContainer && qJson !== lastQStatsJson) {
+    lastQStatsJson = qJson;
+    const prevQScroll = qContainer.querySelector('.table-scroll-10')?.scrollTop || 0;
+    if (questionStats.length > 0 && totalSubmitted > 0) {
+      const qRows = questionStats.map(qs => {
+        const barColor = qs.pct >= passPct ? 'var(--accent2)' : qs.pct >= 40 ? '#f7c94f' : 'var(--danger)';
+        const labelClass = qs.pct >= passPct ? 'text-success' : qs.pct >= 40 ? 'text-accent' : 'text-danger';
+        return `<tr>
+          <td class="font-mono text-xs text-muted">${qs.number}</td>
+          <td style="max-width:320px">${esc(qs.question_text)}</td>
+          <td class="text-sm">${questionTypeBadge(qs.question_type)}</td>
+          <td class="text-sm text-muted">${esc(qs.section_title) || '—'}</td>
+          <td class="font-mono text-sm">${qs.correct_count} / ${qs.total}</td>
+          <td style="min-width:140px">
+            <div style="display:flex;align-items:center;gap:0.5rem">
+              <div style="flex:1;background:var(--border);border-radius:99px;height:8px;overflow:hidden">
+                <div style="height:100%;border-radius:99px;width:${qs.pct}%;background:${barColor}"></div>
+              </div>
+              <span class="text-sm fw-600 ${labelClass}">${qs.pct}%</span>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+      qContainer.innerHTML = `
+        <div class="card mt-3" style="padding:0;overflow:visible">
+          <div style="padding:1.25rem 1.25rem 0.75rem">
+            <div class="card-title mb-1">Question Analysis</div>
+            <div class="text-sm text-muted mb-2">Sorted by most answered correctly — based on ${totalSubmitted} submission(s). Essays are excluded (graded manually). A student counts as correct only if the whole answer is right.</div>
+          </div>
+          <div class="table-wrap table-scroll-10">
+            <table style="min-width:600px">
+              <thead><tr><th>#</th><th>Question</th><th>Type</th><th>Section</th><th>Correct</th><th>Rate</th></tr></thead>
+              <tbody>${qRows}</tbody>
+            </table>
+          </div>
+        </div>`;
+    } else {
+      qContainer.innerHTML = '';
+    }
+    const qWrap = qContainer.querySelector('.table-scroll-10');
+    if (qWrap) qWrap.scrollTop = prevQScroll;
+  }
+}
+
+async function loadResults() {
+  try {
+    const res = await fetch(`/api/results/${EXAM_ID}`);
+    if (!res.ok) throw new Error('bad response');
+    updateResults(await res.json());
+  } catch (e) {
+    const c = document.getElementById('results-container');
+    if (c && !lastResultsData) {
+      c.innerHTML = `<div class="empty-state"><div class="empty-state-title">Could not load results</div>
+        <div class="empty-state-text">Please refresh the page.</div></div>`;
+    }
+  }
+}
+loadResults();
+setInterval(loadResults, 5000);
+
+function generateResultsReport() {
+  const passPct = lastResultsData?.passing_score ?? 75;
+  const results = ((lastResultsData && lastResultsData.results) || []).slice().sort((a, b) =>
+    (a.last_name || '').localeCompare(b.last_name || '', undefined, { sensitivity: 'base' }) ||
+    (a.first_name || '').localeCompare(b.first_name || '', undefined, { sensitivity: 'base' }));
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const csvHeader = ['First Name', 'Last Name', 'Score', 'Percentage', 'Status', 'Submitted'];
-  const csvRows = rows.map(r => [
-    q(r.first_name),
-    q(r.last_name),
-    q(r.score),
-    q(r.percentage),
-    q(r.status),
-    q(r.submitted)
-  ].join(','));
-  const csvContent = [csvHeader.join(','), ...csvRows].join('\n');
-  const blob = new Blob([csvContent], { type: 'text/csv' });
+  const csvRows = results.map(r => {
+    const score = r.score !== null && r.total_points ? `${parseInt(r.score)}` : '—';
+    const pct = r.pct !== null ? `${r.pct}%` : '—';
+    let status;
+    if (r.status === 'terminated') status = 'Terminated';
+    else if (r.status === 'ongoing') status = 'Ongoing';
+    else if (r.pct !== null && r.pct >= passPct) status = 'Passed';
+    else status = 'Failed';
+    return [q(r.first_name), q(r.last_name), q(score), q(pct), q(status), q(fmtTime12(r.submitted_at) || '—')].join(',');
+  });
+  const blob = new Blob([[csvHeader.join(','), ...csvRows].join('\n')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${examTitle.replace(/\s+/g,'_')}_Results.csv`;
+  a.download = `${EXAM_TITLE.replace(/\s+/g, '_')}_Results.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

@@ -54,7 +54,7 @@
     <div class="page-title">{{ exam.title }}</div>
     <div class="page-subtitle">Exam Result — {{ student.full_name }}</div>
   </div>
-  <a href="{{ url_for('teacher_exam_monitoring', exam_id=exam.id) }}#results" class="btn btn-ghost">← Back to Results</a>
+  <a href="{{ url_for('teacher_exam_results', exam_id=exam.id) }}" class="btn btn-ghost">← Back to Results</a>
 </div>
 
 {% if exam_session.status == 'terminated' %}
