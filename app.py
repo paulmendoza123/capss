@@ -380,23 +380,6 @@ def count_fully_correct(conn, exam_id, questions):
     return counts
 
 
-def avg_essay_pct(conn, exam_id, question_id, points):
-    """Average score percentage for one essay question, across every
-    SUBMITTED session that has been graded so far. Ungraded submissions are
-    excluded (not counted as 0%) so the average isn't dragged down just
-    because grading isn't finished yet. Returns None if nothing is graded."""
-    if not points:
-        return None
-    rows = conn.execute('''
-        SELECT manual_score FROM answers
-        WHERE question_id=? AND manual_score IS NOT NULL
-          AND session_id IN (SELECT id FROM exam_sessions WHERE exam_id=? AND status='submitted')
-    ''', (question_id, exam_id)).fetchall()
-    if not rows:
-        return None
-    total_pct = sum((r['manual_score'] / points) * 100 for r in rows)
-    return round(total_pct / len(rows))
-
 def build_question_stats(conn, exam_id, questions_raw, total_submitted):
     """Question Analysis rows, easiest first: for each question, how many of the
     students who submitted got it RIGHT vs. not.
@@ -2567,19 +2550,8 @@ def teacher_class_detail(class_id):
     if reset_notice and reset_notice.get('class_id') != class_id:
         reset_notice = None
 
-    # Old classes of this teacher whose exams can be imported (same subject first)
-    import_sources = conn.execute('''
-        SELECT c.id, c.subject_code, c.subject_name, c.block_name, sem.school_year, sem.term,
-               (SELECT COUNT(*) FROM exams e WHERE e.class_id = c.id) AS exam_count,
-               CASE WHEN c.subject_id = ? OR c.subject_code = ? THEN 0 ELSE 1 END AS other_subject
-        FROM classes c LEFT JOIN semesters sem ON c.semester_id = sem.id
-        WHERE c.teacher_id = ? AND c.id != ?
-          AND EXISTS (SELECT 1 FROM exams e WHERE e.class_id = c.id)
-        ORDER BY other_subject, sem.school_year DESC, c.subject_name, c.block_name
-    ''', (cls['subject_id'], cls['subject_code'], session['user_id'], class_id)).fetchall()
     return render_template('teacher/class_detail.html', cls=cls, students=students, exams=exams,
-                           allowed_emails=allowed_emails_view, reset_notice=reset_notice,
-                           import_sources=import_sources)
+                           allowed_emails=allowed_emails_view, reset_notice=reset_notice)
 
 def _get_owned_class(conn, class_id):
     """Fetch a class only if it belongs to the currently logged-in teacher."""
@@ -2908,26 +2880,6 @@ def _copy_class_exams(conn, src_class_id, dst_class_id):
                 ''', (new_question_id, c['choice_label'], c['choice_text']))
 
     return len(exams)
-
-
-@app.route('/teacher/class/<int:class_id>/import-content', methods=['POST'])
-@role_required('teacher')
-def teacher_import_class_content(class_id):
-    """Copy the exams of one of the teacher's OLD classes into this (new) class."""
-    conn = get_db()
-    dst = _get_owned_class(conn, class_id)
-    src_id = request.form.get('source_class_id', type=int)
-    src = _get_owned_class(conn, src_id) if src_id else None
-    if not dst or not src or src['id'] == dst['id']:
-        flash('Choose one of your other classes to import from.', 'error')
-        return redirect(url_for('teacher_class_detail', class_id=class_id))
-    n = _copy_class_exams(conn, src['id'], dst['id'])
-    conn.commit()
-    if n:
-        flash(f'Imported {n} exam(s) from {src["subject_name"]} ({src["block_name"]}). They are closed and unscheduled; review them before opening.', 'success')
-    else:
-        flash('That class has no exams to import.', 'info')
-    return redirect(url_for('teacher_class_detail', class_id=class_id))
 
 
 @app.route('/teacher/class/<int:class_id>/copy', methods=['POST'])
@@ -4706,29 +4658,6 @@ def teacher_rename_bank_group(group_id):
     conn.commit()
     flash(f'Group updated to "{new_name}".', 'success')
     return redirect(_bank_url(_q_get(grp, 'exam_category', 'quiz')))
-
-@app.route('/teacher/question/<int:question_id>/assign-group', methods=['POST'])
-@role_required('teacher')
-def teacher_assign_question_group(question_id):
-    conn = get_db()
-    group_id = request.form.get('bank_group_id') or None
-    if group_id:
-        grp = conn.execute(
-            'SELECT id, exam_category FROM question_bank_groups WHERE id=? AND teacher_id=?',
-            (group_id, session['user_id'])
-        ).fetchone()
-        if not grp:
-            flash('Invalid group.', 'error')
-            return redirect(url_for('teacher_question_bank'))
-        qrow = conn.execute('SELECT exam_category FROM questions WHERE id=? AND teacher_id=?',
-                            (question_id, session['user_id'])).fetchone()
-        if not qrow or (_q_get(qrow, 'exam_category', 'quiz') or 'quiz') != (_q_get(grp, 'exam_category', 'quiz') or 'quiz'):
-            flash('A question can only be put in a group of the same category (Quiz / Periodic Exam).', 'error')
-            return redirect(url_for('teacher_question_bank'))
-    conn.execute('UPDATE questions SET bank_group_id=? WHERE id=?', (group_id, question_id))
-    conn.commit()
-    flash('Question group updated.', 'success')
-    return redirect(url_for('teacher_question_bank'))
 
 @app.route('/teacher/question-bank/add', methods=['POST'])
 @role_required('teacher')

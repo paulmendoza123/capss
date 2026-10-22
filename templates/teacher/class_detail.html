@@ -23,22 +23,6 @@
 
 <!-- EXAMS TAB -->
 <div class="tab-content active" data-tab="exams">
-  {% if import_sources %}
-  <div class="card mb-2">
-    <form method="POST" action="{{ url_for('teacher_import_class_content', class_id=cls.id) }}" class="flex gap-2" style="flex-wrap:wrap;align-items:center"
-          onsubmit="return confirm('Import the exams of the selected class into this class? Importing twice will duplicate them.')">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <span class="text-sm fw-600">Import exams from a previous class</span>
-      <select name="source_class_id" class="form-select" style="width:auto;min-width:260px" required>
-        <option value="">Select class</option>
-        {% for s in import_sources %}
-        <option value="{{ s.id }}">{{ s.subject_code }} · {{ s.subject_name }} ({{ s.block_name }}){% if s.term %} · {{ s.term }} {{ s.school_year }}{% endif %} — {{ s.exam_count }} exam(s)</option>
-        {% endfor %}
-      </select>
-      <button type="submit" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg> Import</button>
-    </form>
-  </div>
-  {% endif %}
   {% if exams %}
   {% for exam in exams %}
   <div class="exam-card mb-1">
