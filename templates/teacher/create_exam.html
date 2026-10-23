@@ -25,6 +25,15 @@
       </select>
       <div class="form-hint">Quizzes and Periodic Exams use separate question banks — their questions can't be mixed. Periodic Exams are built on one Table of Specification (TOS).</div>
     </div>
+    <div class="form-group" id="periodicTypeGroup" style="display:none">
+      <label class="form-label">Periodic Exam Type <span style="color:var(--danger)">*</span></label>
+      <select name="periodic_type" id="periodicType" class="form-select" style="max-width:260px">
+        <option value="" disabled selected>— Select Midterm or Final —</option>
+        <option value="midterm">Midterm Exam</option>
+        <option value="final">Final Exam</option>
+      </select>
+      <div class="form-hint">Tell the system whether this Periodic Exam is the Midterm or the Final Exam.</div>
+    </div>
     <div class="form-group" id="tosGroup" style="display:none">
       <label class="form-label">Table of Specification (TOS) <span style="color:var(--danger)">*</span></label>
       <input type="file" name="tos_file" id="tosFile" class="form-control" accept=".xlsx,.xlsm" style="padding:0.45rem 0.65rem;font-size:0.9rem">
@@ -135,6 +144,14 @@ function syncTosField() {
   const sel = document.getElementById('tosSelect');
   const periodic = cat && cat.value === 'periodic';
   group.style.display = periodic ? '' : 'none';
+  // Midterm / Final dropdown: only shown (and required) for Periodic Exams
+  const ptGroup = document.getElementById('periodicTypeGroup');
+  const ptSel = document.getElementById('periodicType');
+  if (ptGroup && ptSel) {
+    ptGroup.style.display = periodic ? '' : 'none';
+    ptSel.required = periodic;
+    if (!periodic) ptSel.value = '';
+  }
   // the file is only required when periodic AND no existing TOS was picked
   file.required = periodic && !(sel && sel.value);
 }

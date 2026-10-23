@@ -7,7 +7,7 @@
     <div class="page-subtitle">All exams across the system</div>
   </div>
   <div class="page-actions">
-    <a href="{{ url_for('admin_export', kind='exams', program=f_program, year_level=f_year_level, section=f_section, status=f_status, category=f_category) }}" class="btn btn-ghost"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</a>
+    <a href="{{ url_for('admin_export', kind='exams', program=f_program, year_level=f_year_level, section=f_section, status=f_status, category=f_category, school_year=f_school_year) }}" class="btn btn-ghost"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</a>
   </div>
 </div>
 
@@ -15,10 +15,17 @@
 <div class="card mb-2">
   <div class="text-xs text-muted mb-1 fw-600">Filter Results</div>
   <form method="GET" class="flex gap-2 filter-bar" style="flex-wrap:wrap;align-items:center">
+    <select name="school_year" class="form-select" style="width:auto;min-width:160px" onchange="this.form.submit()">
+      <option value="">All School Years</option>
+      {% for sy in school_years %}
+      <option value="{{ sy }}" {% if f_school_year == sy %}selected{% endif %}>S.Y. {{ sy }}</option>
+      {% endfor %}
+    </select>
     <select name="category" class="form-select" style="width:auto;min-width:160px" onchange="this.form.submit()">
       <option value="">All Types</option>
       <option value="quiz" {% if f_category == 'quiz' %}selected{% endif %}>Quiz</option>
-      <option value="periodic" {% if f_category == 'periodic' %}selected{% endif %}>Periodic Exam</option>
+      <option value="periodic_midterm" {% if f_category == 'periodic_midterm' %}selected{% endif %}>Periodic Exam (Midterm)</option>
+      <option value="periodic_final" {% if f_category == 'periodic_final' %}selected{% endif %}>Periodic Exam (Final)</option>
     </select>
     <select name="program" class="form-select" style="width:auto;min-width:160px" onchange="this.form.submit()">
       <option value="">All Programs</option>
@@ -44,7 +51,7 @@
       <option value="completed" {% if f_status == 'completed' %}selected{% endif %}>Completed</option>
       <option value="upcoming" {% if f_status == 'upcoming' %}selected{% endif %}>Upcoming</option>
     </select>
-    {% if f_program or f_year_level or f_section or f_category or f_status %}
+    {% if f_school_year or f_program or f_year_level or f_section or f_category or f_status %}
     <a href="{{ url_for('admin_exam_overview') }}" class="btn btn-ghost btn-sm">✕ Clear Filters</a>
     {% endif %}
   </form>
@@ -86,7 +93,9 @@
         <tr data-title="{{ exam.title|lower }}" data-teacher="{{ exam.teacher_name|lower }}" data-class="{{ exam.subject_name|lower }} {{ exam.block_name|lower }}" data-status="{{ exam.status }}">
           <td class="fw-600">{{ exam.title }}</td>
           <td>
-            {% if exam.category == 'periodic' %}<span class="badge badge-purple">Periodic Exam</span>
+            {% if exam.category == 'periodic' %}
+            {% if exam.periodic_type|periodic_label %}<span class="badge {{ exam.periodic_type|exam_type_badge }}">{{ exam.periodic_type|periodic_label }}</span>
+            {% else %}<span class="badge badge-purple">Periodic Exam</span>{% endif %}
             {% else %}<span class="badge badge-gray">Quiz</span>{% endif %}
             {% if exam.category == 'periodic' and exam.tos_name %}
             <div class="text-xs text-muted" title="Table of Specification">TOS: {{ exam.tos_name.rsplit('.', 1)[0] if '.' in exam.tos_name else exam.tos_name }}</div>
@@ -143,9 +152,9 @@
 {% else %}
 <div class="empty-state">
   <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></div>
-  {% if f_program or f_year_level or f_section or f_category or f_status %}
+  {% if f_school_year or f_program or f_year_level or f_section or f_category or f_status %}
   <div class="empty-state-title">No exams match this filter</div>
-  <div class="empty-state-text">Try a different program, year level, or section — or clear the filter above.</div>
+  <div class="empty-state-text">Try a different school year, program, year level, or section — or clear the filter above.</div>
   {% else %}
   <div class="empty-state-title">No exams yet</div>
   <div class="empty-state-text">Exams created by teachers will appear here.</div>

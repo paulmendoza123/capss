@@ -6,7 +6,7 @@
   <div>
     <div class="page-title">{{ exam.title }}</div>
     <div class="page-subtitle">{{ exam.subject_name }}
-      · <span class="badge {{ 'badge-purple' if exam_category == 'periodic' else 'badge-gray' }}">{{ 'Periodic Exam' if exam_category == 'periodic' else 'Quiz' }}</span>
+      · <span class="badge {{ (exam.periodic_type|exam_type_badge) if exam_category == 'periodic' else 'badge-gray' }}">{{ ((exam.periodic_type|periodic_label) or 'Periodic Exam') if exam_category == 'periodic' else 'Quiz' }}</span>
       · {% if exam.status == 'upcoming' and not exam.is_ready %}<span class="badge badge-gray">Draft</span>
         {% elif exam.status == 'upcoming' %}<span class="badge badge-gray">Upcoming</span>
         {% elif exam.status == 'active' %}<span class="badge badge-green">Active</span>

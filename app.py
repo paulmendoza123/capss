@@ -1346,6 +1346,9 @@ def init_db():
     for _stmt in (
         "ALTER TABLE exams ADD COLUMN exam_category TEXT DEFAULT 'quiz'",
         "ALTER TABLE exams ADD COLUMN tos_id INTEGER REFERENCES tos_files(id)",
+        # Which kind of Periodic Exam this is: 'midterm' or 'final' (NULL for quizzes
+        # and for periodic exams created before this option existed).
+        "ALTER TABLE exams ADD COLUMN periodic_type TEXT",
         "ALTER TABLE questions ADD COLUMN exam_category TEXT DEFAULT 'quiz'",
         "ALTER TABLE questions ADD COLUMN tos_id INTEGER REFERENCES tos_files(id)",
         "ALTER TABLE question_bank_groups ADD COLUMN exam_category TEXT DEFAULT 'quiz'",
@@ -2916,6 +2919,43 @@ EXAM_CATEGORIES = ('quiz', 'periodic')
 EXAM_CATEGORY_LABELS = {'quiz': 'Quiz', 'periodic': 'Periodic Exam'}
 TOS_EXTENSIONS = ('xlsx', 'xlsm')
 
+# A Periodic Exam is either a Midterm or a Final Exam.
+PERIODIC_TYPES = ('midterm', 'final')
+PERIODIC_TYPE_LABELS = {'midterm': 'Midterm Exam', 'final': 'Final Exam'}
+
+
+def _norm_periodic_type(value, default=None):
+    """'midterm' / 'final' (case-insensitive) or `default` when missing/invalid."""
+    v = (value or '').strip().lower()
+    return v if v in PERIODIC_TYPES else default
+
+
+# Badge color per periodic type (untyped periodic exams keep the original color).
+PERIODIC_TYPE_BADGES = {'midterm': 'badge-orange', 'final': 'badge-blue'}
+
+
+@app.template_filter('exam_type_badge')
+def exam_type_badge(periodic_type):
+    """CSS badge class: Midterm = orange, Final = blue, untyped periodic = purple."""
+    return PERIODIC_TYPE_BADGES.get((periodic_type or '').strip().lower(), 'badge-purple')
+
+
+# Admin filter values: 'quiz', 'periodic_midterm', 'periodic_final'
+# -> (SQL condition on the exams table alias `e`, bind params)
+def _exam_type_filter(value):
+    value = (value or '').strip().lower()
+    if value == 'quiz':
+        return "COALESCE(e.exam_category, 'quiz') = 'quiz'", []
+    if value in ('periodic_midterm', 'periodic_final'):
+        return "e.exam_category = 'periodic' AND e.periodic_type = ?", [value.split('_', 1)[1]]
+    return None, []
+
+
+@app.template_filter('periodic_label')
+def periodic_label(periodic_type):
+    """'midterm' -> 'Midterm Exam', 'final' -> 'Final Exam' ('' when not set)."""
+    return PERIODIC_TYPE_LABELS.get((periodic_type or '').strip().lower(), '')
+
 
 def _norm_category(value, default=None):
     """'quiz' / 'periodic' (case-insensitive) or `default` when missing/invalid."""
@@ -3050,12 +3090,17 @@ def teacher_create_exam(class_id):
         passing_score = request.form.get('passing_score', 50, type=int)
         time_warning = clean_time_warning(request.form.get('time_warning_minutes'), duration)
         exam_category = _norm_category(request.form.get('exam_category'))
+        # Only Periodic Exams carry a Midterm / Final Exam type; quizzes never do.
+        periodic_type = _norm_periodic_type(request.form.get('periodic_type')) if exam_category == 'periodic' else None
         tos_list = _teacher_tos_list(conn, session['user_id'])
         if not title or not duration:
             flash('Title and duration are required.', 'error')
             return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
         if not exam_category:
             flash('Please choose whether this is a Quiz or a Periodic Exam.', 'error')
+            return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
+        if exam_category == 'periodic' and not periodic_type:
+            flash('Please choose whether this Periodic Exam is a Midterm or a Final Exam.', 'error')
             return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
         # A Periodic Exam is built on ONE Table of Specification, chosen here.
         # Only questions that belong to this TOS can be added to / imported into the exam.
@@ -3068,9 +3113,9 @@ def teacher_create_exam(class_id):
                 return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
         exam_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         cur = conn.execute('''
-            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, show_results, randomize_questions, tab_switch_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning_minutes, exam_category, tos_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning, exam_category, exam_tos_id))
+            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, show_results, randomize_questions, tab_switch_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning_minutes, exam_category, tos_id, periodic_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning, exam_category, exam_tos_id, periodic_type))
         exam_id = cur.lastrowid
 
         conn.commit()
@@ -5431,8 +5476,14 @@ def admin_exam_overview():
     f_status = request.args.get('status', '').strip()
     if f_status not in ('upcoming', 'active', 'completed'):
         f_status = ''
+    # School Year (from the semester the exam's class belongs to), e.g. "2026-2027"
+    f_school_year = request.args.get('school_year', '').strip()
     # Quiz / Periodic Exam filter (teacher side keeps the two categories separate)
-    f_category = _norm_category(request.args.get('category'), '')
+    # Values: quiz | periodic_midterm | periodic_final
+    f_category = request.args.get('category', '').strip().lower()
+    cat_sql, cat_params = _exam_type_filter(f_category)
+    if not cat_sql:
+        f_category = ''
 
     query = '''
         SELECT e.*, COALESCE(e.exam_category, 'quiz') AS category,
@@ -5443,13 +5494,17 @@ def admin_exam_overview():
         JOIN classes c ON e.class_id = c.id
         JOIN users u ON c.teacher_id = u.id
         LEFT JOIN tos_files t ON e.tos_id = t.id
+        LEFT JOIN semesters sem ON c.semester_id = sem.id
         LEFT JOIN exam_sessions es ON e.id = es.exam_id
         WHERE 1=1
     '''
     params = []
-    if f_category:
-        query += " AND COALESCE(e.exam_category, 'quiz') = ?"
-        params.append(f_category)
+    if f_school_year:
+        query += ' AND sem.school_year = ?'
+        params.append(f_school_year)
+    if cat_sql:
+        query += ' AND ' + cat_sql
+        params.extend(cat_params)
     if f_program:
         query += ' AND c.program = ?'
         params.append(f_program)
@@ -5471,11 +5526,13 @@ def admin_exam_overview():
     programs = [r['program'] for r in conn.execute('SELECT DISTINCT program FROM classes ORDER BY program').fetchall()]
     year_levels = [r['year_level'] for r in conn.execute('SELECT DISTINCT year_level FROM classes ORDER BY year_level').fetchall()]
     sections = [r['block_name'] for r in conn.execute('SELECT DISTINCT block_name FROM classes ORDER BY block_name').fetchall()]
+    school_years = [r['school_year'] for r in conn.execute('SELECT DISTINCT school_year FROM semesters ORDER BY school_year DESC').fetchall()]
 
     return render_template('admin/exam_overview.html', exams=exams,
                            programs=programs, year_levels=year_levels, sections=sections,
+                           school_years=school_years,
                            f_program=f_program, f_year_level=f_year_level, f_section=f_section,
-                           f_category=f_category, f_status=f_status)
+                           f_category=f_category, f_status=f_status, f_school_year=f_school_year)
 
 @app.route('/admin/logs')
 @role_required('admin')
@@ -5779,6 +5836,7 @@ def admin_exam_analytics(exam_id):
     teacher = conn.execute('SELECT full_name FROM users WHERE id=?', (class_info['teacher_id'],)).fetchone()
     teacher_name = teacher['full_name'] if teacher else '—'
     exam_category = _q_get(exam, 'exam_category', 'quiz') or 'quiz'
+    exam_periodic_type = _q_get(exam, 'periodic_type') if exam_category == 'periodic' else None
     exam_tos = None
     if _q_get(exam, 'tos_id'):
         t = conn.execute('SELECT id, original_name, uploaded_at FROM tos_files WHERE id=?', (exam['tos_id'],)).fetchone()
@@ -5865,7 +5923,8 @@ def admin_exam_analytics(exam_id):
     return render_template('admin/exam_analytics.html',
         exam=exam, class_info=class_info, teacher_name=teacher_name,
         stats=stats, sessions=sessions, hard_questions=hard_questions_list, suspicious=suspicious,
-        section_stats=section_stats, exam_category=exam_category, exam_tos=exam_tos)
+        section_stats=section_stats, exam_category=exam_category, exam_tos=exam_tos,
+        exam_periodic_type=exam_periodic_type)
 
 @app.route('/admin/tos/<int:tos_id>/download')
 @role_required('admin')
@@ -6506,22 +6565,28 @@ def admin_export(kind):
             FROM exams e
             JOIN classes c ON e.class_id = c.id
             JOIN users u ON c.teacher_id = u.id
+            LEFT JOIN semesters sem ON c.semester_id = sem.id
             LEFT JOIN exam_sessions es ON e.id = es.exam_id
             WHERE 1=1
         '''
         params = []
-        for arg, col in (('program', 'c.program'), ('year_level', 'c.year_level'), ('section', 'c.block_name'), ('status', 'e.status'),
-                         ('category', "COALESCE(e.exam_category, 'quiz')")):
+        for arg, col in (('school_year', 'sem.school_year'), ('program', 'c.program'), ('year_level', 'c.year_level'), ('section', 'c.block_name'), ('status', 'e.status')):
             val = request.args.get(arg, '').strip()
             if val:
                 query += f' AND {col} = ?'
                 params.append(val)
+        _cat_sql, _cat_params = _exam_type_filter(request.args.get('category'))
+        if _cat_sql:
+            query += ' AND ' + _cat_sql
+            params.extend(_cat_params)
         query += ' GROUP BY e.id ORDER BY e.created_at DESC'
         rows = conn.execute(query, params).fetchall()
         return _admin_csv_response(f'SPARK_Exams_{stamp}.csv',
             ['Exam Title', 'Type', 'Subject', 'Block', 'Program', 'Year Level', 'Teacher',
              'Duration (min)', 'Status', 'Start Time', 'End Time', 'Created At', 'Sessions'],
-            [(r['title'], 'Periodic Exam' if (r['exam_category'] or 'quiz') == 'periodic' else 'Quiz',
+            [(r['title'],
+              (periodic_label(r['periodic_type']) or 'Periodic Exam')
+              if (r['exam_category'] or 'quiz') == 'periodic' else 'Quiz',
               r['subject_name'], r['block_name'], r['program'], r['year_level'],
               r['teacher_name'], r['duration_minutes'], r['status'], (r['scheduled_at'] or ''),
               exam_end_filter(r['scheduled_at'], r['duration_minutes']).replace('—', ''),

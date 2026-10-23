@@ -53,7 +53,9 @@
             data-class="{{ (exam.subject_name ~ ' ' ~ exam.block_name) | lower }}"
             data-classkey="{{ (exam.subject_name ~ ' · ' ~ exam.block_name) | lower }}"
             data-status="{{ exam.status }}">
-          <td class="fw-600">{{ exam.title }}</td>
+          <td class="fw-600">{{ exam.title }}
+            {% if exam.exam_category == 'periodic' %}<div><span class="badge {{ exam.periodic_type|exam_type_badge }}">{{ (exam.periodic_type|periodic_label) or 'Periodic Exam' }}</span></div>{% endif %}
+          </td>
           <td class="text-sm">{{ exam.subject_name }} · {{ exam.block_name }}</td>
           <td class="font-mono text-sm">{{ exam.duration_minutes }}m</td>
           <td>

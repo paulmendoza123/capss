@@ -32,6 +32,7 @@
         <div class="exam-card-meta">
           <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam.duration_minutes }} min</span>
           {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at|time12 }}</span>{% endif %}
+          {% if exam.exam_category == 'periodic' %}<span class="exam-meta-item"><span class="badge {{ exam.periodic_type|exam_type_badge }}">{{ (exam.periodic_type|periodic_label) or 'Periodic Exam' }}</span></span>{% endif %}
           <span class="exam-meta-item">Tab limit: {{ exam.tab_switch_limit }}</span>
           {% if exam.exam_code %}
           <span class="exam-meta-item" style="font-family:monospace;font-weight:700;letter-spacing:0.15em;color:var(--accent);background:rgba(108,99,255,0.12);padding:0.1rem 0.5rem;border-radius:5px;border:1px solid rgba(108,99,255,0.3)"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> {{ exam.exam_code }}</span>
