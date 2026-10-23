@@ -6286,10 +6286,11 @@ def admin_subjects():
 @role_required('admin')
 def admin_edit_subject(subject_id):
     conn = get_db()
+    back = url_for('admin_subjects', **{k: v for k, v in request.args.items() if v})
     subj = conn.execute('SELECT * FROM subjects WHERE id=?', (subject_id,)).fetchone()
     if not subj:
         flash('Subject not found.', 'error')
-        return redirect(url_for('admin_subjects'))
+        return redirect(back)
     if request.method == 'POST':
         data, err = _clean_subject(request.form)
         if err:
@@ -6301,12 +6302,9 @@ def admin_edit_subject(subject_id):
                     title=:title, units_text=:units_text, total_units=:total_units, prerequisite=:prerequisite WHERE id=:id""", data)
                 conn.commit()
                 flash('Subject updated.', 'success')
-                return redirect(url_for('admin_subjects'))
             except sqlite3.IntegrityError:
                 flash(f"{data['code']} already exists for {data['program']}.", 'error')
-    programs = [r['code'] for r in conn.execute('SELECT code FROM programs ORDER BY code').fetchall()]
-    return render_template('admin/edit_subject.html', subj=subj, programs=programs,
-                           year_levels=YEAR_LEVELS, terms=TERMS)
+    return redirect(back)
 
 
 SUBJECT_IMPORT_HEADERS = {
@@ -6324,17 +6322,20 @@ def admin_subjects_template():
     ws = wb.active
     ws.title = 'Subjects'
     ws.append(['Program', 'Year Level', 'Semester', 'Course Code', 'Course Title',
-               'Units (Lec/Lab)', 'Total Units', 'Pre-requisite'])
-    ws.append(['BSIT', '1st Year', '1st Semester', 'IT 101', 'Example Subject Title', '2/1', 3, 'None'])
+               'Units (Lec/Lab)', 'Pre-requisite'])
+    ws.append(['BSIT', '1st Year', '1st Semester', 'IT 101', 'Example Subject Title', '2/1', 'None'])
     for c in ws[1]:
         c.font = Font(bold=True)
-    for col, w in zip('ABCDEFGH', (10, 12, 14, 14, 44, 16, 12, 20)):
+    # Format the Units column as Text so Excel keeps 2/1 instead of turning it into a date (1-Feb).
+    for row in range(2, 1001):
+        ws.cell(row=row, column=6).number_format = '@'
+    for col, w in zip('ABCDEFG', (10, 12, 14, 14, 44, 16, 20)):
         ws.column_dimensions[col].width = w
     guide = wb.create_sheet('Guide')
     for line in ('Delete the example row, then add one subject per row.',
                  'Year Level: 1st Year, 2nd Year, 3rd Year or 4th Year.',
                  'Semester: 1st Semester, 2nd Semester or Summer.',
-                 'Units (Lec/Lab): lecture/lab, e.g. 2/1. Total Units must equal their sum (2/1 = 3).',
+                 'Units (Lec/Lab): lecture/lab, e.g. 2/1. The total units are worked out automatically (2/1 = 3).',
                  'Keep the header row as is. Importing again updates existing subjects (same Program and Course Code).'):
         guide.append([line])
     guide.column_dimensions['A'].width = 100
@@ -6354,6 +6355,9 @@ def admin_import_subjects():
         return redirect(url_for('admin_subjects'))
     if not f.filename.lower().endswith('.xlsx'):
         flash('Only .xlsx files are accepted.', 'error')
+        return redirect(url_for('admin_subjects'))
+    if _upload_too_large(f):
+        flash(f'File is too large. The maximum allowed size is {MAX_UPLOAD_MB} MB.', 'error')
         return redirect(url_for('admin_subjects'))
     try:
         wb = load_workbook(f, read_only=True, data_only=True)
@@ -6385,6 +6389,8 @@ def admin_import_subjects():
             v = row[i] if i is not None and i < len(row) else None
             if v is None:
                 return ''
+            if k == 'units_text' and isinstance(v, datetime):
+                return f'{v.month}/{v.day}'  # Excel turned 2/1 into a date; restore it
             if isinstance(v, float) and v.is_integer():
                 v = int(v)
             return str(v).strip()
@@ -6519,6 +6525,16 @@ def admin_assign_semester():
 
 
 # ── Admin table exports (CSV) ──
+class _ExcelText(str):
+    """A value Excel must keep as text (e.g. '2/1', which it would turn into the date 1-Feb)."""
+
+
+def _csv_cell(v):
+    if isinstance(v, _ExcelText) and re.fullmatch(r'[0-9./ ]+', v):
+        return '="' + v + '"'
+    return _csv_safe(v)
+
+
 def _admin_csv_response(filename, header, rows):
     """Build a UTF-8 (with BOM, so Excel opens it correctly) CSV download."""
     import csv
@@ -6526,7 +6542,7 @@ def _admin_csv_response(filename, header, rows):
     w = csv.writer(buf, quoting=csv.QUOTE_ALL)
     w.writerow(header)
     for r in rows:
-        w.writerow([_csv_safe(v) for v in r])
+        w.writerow([_csv_cell(v) for v in r])
     resp = app.response_class('\ufeff' + buf.getvalue(), mimetype='text/csv')
     resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
     return resp
@@ -6638,9 +6654,9 @@ def admin_export(kind):
     if kind == 'subjects':
         rows = _subjects_query(conn, *_subject_filters())
         return _admin_csv_response(f'SPARK_Subjects_{stamp}.csv',
-            ['Program', 'Year Level', 'Semester', 'Course Code', 'Course Title', 'Units (Lec/Lab)', 'Total Units', 'Pre-requisite'],
-            [(r['program'], r['year_level'], r['term'], r['code'], r['title'], r['units_text'] or '',
-              _units_label(r['total_units']), r['prerequisite'] or '') for r in rows])
+            ['Program', 'Year Level', 'Semester', 'Course Code', 'Course Title', 'Units (Lec/Lab)', 'Pre-requisite'],
+            [(r['program'], r['year_level'], r['term'], r['code'], r['title'], _ExcelText(r['units_text'] or ''),
+              r['prerequisite'] or '') for r in rows])
     if kind == 'offerings':
         sid = request.args.get('semester_id', type=int)
         rows = conn.execute("""

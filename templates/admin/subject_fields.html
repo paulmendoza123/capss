@@ -24,24 +24,20 @@
   </div>
   <div class="form-group">
     <label class="form-label">Course Code</label>
-    <input type="text" name="code" class="form-control" value="{{ s.code if s else '' }}" maxlength="20" required />
+    <input type="text" name="code" class="form-control" placeholder="e.g. IT 101" value="{{ s.code if s else '' }}" maxlength="20" required />
   </div>
 </div>
 <div class="form-group">
   <label class="form-label">Course Title</label>
-  <input type="text" name="title" class="form-control" value="{{ s.title if s else '' }}" maxlength="200" required />
+  <input type="text" name="title" class="form-control" placeholder="e.g. Introduction to Computing" value="{{ s.title if s else '' }}" maxlength="200" required />
 </div>
 <div class="form-row">
   <div class="form-group">
     <label class="form-label">Units (Lec/Lab)</label>
-    <input type="text" name="units_text" class="form-control" placeholder="2/1" value="{{ s.units_text if s and s.units_text else '' }}" maxlength="10" />
+    <input type="text" name="units_text" class="form-control" placeholder="e.g. 2/1" value="{{ s.units_text if s and s.units_text else '' }}" maxlength="10" />
   </div>
   <div class="form-group">
-    <label class="form-label">Total Units</label>
-    <input type="text" name="total_units" class="form-control" placeholder="3" value="{{ s.total_units|units if s else '' }}" maxlength="5" />
+    <label class="form-label">Pre-requisite</label>
+    <input type="text" name="prerequisite" class="form-control" placeholder="e.g. IT 101" value="{{ s.prerequisite if s and s.prerequisite else '' }}" maxlength="200" />
   </div>
-</div>
-<div class="form-group">
-  <label class="form-label">Pre-requisite</label>
-  <input type="text" name="prerequisite" class="form-control" value="{{ s.prerequisite if s and s.prerequisite else '' }}" maxlength="200" />
 </div>

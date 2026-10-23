@@ -8,29 +8,9 @@
     <div class="page-subtitle">{{ subjects|length }} shown of {{ total_count }} subjects</div>
   </div>
   <div class="page-actions">
+    <button type="button" class="btn btn-ghost" onclick="openModal('modal-import-subjects')"><svg class="icon" aria-hidden="true"><use href="#i-arrow-up"/></svg> Import</button>
     <a href="{{ url_for('admin_export', kind='subjects', program=f_program, year_level=f_year, term=f_term, q=q) }}" class="btn btn-ghost"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</a>
-  </div>
-</div>
-
-<div class="cards-grid mb-2">
-  <div class="card">
-    <div class="card-title mb-2">Add Subject</div>
-    <form method="POST">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="action" value="add">
-      {% include 'admin/_subject_fields.html' %}
-      <button type="submit" class="btn btn-primary btn-block">Add Subject</button>
-    </form>
-  </div>
-  <div class="card">
-    <div class="card-title mb-2">Import from Excel</div>
-    <div class="text-sm text-muted mb-2">Use the SPARK prospectus .xlsx. Columns: Program, Year Level, Semester, Course Code, Course Title, Units (Lec/Lab), Total Units, Pre-requisite. Existing subjects (same program and code) are updated, not duplicated.</div>
-    <a href="{{ url_for('admin_subjects_template') }}" class="btn btn-ghost btn-sm mb-2"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Download Template</a>
-    <form method="POST" action="{{ url_for('admin_import_subjects') }}" enctype="multipart/form-data">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="form-group"><input type="file" name="file" accept=".xlsx" class="form-control" required /></div>
-      <button type="submit" class="btn btn-primary btn-block"><svg class="icon" aria-hidden="true"><use href="#i-arrow-up"/></svg> Import</button>
-    </form>
+    <button type="button" class="btn btn-primary" onclick="openModal('modal-add-subject')"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Add Subject</button>
   </div>
 </div>
 
@@ -49,8 +29,7 @@
       <option value="">All Prospectus Sems</option>
       {% for t in terms %}<option value="{{ t }}" {% if f_term == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
     </select>
-    <button type="submit" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg> Search</button>
-    {% if f_program or f_year or f_term or q %}<a href="{{ url_for('admin_subjects') }}" class="btn btn-ghost btn-sm">Clear</a>{% endif %}
+    <a href="{{ url_for('admin_subjects') }}" class="btn btn-ghost btn-sm">Clear</a>
   </form>
 </div>
 
@@ -59,7 +38,7 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Program</th><th>Year</th><th>Prospectus Sem</th><th>Code</th><th>Title</th><th>Units</th><th>Total</th><th>Pre-requisite</th><th>Actions</th></tr>
+        <tr><th>Program</th><th>Year</th><th>Prospectus Sem</th><th>Code</th><th>Title</th><th>Units</th><th>Pre-requisite</th><th>Actions</th></tr>
       </thead>
       <tbody>
         {% for s in subjects %}
@@ -70,11 +49,14 @@
           <td class="font-mono fw-600" style="color:var(--accent)">{{ s.code }}</td>
           <td>{{ s.title }}</td>
           <td class="font-mono text-sm">{{ s.units_text or '—' }}</td>
-          <td class="font-mono text-sm">{{ s.total_units|units or '—' }}</td>
           <td class="text-sm text-muted">{{ s.prerequisite or '—' }}</td>
           <td>
             <div class="flex gap-1">
-              <a href="{{ url_for('admin_edit_subject', subject_id=s.id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Edit</a>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="openEditSubject(this)"
+                data-action="{{ url_for('admin_edit_subject', subject_id=s.id) }}"
+                data-program="{{ s.program }}" data-year="{{ s.year_level }}" data-term="{{ s.term }}"
+                data-code="{{ s.code }}" data-title="{{ s.title }}" data-units="{{ s.units_text or '' }}"
+                data-prereq="{{ s.prerequisite or '' }}"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Edit</button>
               <form method="POST" style="display:inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="delete">
@@ -93,7 +75,79 @@
 <div class="empty-state">
   <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></div>
   <div class="empty-state-title">{% if total_count %}No subjects match this filter{% else %}No subjects yet{% endif %}</div>
-  <div class="empty-state-text">{% if total_count %}Try clearing the filter.{% else %}Import the prospectus Excel file above, or add subjects one by one.{% endif %}</div>
+  <div class="empty-state-text">{% if total_count %}Try clearing the filter.{% else %}Use Import to upload the prospectus Excel file, or add subjects one by one with Add Subject.{% endif %}</div>
 </div>
 {% endif %}
+
+<div class="modal-overlay" id="modal-add-subject">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-title">Add Subject</div>
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="add">
+      {% include 'admin/subject_fields.html' %}
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('modal-add-subject')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add Subject</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-edit-subject">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-title">Edit Subject</div>
+    <form method="POST" id="edit-subject-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% include 'admin/subject_fields.html' %}
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('modal-edit-subject')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+function openEditSubject(btn) {
+  var f = document.getElementById('edit-subject-form');
+  var d = btn.dataset;
+  f.action = d.action + window.location.search;
+  function setSel(name, val) {
+    var sel = f.elements[name];
+    if (![].some.call(sel.options, function (o) { return o.value === val; })) {
+      var o = document.createElement('option');
+      o.value = val; o.textContent = val + ' (not in list)';
+      sel.appendChild(o);
+    }
+    sel.value = val;
+  }
+  setSel('program', d.program);
+  setSel('year_level', d.year);
+  setSel('term', d.term);
+  f.elements['code'].value = d.code;
+  f.elements['title'].value = d.title;
+  f.elements['units_text'].value = d.units;
+  f.elements['prerequisite'].value = d.prereq;
+  openModal('modal-edit-subject');
+}
+</script>
+
+<div class="modal-overlay" id="modal-import-subjects">
+  <div class="modal">
+    <div class="modal-title">Import from Excel</div>
+    <div class="text-sm text-muted mb-2">Use the SPARK prospectus .xlsx. Columns: Program, Year Level, Semester, Course Code, Course Title, Units (Lec/Lab), Pre-requisite. Existing subjects (same program and code) are updated, not duplicated.</div>
+    <a href="{{ url_for('admin_subjects_template') }}" class="btn btn-ghost btn-sm mb-2"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Download Template</a>
+    <form method="POST" action="{{ url_for('admin_import_subjects') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-group">
+        <input type="file" name="file" accept=".xlsx" class="form-control" required onchange="if(this.files[0] && this.files[0].size > 10*1024*1024){ alert('File is too large. The maximum allowed size is 10 MB.'); this.value=''; }" />
+        <div class="text-sm text-muted" style="margin-top:4px">.xlsx only, maximum 10 MB.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('modal-import-subjects')">Cancel</button>
+        <button type="submit" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-arrow-up"/></svg> Import</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
