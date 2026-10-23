@@ -2851,13 +2851,14 @@ def _copy_class_exams(conn, src_class_id, dst_class_id):
             INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, activated_at, status,
                                 show_results, randomize_questions, tab_switch_limit, tab_switch_enabled,
                                 manually_closed, passing_score, exam_code, fullscreen_required,
-                                time_warning_minutes, exam_category, tos_id)
-            VALUES (?, ?, ?, NULL, NULL, 'upcoming', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
+                                time_warning_minutes, exam_category, tos_id, periodic_type)
+            VALUES (?, ?, ?, NULL, NULL, 'upcoming', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
         ''', (exam['title'], new_class_id, exam['duration_minutes'],
               exam['show_results'], exam['randomize_questions'], exam['tab_switch_limit'], exam['tab_switch_enabled'],
               exam['passing_score'], new_exam_code, exam['fullscreen_required'],
               exam['time_warning_minutes'] if exam['time_warning_minutes'] is not None else DEFAULT_TIME_WARNING_MINUTES,
-              _q_get(exam, 'exam_category', 'quiz') or 'quiz', _q_get(exam, 'tos_id', None)))
+              _q_get(exam, 'exam_category', 'quiz') or 'quiz', _q_get(exam, 'tos_id', None),
+              _q_get(exam, 'periodic_type', None)))
         new_exam_id = ecur.lastrowid
 
         section_id_map = {}
