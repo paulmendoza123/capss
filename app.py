@@ -1871,7 +1871,10 @@ def logout():
 def student_home():
     conn = get_db()
     classes = conn.execute('''
-        SELECT c.*, u.full_name as teacher_name
+        SELECT c.*, u.full_name as teacher_name,
+               (SELECT GROUP_CONCAT(o.schedule, ';') FROM subject_offerings o
+                  WHERE o.subject_id = c.subject_id AND o.semester_id = c.semester_id
+                    AND o.teacher_id = c.teacher_id AND COALESCE(o.schedule, '') <> '') AS schedule
         FROM classes c
         JOIN class_enrollments ce ON c.id = ce.class_id
         JOIN users u ON c.teacher_id = u.id
@@ -2391,7 +2394,10 @@ def student_profile():
 def teacher_home():
     conn = get_db()
     classes = conn.execute('''
-        SELECT c.*, COUNT(ce.student_id) as student_count
+        SELECT c.*, COUNT(ce.student_id) as student_count,
+               (SELECT GROUP_CONCAT(o.schedule, ';') FROM subject_offerings o
+                  WHERE o.subject_id = c.subject_id AND o.semester_id = c.semester_id
+                    AND o.teacher_id = c.teacher_id AND COALESCE(o.schedule, '') <> '') AS schedule
         FROM classes c
         LEFT JOIN class_enrollments ce ON c.id = ce.class_id
         WHERE c.teacher_id = ?
