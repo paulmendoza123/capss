@@ -59,7 +59,7 @@
             {% if rows %}
               {% for o in rows %}
               <div style="margin-bottom:4px">
-                <span class="fw-600">{{ o.teacher_name or 'No teacher yet' }}</span>
+                <span class="fw-600">{{ o.teacher_name or 'No teacher yet' }}</span>{% if o.block_name %} <span class="badge">Block {{ o.block_name }}</span>{% endif %}
                 <div class="text-sm text-muted">{{ o.schedule or 'No schedule yet' }}</div>
               </div>
               {% endfor %}

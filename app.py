@@ -1279,6 +1279,7 @@ def init_db():
             schedule TEXT,
             sched_slots TEXT,
             position INTEGER NOT NULL DEFAULT 0,
+            block_name TEXT,
             UNIQUE(semester_id, subject_id, position)
         );
     ''')
@@ -1327,6 +1328,37 @@ def init_db():
             DROP TABLE subject_offerings_old;
         """)
         conn.commit()
+
+    # Block name per assigned teacher (set by the admin in Curriculum > Offerings),
+    # so teachers no longer type the block when they create a class.
+    try:
+        conn.execute('ALTER TABLE subject_offerings ADD COLUMN block_name TEXT')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+    # One-time backfill for assignments made before blocks existed: reuse the block of
+    # the teacher's existing class for that subject, otherwise A, B, C... by position.
+    for _o in conn.execute("""SELECT id, semester_id, subject_id, teacher_id, position FROM subject_offerings
+                              WHERE COALESCE(block_name, '') = '' ORDER BY semester_id, subject_id, position""").fetchall():
+        _taken = {r[0] for r in conn.execute("""SELECT block_name FROM subject_offerings
+                     WHERE semester_id=? AND subject_id=? AND COALESCE(block_name, '') <> ''""",
+                     (_o['semester_id'], _o['subject_id'])).fetchall()}
+        _block = None
+        if _o['teacher_id']:
+            for _c in conn.execute('SELECT block_name FROM classes WHERE subject_id=? AND semester_id=? AND teacher_id=?',
+                                   (_o['subject_id'], _o['semester_id'], _o['teacher_id'])).fetchall():
+                if _c[0] and _c[0] not in _taken:
+                    _block = _c[0]
+                    break
+        if not _block:
+            _n = _o['position']
+            while True:
+                _block = chr(65 + _n % 26) * (_n // 26 + 1)
+                if _block not in _taken:
+                    break
+                _n += 1
+        conn.execute('UPDATE subject_offerings SET block_name=? WHERE id=?', (_block, _o['id']))
+    conn.commit()
 
     # Migration: Quiz vs Periodic Exam separation + Table of Specification (TOS).
     # Every exam, question and bank group belongs to exactly one category
@@ -1891,7 +1923,8 @@ def student_home():
         SELECT c.*, u.full_name as teacher_name,
                (SELECT GROUP_CONCAT(o.schedule, ';') FROM subject_offerings o
                   WHERE o.subject_id = c.subject_id AND o.semester_id = c.semester_id
-                    AND o.teacher_id = c.teacher_id AND COALESCE(o.schedule, '') <> '') AS schedule
+                    AND o.teacher_id = c.teacher_id AND COALESCE(o.schedule, '') <> ''
+                    AND (COALESCE(o.block_name, '') = '' OR o.block_name = c.block_name)) AS schedule
         FROM classes c
         JOIN class_enrollments ce ON c.id = ce.class_id
         JOIN users u ON c.teacher_id = u.id
@@ -2414,7 +2447,8 @@ def teacher_home():
         SELECT c.*, COUNT(ce.student_id) as student_count,
                (SELECT GROUP_CONCAT(o.schedule, ';') FROM subject_offerings o
                   WHERE o.subject_id = c.subject_id AND o.semester_id = c.semester_id
-                    AND o.teacher_id = c.teacher_id AND COALESCE(o.schedule, '') <> '') AS schedule
+                    AND o.teacher_id = c.teacher_id AND COALESCE(o.schedule, '') <> ''
+                    AND (COALESCE(o.block_name, '') = '' OR o.block_name = c.block_name)) AS schedule
         FROM classes c
         LEFT JOIN class_enrollments ce ON c.id = ce.class_id
         WHERE c.teacher_id = ?
@@ -2424,8 +2458,8 @@ def teacher_home():
     programs = conn.execute('SELECT * FROM programs ORDER BY code').fetchall()
     assigned = []
     for o in _teacher_open_offerings(conn, session['user_id']):
-        n = conn.execute('SELECT COUNT(*) FROM classes WHERE subject_id=? AND semester_id=? AND teacher_id=?',
-                         (o['subject_id'], o['sem_id'], session['user_id'])).fetchone()[0]
+        n = conn.execute('SELECT COUNT(*) FROM classes WHERE subject_id=? AND semester_id=? AND teacher_id=? AND block_name=?',
+                         (o['subject_id'], o['sem_id'], session['user_id'], o['block_name'] or '')).fetchone()[0]
         if n == 0:  # hide subjects that already have a class; they show up as class cards below
             assigned.append({'o': o, 'class_count': n})
     return render_template('teacher/classes.html', classes=classes, programs=programs, assigned=assigned)
@@ -2466,12 +2500,12 @@ def teacher_create_class():
     offerings = _teacher_open_offerings(conn, session['user_id'])
     if request.method == 'POST':
         offering_id = request.form.get('offering_id', type=int)
-        block_name = request.form.get('block_name', '').strip().upper()
         off = next((o for o in offerings if o['offering_id'] == offering_id), None)
+        block_name = (off['block_name'] or '').strip().upper() if off else ''
         if not off:
             flash('Please choose one of your assigned subjects.', 'error')
-        elif not re.match(r'^[A-Z0-9][A-Z0-9 \-]{0,19}$', block_name):
-            flash('Block name is required (letters/numbers, up to 20 characters).', 'error')
+        elif not block_name:
+            flash('No block was set for this subject. Ask your program head (admin) to set it in Curriculum > Offerings.', 'error')
         elif conn.execute('SELECT 1 FROM classes WHERE subject_id=? AND semester_id=? AND block_name=?',
                           (off['subject_id'], off['sem_id'], block_name)).fetchone():
             flash(f"Block {block_name} of {off['code']} already exists this semester.", 'error')
@@ -2492,8 +2526,10 @@ def teacher_create_class():
 
 def _teacher_open_offerings(conn, teacher_id):
     return conn.execute('''
-        SELECT o.id AS offering_id, o.schedule, s.id AS subject_id, s.program, s.year_level, s.code, s.title,
-               sem.id AS sem_id, sem.school_year, sem.term
+        SELECT o.id AS offering_id, o.schedule, o.block_name, s.id AS subject_id, s.program, s.year_level, s.code, s.title,
+               sem.id AS sem_id, sem.school_year, sem.term,
+               EXISTS (SELECT 1 FROM classes c WHERE c.subject_id = s.id AND c.semester_id = sem.id
+                       AND c.block_name = o.block_name) AS class_exists
         FROM subject_offerings o
         JOIN subjects s ON o.subject_id = s.id
         JOIN semesters sem ON o.semester_id = sem.id
@@ -6112,8 +6148,9 @@ def _read_offering_form(form, sid, teacher_ids):
         if tid not in teacher_ids:
             tid = None
         raw = _read_raw_slots(form, f'{sid}_{p}')
+        block = (form.get(f'block_{sid}_{p}') or '').strip().upper()
         if tid or raw:
-            blocks.append({'teacher_id': tid, 'slots': raw})
+            blocks.append({'teacher_id': tid, 'slots': raw, 'block_name': block})
     err = None
     if len(blocks) > MAX_TEACHERS_PER_SUBJECT:
         err = f'at most {MAX_TEACHERS_PER_SUBJECT} teachers per subject'
@@ -6123,6 +6160,19 @@ def _read_offering_form(form, sid, teacher_ids):
             if e:
                 err = f'teacher {n}: {e}'
                 break
+            if bl['block_name'] and not re.match(r'^[A-Z0-9][A-Z0-9 \-]{0,19}$', bl['block_name']):
+                err = f'teacher {n}: block name must be letters/numbers, up to 20 characters'
+                break
+        if not err:
+            # blank block -> next free letter (A, B, C...); two teachers can't share a block
+            used = {bl['block_name'] for bl in blocks if bl['block_name']}
+            if len(used) < len([bl for bl in blocks if bl['block_name']]):
+                err = 'each teacher needs a different block'
+            else:
+                letters = iter(c for c in string.ascii_uppercase if c not in used)
+                for bl in blocks:
+                    if not bl['block_name']:
+                        bl['block_name'] = next(letters)
     return blocks, err
 
 
@@ -6463,7 +6513,7 @@ def admin_offerings():
             sql += ' AND year_level = ?'
             params.append(f_year)
         subjects = conn.execute(sql + ' ORDER BY program, year_level, code', params).fetchall()
-        for o in conn.execute("""SELECT o.subject_id, o.schedule, u.full_name AS teacher_name
+        for o in conn.execute("""SELECT o.subject_id, o.schedule, o.block_name, u.full_name AS teacher_name
                                  FROM subject_offerings o LEFT JOIN users u ON o.teacher_id = u.id
                                  WHERE o.semester_id = ? ORDER BY o.subject_id, o.position""", (sem['id'],)).fetchall():
             summaries.setdefault(o['subject_id'], []).append(o)
@@ -6496,20 +6546,20 @@ def admin_edit_offering(subject_id):
             conn.execute('DELETE FROM subject_offerings WHERE semester_id=? AND subject_id=?', (sem['id'], subject_id))
             for pos, bl in enumerate(blocks):
                 slots, _ = _validate_slots(bl['slots'])
-                conn.execute("""INSERT INTO subject_offerings (semester_id, subject_id, is_available, teacher_id, schedule, sched_slots, position)
-                    VALUES (?,?,?,?,?,?,?)""",
+                conn.execute("""INSERT INTO subject_offerings (semester_id, subject_id, is_available, teacher_id, schedule, sched_slots, position, block_name)
+                    VALUES (?,?,?,?,?,?,?,?)""",
                     (sem['id'], subject_id, 1 if bl['teacher_id'] else 0, bl['teacher_id'],
-                     _schedule_label(slots) if slots else '', json.dumps(slots) if slots else None, pos))
+                     _schedule_label(slots) if slots else '', json.dumps(slots) if slots else None, pos, bl['block_name']))
             conn.commit()
             for msg in _teacher_conflicts(conn, sem['id']):
                 flash(msg, 'info')
             flash(f"{subj['code']} saved." if blocks else f"{subj['code']}: all assignments removed.", 'success')
             return redirect(back)
     if blocks is None:
-        blocks = [{'teacher_id': o['teacher_id'], 'slots': _slots_of(o)} for o in conn.execute(
+        blocks = [{'teacher_id': o['teacher_id'], 'slots': _slots_of(o), 'block_name': o['block_name'] or ''} for o in conn.execute(
             'SELECT * FROM subject_offerings WHERE semester_id=? AND subject_id=? ORDER BY position', (sem['id'], subject_id)).fetchall()]
     if not blocks:
-        blocks = [{'teacher_id': None, 'slots': []}]
+        blocks = [{'teacher_id': None, 'slots': [], 'block_name': 'A'}]
     return render_template('admin/offering_edit.html', sem=sem, subj=subj, blocks=blocks, teachers=teachers,
                            f_program=f_program, f_year=f_year, back=back,
                            max_teachers=MAX_TEACHERS_PER_SUBJECT, max_slots=MAX_SCHED_SLOTS)
@@ -6679,7 +6729,7 @@ def admin_export(kind):
         sid = request.args.get('semester_id', type=int)
         rows = conn.execute("""
             SELECT s.program, s.year_level, s.code, s.title, sem.school_year, sem.term,
-                   o.is_available, o.schedule, t.full_name AS teacher_name
+                   o.is_available, o.block_name, o.schedule, t.full_name AS teacher_name
             FROM subject_offerings o
             JOIN subjects s ON o.subject_id = s.id
             JOIN semesters sem ON o.semester_id = sem.id
@@ -6688,9 +6738,9 @@ def admin_export(kind):
             ORDER BY sem.school_year DESC, sem.term, s.program, s.year_level, s.code
         """, (sid, sid)).fetchall()
         return _admin_csv_response(f'SPARK_Offerings_{stamp}.csv',
-            ['School Year', 'Semester', 'Program', 'Year Level', 'Course Code', 'Course Title', 'Available', 'Teacher', 'Schedule'],
+            ['School Year', 'Semester', 'Program', 'Year Level', 'Course Code', 'Course Title', 'Available', 'Teacher', 'Block', 'Schedule'],
             [(r['school_year'], r['term'], r['program'], r['year_level'], r['code'], r['title'],
-              'Yes' if r['is_available'] else 'No', r['teacher_name'] or '', r['schedule'] or '') for r in rows])
+              'Yes' if r['is_available'] else 'No', r['teacher_name'] or '', r['block_name'] or '', r['schedule'] or '') for r in rows])
     flash('Unknown export.', 'error')
     return redirect(url_for('admin_home'))
 

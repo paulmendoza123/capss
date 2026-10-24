@@ -18,7 +18,12 @@
 {% block content %}
 <style>
 .off-block{padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:12px;background:var(--card2, var(--card))}
-.off-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.off-head{display:flex;align-items:flex-end;gap:8px;margin-bottom:10px}
+.off-field{display:flex;flex-direction:column;gap:3px;min-width:0}
+.off-field.grow{flex:1}
+.off-field.blk{width:110px;flex:none}
+.off-field label{font-size:0.75rem;font-weight:600;color:var(--text2)}
+.off-head .off-block-name{text-transform:uppercase}
 .sched-days{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
 .sched-day input{position:absolute;opacity:0;pointer-events:none}
 .sched-day span{display:inline-block;padding:3px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.8rem;cursor:pointer;color:var(--text2);background:var(--card)}
@@ -40,16 +45,23 @@
 <form method="POST" action="{{ url_for('admin_edit_offering', subject_id=subj.id, semester_id=sem.id, program=f_program, year_level=f_year) }}" id="off-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="card" style="max-width:760px">
-    <div class="text-sm text-muted mb-2">One subject can have several teachers (for example Block A and Block B). Each teacher has their own days and times. Removing a teacher or a time only takes effect when you press <strong>Save</strong>.</div>
+    <div class="text-sm text-muted mb-2">One subject can have several teachers (for example Block A and Block B). Each teacher has their own block, days and times. The block you set here is used automatically when the teacher creates their class. Removing a teacher or a time only takes effect when you press <strong>Save</strong>.</div>
     <div id="off-blocks">
       {% for b in blocks %}
       {% set p = loop.index0 %}
       <div class="off-block" data-p="{{ p }}">
         <div class="off-head">
-          <select name="teacher_{{ subj.id }}_{{ p }}" class="form-select" aria-label="Teacher">
-            <option value="">— Select teacher —</option>
-            {% for t in teachers %}<option value="{{ t.id }}" {% if b.teacher_id == t.id %}selected{% endif %}>{{ t.full_name }}</option>{% endfor %}
-          </select>
+          <div class="off-field grow">
+            <label for="teacher_{{ subj.id }}_{{ p }}">Teacher</label>
+            <select id="teacher_{{ subj.id }}_{{ p }}" name="teacher_{{ subj.id }}_{{ p }}" class="form-select">
+              <option value="">— Select teacher —</option>
+              {% for t in teachers %}<option value="{{ t.id }}" {% if b.teacher_id == t.id %}selected{% endif %}>{{ t.full_name }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="off-field blk">
+            <label for="block_{{ subj.id }}_{{ p }}">Block / Section</label>
+            <input type="text" id="block_{{ subj.id }}_{{ p }}" name="block_{{ subj.id }}_{{ p }}" class="form-control off-block-name" value="{{ b.block_name or '' }}" placeholder="e.g. A" maxlength="20" title="The class the teacher creates will use this block automatically." />
+          </div>
           <button type="button" class="btn btn-danger btn-sm off-remove" title="Remove this teacher" aria-label="Remove this teacher"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
         </div>
         <div class="sched-slots">
@@ -87,12 +99,20 @@
       '<input type="time" name="end_' + SID + '_' + p + '_' + k + '" class="form-control" aria-label="End time" />' +
       '<button type="button" class="btn btn-ghost btn-sm slot-remove" title="Remove this time" aria-label="Remove this time">' + TRASH + '</button></div></div>';
   }
+  function nextBlockLetter() {
+    var used = Array.prototype.map.call(wrap.querySelectorAll('.off-block-name'), function (i) { return i.value.trim().toUpperCase(); });
+    for (var n = 0; n < 26; n++) { var c = String.fromCharCode(65 + n); if (used.indexOf(c) === -1) return c; }
+    return '';
+  }
   function blockHtml(p) {
     var opts = '<option value="">— Select teacher —</option>' + TEACHERS.map(function (n, i) {
       return '<option value="' + TEACHER_IDS[i] + '">' + esc(n) + '</option>';
     }).join('');
     return '<div class="off-block" data-p="' + p + '"><div class="off-head">' +
-      '<select name="teacher_' + SID + '_' + p + '" class="form-select" aria-label="Teacher">' + opts + '</select>' +
+      '<div class="off-field grow"><label for="teacher_' + SID + '_' + p + '">Teacher</label>' +
+      '<select id="teacher_' + SID + '_' + p + '" name="teacher_' + SID + '_' + p + '" class="form-select">' + opts + '</select></div>' +
+      '<div class="off-field blk"><label for="block_' + SID + '_' + p + '">Block / Section</label>' +
+      '<input type="text" id="block_' + SID + '_' + p + '" name="block_' + SID + '_' + p + '" class="form-control off-block-name" value="' + nextBlockLetter() + '" placeholder="e.g. A" maxlength="20" /></div>' +
       '<button type="button" class="btn btn-danger btn-sm off-remove" title="Remove this teacher" aria-label="Remove this teacher">' + TRASH + '</button></div>' +
       '<div class="sched-slots">' + slotHtml(p, 0) + '</div>' +
       '<button type="button" class="btn btn-ghost btn-sm sched-add">+ Add another time</button></div>';

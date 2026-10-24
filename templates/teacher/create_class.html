@@ -14,14 +14,10 @@
       <select name="offering_id" class="form-select" required>
         <option value="">Select subject</option>
         {% for o in offerings %}
-        <option value="{{ o.offering_id }}" {% if preselect == o.offering_id %}selected{% endif %}>{{ o.code }} · {{ o.title }} — {{ o.program }} {{ o.year_level }} · {{ o.term }} S.Y. {{ o.school_year }}{% if o.schedule %} · {{ o.schedule }}{% endif %}</option>
+        <option value="{{ o.offering_id }}" {% if preselect == o.offering_id %}selected{% endif %} {% if o.class_exists %}disabled{% endif %}>{{ o.code }}{% if o.block_name %} · Block {{ o.block_name }}{% endif %} · {{ o.title }} — {{ o.program }} {{ o.year_level }} · {{ o.term }} S.Y. {{ o.school_year }}{% if o.schedule %} · {{ o.schedule }}{% endif %}{% if o.class_exists %} (class already created){% endif %}</option>
         {% endfor %}
       </select>
-      <div class="field-hint">Only the subjects your program head assigned to you this semester appear here.</div>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Block Name</label>
-      <input type="text" name="block_name" class="form-control" placeholder="e.g. A" maxlength="20" required />
+      <div class="field-hint">Only the subjects your program head assigned to you this semester appear here. The block is set by your program head, so you don't need to enter it.</div>
     </div>
     <div class="form-hint mb-2">The class code is built from the subject's course code and is auto-generated for students to join.</div>
     <button type="submit" class="btn btn-primary btn-block">Create Class</button>
