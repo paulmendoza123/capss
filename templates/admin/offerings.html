@@ -23,6 +23,7 @@
 {% else %}
 <div class="card mb-2">
   <form method="GET" class="flex gap-2 filter-bar" style="flex-wrap:wrap;align-items:center">
+    <input type="search" id="offSearch" name="q" value="{{ request.args.get('q', '') }}" class="form-control" placeholder="Search subject, code, teacher, block or schedule..." style="flex:1 1 260px;max-width:380px" autocomplete="off" aria-label="Search offerings" />
     <select name="semester_id" class="form-select" style="width:auto;min-width:240px" onchange="this.form.submit()">
       {% for s in semesters %}
       <option value="{{ s.id }}" {% if sem and sem.id == s.id %}selected{% endif %}>S.Y. {{ s.school_year }} · {{ s.term }}{% if s.status == 'ended' %} (Ended){% endif %}</option>
@@ -46,10 +47,12 @@
       <thead>
         <tr><th>Program</th><th>Year</th><th>Code</th><th>Title</th><th>Units</th><th>Teachers &amp; Schedule</th><th>Actions</th></tr>
       </thead>
-      <tbody>
+      <tbody id="offBody">
         {% for s in subjects %}
         {% set rows = summaries.get(s.id, []) %}
-        <tr>
+        {% set ns = namespace(t='') %}
+        {% for o in rows %}{% set ns.t = ns.t ~ ' ' ~ (o.teacher_name or '') ~ ' block ' ~ (o.block_name or '') ~ ' ' ~ (o.schedule or '') %}{% endfor %}
+        <tr class="off-row" data-search="{{ (s.program ~ ' ' ~ s.year_level ~ ' ' ~ s.code ~ ' ' ~ s.title ~ ns.t ~ (' not assigned unassigned' if not rows else ''))|lower }}">
           <td class="text-sm">{{ s.program }}</td>
           <td class="text-sm">{{ s.year_level }}</td>
           <td class="font-mono fw-600" style="color:var(--accent)">{{ s.code }}</td>
@@ -86,8 +89,29 @@
         {% endfor %}
       </tbody>
     </table>
+    <div id="offNoMatch" class="text-muted" style="display:none;padding:1.25rem;text-align:center">No subjects match your search.</div>
   </div>
 </div>
+<script>
+(function () {
+  var box = document.getElementById('offSearch'), rows = document.querySelectorAll('#offBody .off-row'),
+      none = document.getElementById('offNoMatch');
+  if (!box) return;
+  function run() {
+    var words = box.value.toLowerCase().split(/\s+/).filter(Boolean), shown = 0;
+    rows.forEach(function (r) {
+      var hay = r.dataset.search || '';
+      var hit = words.every(function (w) { return hay.indexOf(w) !== -1; });
+      r.style.display = hit ? '' : 'none';
+      if (hit) shown++;
+    });
+    none.style.display = shown ? 'none' : 'block';
+  }
+  box.addEventListener('input', run);
+  box.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+  run();
+})();
+</script>
 {% else %}
 <div class="empty-state">
   <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></div>
