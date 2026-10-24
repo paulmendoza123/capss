@@ -1387,11 +1387,8 @@ def auto_activate_scheduled_exams(conn):
         today_str = now.strftime('%Y-%m-%d')
         # Auto-open: only if scheduled_at is today or earlier today (same day),
         # not if it was a past date (yesterday or older).
-        conn.execute("""
-            UPDATE exams
-            SET status = 'active',
-                activated_at = strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')
-            WHERE status = 'upcoming'
+        due_where = """
+            status = 'upcoming'
               AND (manually_closed = 0 OR manually_closed IS NULL)
               AND scheduled_at IS NOT NULL
               AND scheduled_at != ''
@@ -1399,7 +1396,17 @@ def auto_activate_scheduled_exams(conn):
               AND EXISTS (SELECT 1 FROM questions q WHERE q.exam_id = exams.id)
               AND substr(replace(scheduled_at, 'T', ' '), 1, 10) = ?
               AND substr(replace(scheduled_at, 'T', ' '), 1, 16) <= ?
-        """, (today_str, now_str))
+        """
+        # This runs every second, so first do a cheap read-only check and only
+        # take the database write lock when an exam is actually due to open.
+        if conn.execute('SELECT 1 FROM exams WHERE ' + due_where + ' LIMIT 1',
+                        (today_str, now_str)).fetchone() is None:
+            return
+        conn.execute("""
+            UPDATE exams
+            SET status = 'active',
+                activated_at = strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')
+            WHERE """ + due_where, (today_str, now_str))
         conn.commit()
     except Exception:
         pass
@@ -1427,20 +1434,30 @@ def auto_complete_finished_exams(conn):
         pass
 
 
-def background_maintenance_loop(interval_seconds=20):
+def background_maintenance_loop(interval_seconds=1, complete_every=20):
     """Runs exam scheduling/completion checks on a timer instead of on every
     single HTTP request. Uses its own sqlite connection since it runs outside
-    any Flask request context."""
+    any Flask request context.
+
+    Scheduled exams are checked every second so they open right when their time
+    arrives. Finished exams are only closed every `complete_every` seconds."""
+    conn = None
+    tick = 0
     while True:
         try:
-            conn = get_maintenance_db()
-            try:
-                auto_activate_scheduled_exams(conn)
+            if conn is None:
+                conn = get_maintenance_db()   # kept open between checks
+            auto_activate_scheduled_exams(conn)
+            if tick % complete_every == 0:
                 auto_complete_finished_exams(conn)
-            finally:
-                conn.close()
         except Exception:
-            pass
+            try:
+                if conn is not None:
+                    conn.close()
+            except Exception:
+                pass
+            conn = None
+        tick += 1
         time.sleep(interval_seconds)
 
 def hash_password(password):
