@@ -55,7 +55,11 @@
       </div>
       <div class="form-group">
         <label class="form-label">Scheduled Date & Time</label>
-        <input type="datetime-local" name="scheduled_at" class="form-control" />
+        <div class="dt-split" data-dt-split>
+          <input type="date" class="form-control" data-dt="date" aria-label="Scheduled date" />
+          <input type="time" class="form-control" data-dt="time" aria-label="Scheduled time" />
+          <input type="hidden" name="scheduled_at" />
+        </div>
       </div>
     </div>
 
@@ -175,11 +179,14 @@ document.addEventListener('DOMContentLoaded', function() {
   // Pre-fill Scheduled Date & Time with the teacher's current local date/time.
   // Only fills it when empty, so a value the teacher already picked is kept.
   const sched = document.querySelector('input[name="scheduled_at"]');
-  if (sched && !sched.value) {
+  const schedDate = document.querySelector('[data-dt="date"]');
+  const schedTime = document.querySelector('[data-dt="time"]');
+  if (sched && schedDate && schedTime && !sched.value && !schedDate.value && !schedTime.value) {
     const d = new Date();
     const pad = n => String(n).padStart(2, '0');
-    sched.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
-                + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    schedDate.value = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    schedTime.value = pad(d.getHours()) + ':' + pad(d.getMinutes());
+    schedDate.dispatchEvent(new Event('input', { bubbles: true }));
   }
 });
 </script>

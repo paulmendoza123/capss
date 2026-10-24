@@ -502,3 +502,35 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!form.classList.contains('is-editing')) fields.forEach(function (f) { f.disabled = true; });
   });
 });
+
+// ── Separate date + time fields for exam scheduling ──────────────────────────
+// Pages mark a group with data-dt-split: a date box, a time box and a hidden
+// "scheduled_at" field. The two visible boxes use the browser's own date and
+// time pickers (the same time picker the admin schedule editor uses); the hidden
+// field is kept in sync as "YYYY-MM-DDTHH:MM", exactly what the server already expects.
+(function () {
+  function init() {
+    document.querySelectorAll('[data-dt-split]').forEach(function (box) {
+      var d = box.querySelector('[data-dt="date"]');
+      var t = box.querySelector('[data-dt="time"]');
+      var h = box.querySelector('input[type="hidden"]');
+      if (!d || !t || !h) return;
+      var row = box.closest('.form-row');
+      if (row) row.classList.add('dt-wide');
+      function sync() {
+        h.value = (d.value && t.value) ? d.value + 'T' + t.value : '';
+        d.required = !!t.value;      // if one is filled, the other must be too
+        t.required = !!d.value;
+      }
+      var m = (h.value || '').match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+      if (m) { d.value = m[1]; t.value = m[2]; }
+      ['input', 'change'].forEach(function (ev) {
+        d.addEventListener(ev, sync);
+        t.addEventListener(ev, sync);
+      });
+      sync();
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();

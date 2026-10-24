@@ -1986,3 +1986,11 @@ html[data-theme="dark"] .sidebar-logo .logo-icon .icon { color: #17703d; }
 @media (max-width: 768px) {
   .sidebar-footer { padding-bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px)); }
 }
+
+/* Separate date + time fields (see main.js) */
+.dt-split { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.dt-split .form-control { flex: 1 1 0; }
+.dt-split .form-control[data-dt="date"] { flex: 1.25 1 0; min-width: 10.5rem; }
+.dt-split .form-control[data-dt="time"] { min-width: 9.5rem; }
+/* give the schedule more room than Duration so the date and time aren't squeezed */
+.form-row.dt-wide { grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr); }

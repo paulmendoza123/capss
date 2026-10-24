@@ -20,7 +20,11 @@
       </div>
       <div class="form-group">
         <label class="form-label">Scheduled Date & Time</label>
-        <input type="datetime-local" name="scheduled_at" class="form-control" value="{{ (exam.scheduled_at or '')|replace(' ', 'T') }}" />
+        <div class="dt-split" data-dt-split>
+          <input type="date" class="form-control" data-dt="date" aria-label="Scheduled date" />
+          <input type="time" class="form-control" data-dt="time" aria-label="Scheduled time" />
+          <input type="hidden" name="scheduled_at" value="{{ (exam.scheduled_at or '')|replace(' ', 'T') }}" />
+        </div>
       </div>
     </div>
 

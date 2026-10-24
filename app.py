@@ -6543,7 +6543,7 @@ def _admin_csv_response(filename, header, rows):
     w = csv.writer(buf, quoting=csv.QUOTE_ALL)
     w.writerow(header)
     for r in rows:
-        w.writerow([_csv_cell(v) for v in r])
+        w.writerow([_csv_cell(time12_filter(v)) for v in r])  # timestamps shown as 12-hour
     resp = app.response_class('\ufeff' + buf.getvalue(), mimetype='text/csv')
     resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
     return resp
