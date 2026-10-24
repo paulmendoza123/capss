@@ -2889,90 +2889,105 @@ def teacher_delete_class(class_id):
     flash(f'Class "{cls["subject_name"]}" has been deleted.', 'success')
     return redirect(url_for('teacher_home'))
 
-def _copy_class_exams(conn, src_class_id, dst_class_id):
-    """Duplicate every exam of one class (with sections, questions and choices)
-    into another. Student data is never copied; copies start closed/unscheduled."""
-    class_id = src_class_id
-    new_class_id = dst_class_id
-    # Duplicate every exam that belongs to the class, along with its sections,
-    # questions and choices. Student-specific data (enrollments, exam sessions,
-    # answers, logs) is intentionally NOT copied — the new class starts fresh.
-    exams = conn.execute('SELECT * FROM exams WHERE class_id=?', (class_id,)).fetchall()
-    for exam in exams:
-        new_exam_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        ecur = conn.execute('''
-            INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, activated_at, status,
-                                show_results, randomize_questions, tab_switch_limit, tab_switch_enabled,
-                                manually_closed, passing_score, exam_code, fullscreen_required,
-                                time_warning_minutes, exam_category, tos_id, periodic_type)
-            VALUES (?, ?, ?, NULL, NULL, 'upcoming', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
-        ''', (exam['title'], new_class_id, exam['duration_minutes'],
-              exam['show_results'], exam['randomize_questions'], exam['tab_switch_limit'], exam['tab_switch_enabled'],
-              exam['passing_score'], new_exam_code, exam['fullscreen_required'],
-              exam['time_warning_minutes'] if exam['time_warning_minutes'] is not None else DEFAULT_TIME_WARNING_MINUTES,
-              _q_get(exam, 'exam_category', 'quiz') or 'quiz', _q_get(exam, 'tos_id', None),
-              _q_get(exam, 'periodic_type', None)))
-        new_exam_id = ecur.lastrowid
-
-        section_id_map = {}
-        sections = conn.execute('SELECT * FROM sections WHERE exam_id=?', (exam['id'],)).fetchall()
-        for sec in sections:
-            scur = conn.execute('''
-                INSERT INTO sections (exam_id, title, description, section_type, order_index)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (new_exam_id, sec['title'], sec['description'] if 'description' in sec.keys() else None,
-                  sec['section_type'], sec['order_index']))
-            section_id_map[sec['id']] = scur.lastrowid
-
-        questions = conn.execute('SELECT * FROM questions WHERE exam_id=?', (exam['id'],)).fetchall()
-        for q in questions:
-            new_section_id = section_id_map.get(q['section_id']) if q['section_id'] else None
-            qcur = conn.execute('''
-                INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive, exam_category, tos_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (new_exam_id, new_section_id, q['question_text'], q['question_type'], q['points'],
-                  q['correct_answer'], q['order_index'], _q_get(q, 'case_sensitive', 0),
-                  _q_get(q, 'exam_category', 'quiz') or 'quiz', _q_get(q, 'tos_id', None)))
-            new_question_id = qcur.lastrowid
-
-            choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (q['id'],)).fetchall()
-            for c in choices:
-                conn.execute('''
-                    INSERT INTO choices (question_id, choice_label, choice_text)
-                    VALUES (?, ?, ?)
-                ''', (new_question_id, c['choice_label'], c['choice_text']))
-
-    return len(exams)
+def _unique_exam_code(conn):
+    while True:
+        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        if not conn.execute('SELECT 1 FROM exams WHERE exam_code=?', (code,)).fetchone():
+            return code
 
 
-@app.route('/teacher/class/<int:class_id>/copy', methods=['POST'])
+def _copy_exam(conn, exam, dst_class_id):
+    """Duplicate one exam (with its sections, questions and choices) into another class.
+    Student data (sessions, answers, logs) is never copied; the copy starts closed and
+    unscheduled so the teacher can set it up for that class."""
+    ecur = conn.execute('''
+        INSERT INTO exams (title, class_id, duration_minutes, scheduled_at, activated_at, status,
+                            show_results, randomize_questions, tab_switch_limit, tab_switch_enabled,
+                            manually_closed, passing_score, exam_code, fullscreen_required,
+                            time_warning_minutes, exam_category, tos_id, periodic_type)
+        VALUES (?, ?, ?, NULL, NULL, 'upcoming', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+    ''', (exam['title'], dst_class_id, exam['duration_minutes'],
+          exam['show_results'], exam['randomize_questions'], exam['tab_switch_limit'], exam['tab_switch_enabled'],
+          exam['passing_score'], _unique_exam_code(conn), exam['fullscreen_required'],
+          exam['time_warning_minutes'] if exam['time_warning_minutes'] is not None else DEFAULT_TIME_WARNING_MINUTES,
+          _q_get(exam, 'exam_category', 'quiz') or 'quiz', _q_get(exam, 'tos_id', None),
+          _q_get(exam, 'periodic_type', None)))
+    new_exam_id = ecur.lastrowid
+
+    section_id_map = {}
+    for sec in conn.execute('SELECT * FROM sections WHERE exam_id=?', (exam['id'],)).fetchall():
+        scur = conn.execute('''
+            INSERT INTO sections (exam_id, title, description, section_type, order_index)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (new_exam_id, sec['title'], sec['description'] if 'description' in sec.keys() else None,
+              sec['section_type'], sec['order_index']))
+        section_id_map[sec['id']] = scur.lastrowid
+
+    for q in conn.execute('SELECT * FROM questions WHERE exam_id=?', (exam['id'],)).fetchall():
+        new_section_id = section_id_map.get(q['section_id']) if q['section_id'] else None
+        qcur = conn.execute('''
+            INSERT INTO questions (exam_id, section_id, question_text, question_type, points, correct_answer, order_index, case_sensitive, exam_category, tos_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (new_exam_id, new_section_id, q['question_text'], q['question_type'], q['points'],
+              q['correct_answer'], q['order_index'], _q_get(q, 'case_sensitive', 0),
+              _q_get(q, 'exam_category', 'quiz') or 'quiz', _q_get(q, 'tos_id', None)))
+        new_question_id = qcur.lastrowid
+        for c in conn.execute('SELECT * FROM choices WHERE question_id=?', (q['id'],)).fetchall():
+            conn.execute('''
+                INSERT INTO choices (question_id, choice_label, choice_text)
+                VALUES (?, ?, ?)
+            ''', (new_question_id, c['choice_label'], c['choice_text']))
+    return new_exam_id
+
+
+@app.route('/teacher/class/<int:class_id>/import-exam', methods=['GET', 'POST'])
 @role_required('teacher')
-def teacher_copy_class(class_id):
+def teacher_import_exam(class_id):
+    """Copy exams from the teacher's OTHER classes into this one (e.g. Block A -> Block B
+    of the same subject). Only the teacher's own classes are offered."""
     conn = get_db()
-    cls = conn.execute(
-        'SELECT * FROM classes WHERE id = ? AND teacher_id = ?',
-        (class_id, session['user_id'])
-    ).fetchone()
+    cls = conn.execute('SELECT * FROM classes WHERE id = ? AND teacher_id = ?',
+                       (class_id, session['user_id'])).fetchone()
     if not cls:
         flash('Class not found.', 'error')
         return redirect(url_for('teacher_home'))
 
-    # Generate a fresh, unique class code for the copy
-    new_code = _new_class_code(conn, cls['subject_code'])
-    new_name = f"{cls['subject_name']} (Copy)"
+    if request.method == 'POST':
+        exam_ids = [i for i in request.form.getlist('exam_ids', type=int) if i]
+        if not exam_ids:
+            flash('Select at least one exam to import.', 'error')
+            return redirect(url_for('teacher_import_exam', class_id=class_id))
+        qmarks = ','.join('?' * len(exam_ids))
+        exams = conn.execute(f'''
+            SELECT e.* FROM exams e JOIN classes c ON e.class_id = c.id
+            WHERE e.id IN ({qmarks}) AND c.teacher_id = ? AND c.id <> ?
+            ORDER BY e.id
+        ''', (*exam_ids, session['user_id'], class_id)).fetchall()
+        for ex in exams:
+            _copy_exam(conn, ex, class_id)
+        conn.commit()
+        if exams:
+            flash(f'Imported {len(exams)} exam(s) into this class. They start closed and unscheduled.', 'success')
+            return redirect(url_for('teacher_class_detail', class_id=class_id))
+        flash('Those exams could not be imported.', 'error')
+        return redirect(url_for('teacher_import_exam', class_id=class_id))
 
-    cur = conn.execute('''
-        INSERT INTO classes (class_code, subject_code, subject_name, block_name, program, year_level, teacher_id, is_active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (new_code, cls['subject_code'], new_name, cls['block_name'], cls['program'], cls['year_level'],
-          session['user_id'], cls['is_active']))
-    new_class_id = cur.lastrowid
-
-    _copy_class_exams(conn, class_id, new_class_id)
-
-    conn.commit()
-    flash(f'"{cls["subject_name"]}" has been copied as "{new_name}" (code: {new_code}).', 'success')
-    return redirect(url_for('teacher_home'))
+    others = conn.execute('''
+        SELECT * FROM classes WHERE teacher_id = ? AND id <> ?
+        ORDER BY CASE WHEN (subject_id IS NOT NULL AND subject_id = ?) OR subject_code = ? THEN 0 ELSE 1 END,
+                 subject_name, block_name
+    ''', (session['user_id'], class_id, cls['subject_id'], cls['subject_code'])).fetchall()
+    existing = {(r['title'] or '').strip().lower() for r in
+                conn.execute('SELECT title FROM exams WHERE class_id=?', (class_id,)).fetchall()}
+    groups = []
+    for oc in others:
+        exams = conn.execute('''
+            SELECT e.*, (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS q_count
+            FROM exams e WHERE e.class_id = ? ORDER BY e.id
+        ''', (oc['id'],)).fetchall()
+        same = (oc['subject_id'] is not None and oc['subject_id'] == cls['subject_id']) or oc['subject_code'] == cls['subject_code']
+        groups.append({'cls': oc, 'same_subject': same, 'exams': exams})
+    return render_template('teacher/import_exam.html', cls=cls, groups=groups, existing=existing)
 
 # ── Quiz vs Periodic Exam + Table of Specification (TOS) ─────────────────────
 EXAM_CATEGORIES = ('quiz', 'periodic')
