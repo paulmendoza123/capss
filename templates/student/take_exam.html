@@ -324,7 +324,7 @@
           <input type="radio" name="answer_{{ q.id }}" value="{{ choice.choice_label }}"
                  data-qid="{{ q.id }}"
                  {% if saved_map.get(q.id) == choice.choice_label %}checked{% endif %} />
-          <span class="choice-label-badge">{{ choice.choice_label }}</span>
+          <span class="choice-label-badge">{{ choice.display_label or choice.choice_label }}</span>
           <span>{{ choice.choice_text }}</span>
         </label>
         {% endfor %}

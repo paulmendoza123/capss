@@ -322,6 +322,62 @@ def _q_get(q, key, default=None):
         return default
     return default if v is None else v
 
+# Choices like "All of the above" only make sense in the last position, so they
+# stay anchored at the bottom when choices are shuffled.
+_ANCHOR_CHOICE_RE = re.compile(
+    r'^\s*(all|none|both|neither)\s+of\s+(the\s+)?(above|these|the\s+choices|them)\b'
+    r'|^\s*(a|b|c|d|e)\s*(and|&|,)\s*(b|c|d|e)\b(\s*(and|&|,)\s*(c|d|e))?\s*(only)?\s*$',
+    re.I)
+
+
+def shuffle_choice_list(choices):
+    """Return a shuffled copy of `choices` (list of dicts), keeping
+    'All/None of the above'-style options anchored at the end."""
+    free = [c for c in choices if not _ANCHOR_CHOICE_RE.match(c.get('choice_text') or '')]
+    anchored = [c for c in choices if _ANCHOR_CHOICE_RE.match(c.get('choice_text') or '')]
+    random.shuffle(free)
+    return free + anchored
+
+
+def set_display_labels(choices):
+    """Give each choice a positional letter (A, B, C ...) for display only.
+    The stored choice_label stays untouched, because that is what gets
+    submitted and graded."""
+    for i, c in enumerate(choices):
+        c['display_label'] = chr(ord('A') + i) if i < 26 else c['choice_label']
+    return choices
+
+
+def order_choices_for_session(choices, saved_ids):
+    """Reorder `choices` to match a saved list of choice ids (extras go last)."""
+    by_id = {c['id']: c for c in choices}
+    ordered = [by_id[cid] for cid in saved_ids if cid in by_id]
+    seen = set(saved_ids)
+    return ordered + [c for c in choices if c['id'] not in seen]
+
+
+def load_json_or_none(raw):
+    try:
+        return json.loads(raw) if raw else None
+    except Exception:
+        return None
+
+
+def review_choices(conn, exam, exam_sess, q):
+    """Choices for a review page, in the order THIS student saw them
+    (with the same positional letters), or the normal order if not shuffled."""
+    rows = [dict(c) for c in conn.execute(
+        'SELECT * FROM choices WHERE question_id=? ORDER BY id', (q['id'],)).fetchall()]
+    if _q_get(exam, 'shuffle_choices', 0):
+        saved = (load_json_or_none(_q_get(exam_sess, 'choice_order', None)) or {}).get(str(q['id']))
+        if saved:
+            rows = order_choices_for_session(rows, saved)
+            return set_display_labels(rows)
+    for c in rows:
+        c['display_label'] = c['choice_label']
+    return rows
+
+
 def question_credit(q, answer, manual_score=None):
     """Fraction of credit (0.0 - 1.0) that `answer` earns on question `q`.
     Single source of truth used by submit grading, the student answer review
@@ -957,6 +1013,20 @@ def init_db():
         conn.commit()
     except Exception:
         pass  # Column already exists
+
+    # Migration: shuffle-choices / random-section options on exams, and the
+    # per-student choice + section order (so a refresh/resume keeps the same shuffle)
+    for _stmt in (
+        'ALTER TABLE exams ADD COLUMN shuffle_choices INTEGER DEFAULT 0',
+        'ALTER TABLE exams ADD COLUMN randomize_sections INTEGER DEFAULT 0',
+        'ALTER TABLE exam_sessions ADD COLUMN choice_order TEXT',
+        'ALTER TABLE exam_sessions ADD COLUMN section_order TEXT',
+    ):
+        try:
+            conn.execute(_stmt)
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
 
     # Migration: add last_seen to exam_sessions for connection tracking
     try:
@@ -2213,8 +2283,49 @@ def student_take_exam(exam_id):
         'SELECT * FROM sections WHERE exam_id=? ORDER BY order_index', (exam_id,)
     ).fetchall()
 
+    # Random sections: each student gets their own section order, saved on
+    # their session so refreshing / resuming keeps the same order.
+    section_order_changed = False
+    if sections and _q_get(exam, 'randomize_sections', 0) and len(sections) > 1:
+        saved_sec_order = load_json_or_none(_q_get(existing, 'section_order', None))
+        by_id = {sec['id']: sec for sec in sections}
+        if saved_sec_order:
+            ordered = [by_id[sid] for sid in saved_sec_order if sid in by_id]
+            ordered += [sec for sec in sections if sec['id'] not in set(saved_sec_order)]
+            sections = ordered
+        else:
+            sections = list(sections)
+            random.shuffle(sections)
+            section_order_changed = True
+            conn.execute('UPDATE exam_sessions SET section_order=? WHERE id=?',
+                         (json.dumps([sec['id'] for sec in sections]), existing['id']))
+            conn.commit()
+
     sections_data = []
     all_questions = []
+
+    # Random choices: per-student choice order, saved on the session
+    shuffle_choices_on = bool(_q_get(exam, 'shuffle_choices', 0))
+    saved_choice_order = load_json_or_none(_q_get(existing, 'choice_order', None)) or {}
+    choice_order_changed = False
+
+    def load_choices(q):
+        nonlocal choice_order_changed
+        rows = [dict(c) for c in conn.execute(
+            'SELECT * FROM choices WHERE question_id=? ORDER BY id', (q['id'],)).fetchall()]
+        if shuffle_choices_on:
+            saved_ids = saved_choice_order.get(str(q['id']))
+            if saved_ids:
+                rows = order_choices_for_session(rows, saved_ids)
+            else:
+                rows = shuffle_choice_list(rows)
+                saved_choice_order[str(q['id'])] = [c['id'] for c in rows]
+                choice_order_changed = True
+            set_display_labels(rows)
+        else:
+            for c in rows:
+                c['display_label'] = c['choice_label']
+        return rows
 
     # Load persisted question order (so resuming preserves the same shuffle)
     saved_order = None
@@ -2243,8 +2354,7 @@ def student_take_exam(exam_id):
                     random.shuffle(q_list)
             for q in q_list:
                 if q['question_type'] == 'multiple_choice':
-                    choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (q['id'],)).fetchall()
-                    q['choices'] = [dict(c) for c in choices]
+                    q['choices'] = load_choices(q)
                 else:
                     q['choices'] = []
                 if q['question_type'] == 'fill_blank':
@@ -2264,8 +2374,7 @@ def student_take_exam(exam_id):
                 random.shuffle(q_list)
         for q in q_list:
             if q['question_type'] == 'multiple_choice':
-                choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (q['id'],)).fetchall()
-                q['choices'] = [dict(c) for c in choices]
+                q['choices'] = load_choices(q)
             else:
                 q['choices'] = []
             if q['question_type'] == 'fill_blank':
@@ -2273,11 +2382,19 @@ def student_take_exam(exam_id):
             all_questions.append(q)
         sections_data.append({'title': None, 'description': None, 'questions': q_list})
 
-    # Persist the question order for this session (first time only)
-    if exam['randomize_questions'] and saved_order is None and existing:
+    # Persist the question order for this session (first time only). Also saved
+    # when only sections are randomized, so the review pages can follow the
+    # student's order.
+    if (exam['randomize_questions'] or _q_get(exam, 'randomize_sections', 0)) \
+            and saved_order is None and existing:
         new_order = json.dumps([q['id'] for q in all_questions])
         conn.execute('UPDATE exam_sessions SET question_order=? WHERE id=?',
                      (new_order, existing['id']))
+        conn.commit()
+
+    if choice_order_changed:
+        conn.execute('UPDATE exam_sessions SET choice_order=? WHERE id=?',
+                     (json.dumps(saved_choice_order), existing['id']))
         conn.commit()
 
     # Get saved answers — UNIQUE(session_id, question_id) guarantees one row per question
@@ -2343,7 +2460,7 @@ def student_exam_result(exam_id):
             WHERE q.exam_id = ? ORDER BY s.order_index, q.order_index
         ''', (exam_id,)).fetchall()
         # Reorder to match the student's randomized order if exam was shuffled
-        if exam['randomize_questions'] and exam_sess['question_order']:
+        if (exam['randomize_questions'] or _q_get(exam, 'randomize_sections', 0)) and exam_sess['question_order']:
             try:
                 saved_order = json.loads(exam_sess['question_order'])
                 qs_map = {q['id']: q for q in qs}
@@ -2357,8 +2474,7 @@ def student_exam_result(exam_id):
                                (exam_sess['id'], q['id'])).fetchone()
             qd['student_answer'] = ans['answer_text'] if ans else ''
             if q['question_type'] == 'multiple_choice':
-                choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (q['id'],)).fetchall()
-                qd['choices'] = [dict(c) for c in choices]
+                qd['choices'] = review_choices(conn, exam, exam_sess, q)
             else:
                 qd['choices'] = []
             is_case_sensitive = bool(_q_get(q, 'case_sensitive', 0))
@@ -2913,6 +3029,8 @@ def _copy_exam(conn, exam, dst_class_id):
           _q_get(exam, 'exam_category', 'quiz') or 'quiz', _q_get(exam, 'tos_id', None),
           _q_get(exam, 'periodic_type', None)))
     new_exam_id = ecur.lastrowid
+    conn.execute('UPDATE exams SET shuffle_choices=?, randomize_sections=? WHERE id=?',
+                 (_q_get(exam, 'shuffle_choices', 0), _q_get(exam, 'randomize_sections', 0), new_exam_id))
 
     section_id_map = {}
     for sec in conn.execute('SELECT * FROM sections WHERE exam_id=?', (exam['id'],)).fetchall():
@@ -3159,6 +3277,8 @@ def teacher_create_exam(class_id):
             scheduled_at = scheduled_at.replace('T', ' ')  # normalize datetime-local format
         show_results = 1 if request.form.get('show_results') else 0
         randomize = 1 if request.form.get('randomize_questions') else 0
+        shuffle_choices = 1 if request.form.get('shuffle_choices') else 0
+        randomize_sections = 1 if request.form.get('randomize_sections') else 0
         tab_switch_enabled = 1 if request.form.get('tab_switch_enabled') else 0
         tab_limit = request.form.get('tab_switch_limit', 3, type=int) if tab_switch_enabled else 0
         fullscreen_required = 1 if request.form.get('fullscreen_required') else 0
@@ -3192,6 +3312,8 @@ def teacher_create_exam(class_id):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning, exam_category, exam_tos_id, periodic_type))
         exam_id = cur.lastrowid
+        conn.execute('UPDATE exams SET shuffle_choices=?, randomize_sections=? WHERE id=?',
+                     (shuffle_choices, randomize_sections, exam_id))
 
         conn.commit()
         flash('Exam created!', 'success')
@@ -3474,7 +3596,7 @@ def teacher_view_student_result(exam_id, student_id):
         WHERE q.exam_id = ? ORDER BY s.order_index, q.order_index
     ''', (exam_id,)).fetchall()
     # Reorder to match the student's randomized order if the exam was shuffled
-    if exam['randomize_questions'] and exam_sess['question_order']:
+    if (exam['randomize_questions'] or _q_get(exam, 'randomize_sections', 0)) and exam_sess['question_order']:
         try:
             saved_order = json.loads(exam_sess['question_order'])
             qs_map = {q['id']: q for q in qs}
@@ -3490,8 +3612,7 @@ def teacher_view_student_result(exam_id, student_id):
                            (exam_sess['id'], q['id'])).fetchone()
         qd['student_answer'] = ans['answer_text'] if ans else ''
         if q['question_type'] == 'multiple_choice':
-            choices = conn.execute('SELECT * FROM choices WHERE question_id=?', (q['id'],)).fetchall()
-            qd['choices'] = [dict(c) for c in choices]
+            qd['choices'] = review_choices(conn, exam, exam_sess, q)
         else:
             qd['choices'] = []
         is_case_sensitive = bool(_q_get(q, 'case_sensitive', 0))
@@ -4083,6 +4204,9 @@ def teacher_exam_settings(exam_id):
         conn.execute('UPDATE exams SET time_warning_minutes=? WHERE id=?',
                      (clean_time_warning(request.form.get('time_warning_minutes'),
                                          duration or exam['duration_minutes']), exam_id))
+        conn.execute('UPDATE exams SET shuffle_choices=?, randomize_sections=? WHERE id=?',
+                     (1 if request.form.get('shuffle_choices') else 0,
+                      1 if request.form.get('randomize_sections') else 0, exam_id))
         conn.commit()
         flash('Settings saved.', 'success')
         redirect_to = request.form.get('redirect_to')

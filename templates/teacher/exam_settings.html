@@ -120,6 +120,14 @@
         <input type="checkbox" name="randomize_questions" {% if exam.randomize_questions %}checked{% endif %} />
         <span class="checkbox-label">Randomize question order</span>
       </label>
+      <label class="checkbox-group">
+        <input type="checkbox" name="shuffle_choices" {% if exam.shuffle_choices %}checked{% endif %} />
+        <span class="checkbox-label">Shuffle answer choices</span>
+      </label>
+      <label class="checkbox-group">
+        <input type="checkbox" name="randomize_sections" {% if exam.randomize_sections %}checked{% endif %} />
+        <span class="checkbox-label">Randomize section order</span>
+      </label>
     </div>
     <div class="flex gap-2" style="flex-wrap:wrap">
       <button type="submit" class="btn btn-primary btn-lg">Save Settings</button>
