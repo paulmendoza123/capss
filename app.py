@@ -2006,40 +2006,44 @@ def student_home():
 @app.route('/student/join', methods=['GET', 'POST'])
 @role_required('student')
 def student_join_class():
-    if request.method == 'POST':
-        code = request.form.get('class_code', '').strip().upper()
-        conn = get_db()
-        cls = conn.execute(
-            'SELECT * FROM classes WHERE class_code = ? AND is_active = 1', (code,)
+    # The "Join a Class" form is now a popup modal on the My Classes page, so
+    # this route only handles the POST. Every outcome (success or error) flashes
+    # a message and goes back to My Classes. A plain GET (old bookmark/link)
+    # just redirects there too.
+    if request.method != 'POST':
+        return redirect(url_for('student_home'))
+    code = request.form.get('class_code', '').strip().upper()
+    conn = get_db()
+    cls = conn.execute(
+        'SELECT * FROM classes WHERE class_code = ? AND is_active = 1', (code,)
+    ).fetchone()
+    if not cls:
+        flash('Invalid or inactive class code.', 'error')
+        return redirect(url_for('student_home'))
+    # The teacher controls this explicitly via the "Open to Anyone" /
+    # "Restricted to Allowed List" switch on the class's Allowed
+    # Emails tab. When restricted, only students whose email is on
+    # the list may join (an empty list while restricted means no one
+    # can join yet — correct, if unhelpful, until emails are added).
+    if cls['restrict_join']:
+        student_email = (session.get('email') or '').strip().lower()
+        is_allowed = conn.execute(
+            'SELECT 1 FROM class_allowed_emails WHERE class_id=? AND email=?',
+            (cls['id'], student_email)
         ).fetchone()
-        if not cls:
-            flash('Invalid or inactive class code.', 'error')
-        else:
-            # The teacher controls this explicitly via the "Open to Anyone" /
-            # "Restricted to Allowed List" switch on the class's Allowed
-            # Emails tab. When restricted, only students whose email is on
-            # the list may join (an empty list while restricted means no one
-            # can join yet — correct, if unhelpful, until emails are added).
-            if cls['restrict_join']:
-                student_email = (session.get('email') or '').strip().lower()
-                is_allowed = conn.execute(
-                    'SELECT 1 FROM class_allowed_emails WHERE class_id=? AND email=?',
-                    (cls['id'], student_email)
-                ).fetchone()
-                if not is_allowed:
-                    flash('Your email is not on this class\'s allowed list. Please check with your teacher.', 'error')
-                    return render_template('student/join_class.html')
-            try:
-                conn.execute(
-                    'INSERT INTO class_enrollments (class_id, student_id) VALUES (?, ?)',
-                    (cls['id'], session['user_id'])
-                )
-                conn.commit()
-                flash(f'Successfully joined {cls["subject_name"]}!', 'success')
-                return redirect(url_for('student_home'))
-            except sqlite3.IntegrityError:
-                flash('You are already enrolled in this class.', 'error')
-    return render_template('student/join_class.html')
+        if not is_allowed:
+            flash('Your email is not on this class\'s allowed list. Please check with your teacher.', 'error')
+            return redirect(url_for('student_home'))
+    try:
+        conn.execute(
+            'INSERT INTO class_enrollments (class_id, student_id) VALUES (?, ?)',
+            (cls['id'], session['user_id'])
+        )
+        conn.commit()
+        flash(f'Successfully joined {cls["subject_name"]}!', 'success')
+    except sqlite3.IntegrityError:
+        flash('You are already enrolled in this class.', 'error')
+    return redirect(url_for('student_home'))
 
 @app.route('/student/class/<int:class_id>')
 @role_required('student')
@@ -2573,12 +2577,14 @@ def teacher_home():
     ''', (session['user_id'],)).fetchall()
     programs = conn.execute('SELECT * FROM programs ORDER BY code').fetchall()
     assigned = []
-    for o in _teacher_open_offerings(conn, session['user_id']):
+    offerings = _teacher_open_offerings(conn, session['user_id'])   # also feeds the Create Class modal
+    for o in offerings:
         n = conn.execute('SELECT COUNT(*) FROM classes WHERE subject_id=? AND semester_id=? AND teacher_id=? AND block_name=?',
                          (o['subject_id'], o['sem_id'], session['user_id'], o['block_name'] or '')).fetchone()[0]
         if n == 0:  # hide subjects that already have a class; they show up as class cards below
             assigned.append({'o': o, 'class_count': n})
-    return render_template('teacher/classes.html', classes=classes, programs=programs, assigned=assigned)
+    return render_template('teacher/classes.html', classes=classes, programs=programs, assigned=assigned,
+                           offerings=offerings)
 
 @app.route('/teacher/class/<int:class_id>/edit', methods=['POST'])
 @role_required('teacher')
@@ -2611,33 +2617,36 @@ def teacher_edit_class(class_id):
 @role_required('teacher')
 def teacher_create_class():
     """Teachers create classes only from the subjects the admin / program head
-    assigned to them (Curriculum > Offerings) in an Active semester."""
+    assigned to them (Curriculum > Offerings) in an Active semester.
+
+    The form is now a popup modal on the My Classes page, so this route only
+    handles the POST. Success or error, it flashes a message and returns to
+    My Classes. A plain GET (old bookmark/link) just redirects there."""
+    if request.method != 'POST':
+        return redirect(url_for('teacher_home'))
     conn = get_db()
     offerings = _teacher_open_offerings(conn, session['user_id'])
-    if request.method == 'POST':
-        offering_id = request.form.get('offering_id', type=int)
-        off = next((o for o in offerings if o['offering_id'] == offering_id), None)
-        block_name = (off['block_name'] or '').strip().upper() if off else ''
-        if not off:
-            flash('Please choose one of your assigned subjects.', 'error')
-        elif not block_name:
-            flash('No block was set for this subject. Ask your program head (admin) to set it in Curriculum > Offerings.', 'error')
-        elif conn.execute('SELECT 1 FROM classes WHERE subject_id=? AND semester_id=? AND block_name=?',
-                          (off['subject_id'], off['sem_id'], block_name)).fetchone():
-            flash(f"Block {block_name} of {off['code']} already exists this semester.", 'error')
-        else:
-            code = _new_class_code(conn, off['code'])
-            conn.execute('''
-                INSERT INTO classes (class_code, subject_code, subject_name, block_name, program, year_level,
-                                     teacher_id, semester_id, subject_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (code, off['code'], off['title'], block_name, off['program'], off['year_level'],
-                  session['user_id'], off['sem_id'], off['subject_id']))
-            conn.commit()
-            flash(f'Class created! Code: {code}', 'success')
-            return redirect(url_for('teacher_home'))
-    return render_template('teacher/create_class.html', offerings=offerings,
-                           preselect=request.args.get('offering_id', type=int))
+    offering_id = request.form.get('offering_id', type=int)
+    off = next((o for o in offerings if o['offering_id'] == offering_id), None)
+    block_name = (off['block_name'] or '').strip().upper() if off else ''
+    if not off:
+        flash('Please choose one of your assigned subjects.', 'error')
+    elif not block_name:
+        flash('No block was set for this subject. Ask your program head (admin) to set it in Curriculum > Offerings.', 'error')
+    elif conn.execute('SELECT 1 FROM classes WHERE subject_id=? AND semester_id=? AND block_name=?',
+                      (off['subject_id'], off['sem_id'], block_name)).fetchone():
+        flash(f"Block {block_name} of {off['code']} already exists this semester.", 'error')
+    else:
+        code = _new_class_code(conn, off['code'])
+        conn.execute('''
+            INSERT INTO classes (class_code, subject_code, subject_name, block_name, program, year_level,
+                                 teacher_id, semester_id, subject_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (code, off['code'], off['title'], block_name, off['program'], off['year_level'],
+              session['user_id'], off['sem_id'], off['subject_id']))
+        conn.commit()
+        flash(f'Class created! Code: {code}', 'success')
+    return redirect(url_for('teacher_home'))
 
 
 def _teacher_open_offerings(conn, teacher_id):

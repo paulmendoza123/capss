@@ -7,9 +7,42 @@
     <div class="page-subtitle">Classes you are enrolled in</div>
   </div>
   <div class="page-actions">
-    <a href="{{ url_for('student_join_class') }}" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Join a Class</a>
+    <button type="button" class="btn btn-primary" onclick="openJoinClassModal()"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Join a Class</button>
   </div>
 </div>
+
+{# ══════════════════════════════════════════════════
+   JOIN A CLASS MODAL
+══════════════════════════════════════════════════ #}
+<div class="modal-overlay" id="modal-join-class">
+  <div class="modal" style="max-width:440px;width:95vw">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+      <div class="modal-title" style="margin-bottom:0"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Join a Class</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-join-class')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
+    </div>
+    <form method="POST" action="{{ url_for('student_join_class') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-group">
+        <label class="form-label">Enter Class Code</label>
+        <input type="text" name="class_code" id="joinClassCode" class="form-control font-mono"
+               placeholder="e.g. CS101-AB123" autocomplete="off" autocapitalize="characters" spellcheck="false"
+               style="font-size:1.1rem;letter-spacing:0.08em;text-transform:uppercase"
+               oninput="this.value=this.value.toUpperCase()" required />
+        <div class="form-hint">Class codes are provided by your teacher. They are automatically capitalized.</div>
+      </div>
+      <div class="modal-footer" style="padding-top:0.75rem;border-top:1px solid var(--border)">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('modal-join-class')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Join Class</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+function openJoinClassModal() {
+  openModal('modal-join-class');
+  setTimeout(() => document.getElementById('joinClassCode')?.focus(), 50);
+}
+</script>
 
 {% if classes %}
 {% set teachers = [] %}

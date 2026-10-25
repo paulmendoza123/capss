@@ -7,9 +7,59 @@
     <div class="page-subtitle">Classes you are managing</div>
   </div>
   <div class="page-actions">
-    <a href="{{ url_for('teacher_create_class') }}" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Create Class</a>
+    <button type="button" class="btn btn-primary" onclick="openCreateClassModal()"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Create Class</button>
   </div>
 </div>
+
+{# ══════════════════════════════════════════════════
+   CREATE CLASS MODAL
+══════════════════════════════════════════════════ #}
+<div class="modal-overlay" id="modal-create-class">
+  <div class="modal" style="max-width:560px;width:95vw">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem">
+      <div class="modal-title" style="margin-bottom:0"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Create a New Class</div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal('modal-create-class')" style="padding:0.25rem 0.5rem;font-size:1rem;line-height:1">✕</button>
+    </div>
+    {% if offerings %}
+    <form method="POST" action="{{ url_for('teacher_create_class') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-group">
+        <label class="form-label">Subject (assigned to you)</label>
+        <select name="offering_id" id="createClassOffering" class="form-select" required>
+          <option value="">Select subject</option>
+          {% for o in offerings %}
+          <option value="{{ o.offering_id }}" {% if o.class_exists %}disabled{% endif %}>{{ o.code }}{% if o.block_name %} · Block {{ o.block_name }}{% endif %} · {{ o.title }} — {{ o.program }} {{ o.year_level }} · {{ o.term }} S.Y. {{ o.school_year }}{% if o.schedule %} · {{ o.schedule }}{% endif %}{% if o.class_exists %} (class already created){% endif %}</option>
+          {% endfor %}
+        </select>
+        <div class="form-hint">Only the subjects your program head assigned to you this semester appear here. The block is set by your program head, so you don't need to enter it.</div>
+      </div>
+      <div class="form-hint mb-2">The class code is built from the subject's course code and is auto-generated for students to join.</div>
+      <div class="modal-footer" style="padding-top:0.75rem;border-top:1px solid var(--border)">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('modal-create-class')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Class</button>
+      </div>
+    </form>
+    {% else %}
+    <div class="empty-state" style="padding:1rem 0">
+      <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></div>
+      <div class="empty-state-title">No subjects assigned to you yet</div>
+      <div class="empty-state-text">Your program head (admin) assigns subjects to teachers each semester. Ask them to assign you in Curriculum &rarr; Offerings, then come back here.</div>
+    </div>
+    <div class="modal-footer" style="padding-top:0.75rem;border-top:1px solid var(--border)">
+      <button type="button" class="btn btn-ghost" onclick="closeModal('modal-create-class')">Close</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+<script>
+// Opens the Create Class popup. If an offering id is passed (from the
+// "Subjects assigned to you" list), that subject is pre-selected.
+function openCreateClassModal(offeringId) {
+  const sel = document.getElementById('createClassOffering');
+  if (sel) sel.value = offeringId ? String(offeringId) : '';
+  openModal('modal-create-class');
+}
+</script>
 
 {% if assigned %}
 <div class="card mb-2">
@@ -23,7 +73,7 @@
     </div>
     <div class="flex gap-1 items-center">
       {% if a.class_count %}<span class="badge badge-green">{{ a.class_count }} class{{ 'es' if a.class_count != 1 else '' }} created</span>{% else %}<span class="badge badge-gray">No class yet</span>{% endif %}
-      <a href="{{ url_for('teacher_create_class', offering_id=a.o.offering_id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Create Class</a>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="openCreateClassModal({{ a.o.offering_id }})"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg> Create Class</button>
     </div>
   </div>
   {% endfor %}
