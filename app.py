@@ -926,6 +926,12 @@ def init_db():
         conn.commit()
     except Exception:
         pass  # Column already exists
+    # Screenshot attempts (Print Screen key etc.): informational counter, never ends an exam
+    try:
+        conn.execute('ALTER TABLE exam_sessions ADD COLUMN screenshot_attempt_count INTEGER DEFAULT 0')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
 
     # Back-fill exam_code for any exams that don't have one yet
     try:
@@ -3468,6 +3474,7 @@ LOG_EXPORT_VIOLATIONS = [
     ('Tab Switch', 'tab_switch'),
     ('Lost Focus', 'window_minimize'),
     ('Exited Fullscreen', 'fullscreen_exit'),
+    ('Screenshot Attempt', 'screenshot_attempt'),
     ('Disconnected', 'disconnected'),
 ]
 
@@ -5757,7 +5764,7 @@ def admin_logs():
         JOIN users u ON sl.student_id = u.id
         JOIN exams e ON sl.exam_id = e.id
         WHERE sl.event_type IN ('tab_switch', 'lost_focus', 'window_minimize',
-                                'window_blur', 'fullscreen_exit')
+                                'window_blur', 'fullscreen_exit', 'screenshot_attempt')
         ORDER BY sl.logged_at DESC LIMIT 100
     ''').fetchall()
     pw_resets = conn.execute('''
@@ -6846,7 +6853,7 @@ def admin_export(kind):
             JOIN users u ON sl.student_id = u.id
             JOIN exams e ON sl.exam_id = e.id
             WHERE sl.event_type IN ('tab_switch', 'lost_focus', 'window_minimize',
-                                    'window_blur', 'fullscreen_exit')
+                                    'window_blur', 'fullscreen_exit', 'screenshot_attempt')
             ORDER BY sl.logged_at DESC
         ''').fetchall()
         return _admin_csv_response(f'SPARK_Suspicious_Activity_{stamp}.csv',
@@ -7067,6 +7074,13 @@ def log_suspicious():
             conn.commit()
             return jsonify({'status': 'logged', 'count': new_count, 'terminated': False})
 
+        if event_type == 'screenshot_attempt':
+            # Informational only: logged and counted for the teacher, never auto-terminates
+            new_count = (sess['screenshot_attempt_count'] or 0) + 1
+            conn.execute('UPDATE exam_sessions SET screenshot_attempt_count=? WHERE id=?', (new_count, session_id))
+            conn.commit()
+            return jsonify({'status': 'logged', 'count': new_count, 'terminated': False})
+
         if event_type == 'window_minimize':
             new_count = sess['lost_focus_count'] + 1
             conn.execute('UPDATE exam_sessions SET lost_focus_count=? WHERE id=?', (new_count, session_id))
@@ -7266,7 +7280,7 @@ def api_monitoring(exam_id):
         log_params.append(log_event)
 
     active_sessions = conn.execute('''
-        SELECT es.id, u.full_name, es.tab_switch_count, es.fullscreen_exit_count, es.lost_focus_count, es.status,
+        SELECT es.id, u.full_name, es.tab_switch_count, es.fullscreen_exit_count, es.lost_focus_count, es.screenshot_attempt_count, es.status,
                COUNT(DISTINCT CASE WHEN TRIM(COALESCE(a.answer_text,'')) != '' THEN a.question_id END) as answered,
                es.started_at, es.last_seen
         FROM exam_sessions es

@@ -136,6 +136,7 @@
     </div>
     <ul style="color:var(--text2);font-size:0.85rem;line-height:1.7;margin:0 0 1rem 1.1rem;padding:0">
       <li>Tab switches, lost window focus, or minimizing the browser</li>
+      <li>Attempts to take a screenshot (such as pressing the Print Screen key). SPARK does not capture or store any image; it only notes that an attempt happened</li>
       {% if exam.fullscreen_required %}<li>Exiting fullscreen mode (required for this exam)</li>{% endif %}
       <li>Connection activity (so your teacher knows if you disconnect)</li>
       <li>When you start and submit the exam</li>
@@ -184,6 +185,24 @@
   </div>
   <button type="button" id="enter-fullscreen-btn" class="btn btn-primary btn-lg">Enter Fullscreen & Begin</button>
 </div>
+
+<!-- Screenshot shield (flashes over the exam when a screenshot attempt is detected) -->
+<div id="screenshot-shield" role="alert" style="
+  display:none;
+  position:fixed;inset:0;z-index:10001;
+  background:#000;
+  align-items:center;justify-content:center;
+  flex-direction:column;gap:0.75rem;
+  text-align:center;padding:1.5rem;
+">
+  <div style="color:#ff6b6b;font-size:1.3rem;font-weight:700">Screenshots are not allowed</div>
+  <div style="color:rgba(255,255,255,0.75);font-size:0.9rem;max-width:340px">
+    This attempt has been recorded and your teacher can see it. Please continue with your exam.
+  </div>
+</div>
+
+<!-- Watermark: the student's name and email repeated faintly across the exam -->
+<div id="exam-watermark" aria-hidden="true" data-wm="{{ session.get('full_name', '') }} · {{ session.get('email', '') }}"></div>
 
 <!-- Blur Overlay (shown when student leaves/minimizes window) -->
 <div id="blur-overlay" style="
@@ -522,6 +541,14 @@ function saveCurrentSectionAnswers() {
 </script>
 
 <style>
+/* Anti-screenshot: watermark + no printing */
+#exam-watermark {
+  position: fixed; inset: 0; z-index: 50; pointer-events: none;
+  background-repeat: repeat;
+}
+@media print {
+  html, body { display: none !important; }
+}
 /* Anti-copy styles */
 .no-select {
   -webkit-user-select: none;

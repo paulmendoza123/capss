@@ -95,6 +95,53 @@
     if (blocked) { e.preventDefault(); e.stopPropagation(); }
   });
 
+  // ── ANTI-SCREENSHOT (best effort) ──
+  // A web page cannot truly stop a screenshot: it can only react to the usual
+  // key presses, cover the exam, replace the clipboard, and record the attempt.
+  // Phone cameras and OS-level tools that never reach the page cannot be detected.
+  const shotShield = document.getElementById('screenshot-shield');
+  let shotShieldTimer = null, lastShotAt = 0;
+  function screenshotAttempt() {
+    if (terminated) return;
+    const now = Date.now();
+    if (now - lastShotAt < 2000) return; // one key press fires keydown + keyup
+    lastShotAt = now;
+    if (shotShield) {
+      shotShield.style.display = 'flex';
+      clearTimeout(shotShieldTimer);
+      shotShieldTimer = setTimeout(() => { shotShield.style.display = 'none'; }, 3000);
+    }
+    // Replace whatever image the Print Screen key put on the clipboard
+    try { navigator.clipboard && navigator.clipboard.writeText('Screenshots are not allowed during the exam.').catch(() => {}); } catch (e) {}
+    if (monitoringStarted) logEvent('screenshot_attempt'); // only logged after the student agreed to monitoring
+  }
+  window.addEventListener('keyup', e => {
+    if (e.key === 'PrintScreen' || e.code === 'PrintScreen') screenshotAttempt();
+  });
+  window.addEventListener('keydown', e => {
+    if (e.key === 'PrintScreen' || e.code === 'PrintScreen' ||
+        // Windows Snipping Tool (Win+Shift+S) and macOS (Cmd+Shift+3/4/5).
+        // Windows often swallows the final "S", so Win+Shift held together is enough to trigger.
+        (e.shiftKey && e.metaKey) ||
+        // Xbox Game Bar screen recording (Win+Alt+R) and Game Bar itself (Win+G)
+        (e.metaKey && e.altKey) || (e.metaKey && (e.key || '').toLowerCase() === 'g')) {
+      e.preventDefault();
+      screenshotAttempt();
+    }
+  });
+
+  // Watermark: name + email tiled across the page (traces who a leaked screenshot or recording came from)
+  (function () {
+    const wm = document.getElementById('exam-watermark');
+    const text = (wm && wm.dataset.wm || '').trim();
+    if (!wm || !text) return;
+    const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="380" height="220">' +
+      '<text x="190" y="110" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" ' +
+      'fill="rgba(120,120,120,0.22)" transform="rotate(-25 190 110)">' + esc + '</text></svg>';
+    wm.style.backgroundImage = 'url("data:image/svg+xml;utf8,' + encodeURIComponent(svg) + '")';
+  })();
+
   // ── BLUR OVERLAY (shared utility — element/helpers only, no listeners attached yet) ──
   const blurOverlay = document.getElementById('blur-overlay');
   let blurShown = false;
@@ -308,6 +355,7 @@
           body: JSON.stringify({ session_id: SESSION_ID, event_type: eventType })
         });
         const data = await res.json();
+        if (eventType === 'screenshot_attempt') return; // separate counter; leave the tab-switch counter alone
         tabSwitchCount = data.count || tabSwitchCount + 1;
 
         const counter = document.getElementById('tab-switch-counter');

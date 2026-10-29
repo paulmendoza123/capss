@@ -88,6 +88,7 @@
         <option value="tab_switch">Tab Switch</option>
         <option value="lost_focus">Lost Focus</option>
         <option value="fullscreen_exit">Exited Fullscreen</option>
+        <option value="screenshot_attempt">Screenshot Attempt</option>
       </select>
     </div>
   </div>
@@ -95,6 +96,7 @@
     <span class="badge badge-yellow" id="sus-tab-count">0 Tab Switch</span>
     <span class="badge badge-orange" id="sus-focus-count">0 Lost Focus</span>
     <span class="badge badge-red" id="sus-fs-count">0 Exited Fullscreen</span>
+    <span class="badge badge-red" id="sus-shot-count">0 Screenshot Attempt</span>
     <span class="badge badge-gray" id="sus-visible-count">Showing all</span>
   </div>
   <div class="card">
@@ -126,6 +128,8 @@
                 <span class="badge badge-orange">Lost Focus</span>
               {% elif ev == 'fullscreen_exit' %}
                 <span class="badge badge-red">Exited Fullscreen</span>
+              {% elif ev == 'screenshot_attempt' %}
+                <span class="badge badge-red">Screenshot Attempt</span>
               {% else %}
                 <span class="badge badge-gray">{{ log.event_type }}</span>
               {% endif %}
@@ -230,11 +234,12 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   if (!rows.length) return;
 
   // Per-type totals
-  const totals = { tab_switch: 0, lost_focus: 0, fullscreen_exit: 0 };
+  const totals = { tab_switch: 0, lost_focus: 0, fullscreen_exit: 0, screenshot_attempt: 0 };
   rows.forEach(r => { if (r.dataset.event in totals) totals[r.dataset.event]++; });
   document.getElementById('sus-tab-count').textContent = totals.tab_switch + ' Tab Switch';
   document.getElementById('sus-focus-count').textContent = totals.lost_focus + ' Lost Focus';
   document.getElementById('sus-fs-count').textContent = totals.fullscreen_exit + ' Exited Fullscreen';
+  document.getElementById('sus-shot-count').textContent = totals.screenshot_attempt + ' Screenshot Attempt';
 
   function filter() {
     const q = search.value.trim().toLowerCase();

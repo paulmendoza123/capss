@@ -145,6 +145,14 @@
             </div>
             <div class="monitor-stat-label">Lost Focus</div>
           </div>
+          <div class="monitor-stat">
+            <div class="monitor-stat-val screenshot-count
+              {% if s.screenshot_attempt_count and s.screenshot_attempt_count > 0 %}text-danger
+              {% else %}text-success{% endif %}">
+              {{ s.screenshot_attempt_count or 0 }}
+            </div>
+            <div class="monitor-stat-label">Screenshots</div>
+          </div>
 
         </div>
         <div class="monitor-actions">
@@ -186,6 +194,7 @@
       <option value="tab_switch">Tab Switch</option>
       <option value="window_minimize">Lost Focus</option>
       <option value="fullscreen_exit">Exited Fullscreen</option>
+      <option value="screenshot_attempt">Screenshot Attempt</option>
       <option value="connected">Connected</option>
       <option value="disconnected">Disconnected</option>
     </select>
@@ -208,6 +217,7 @@
               {% if log.event_type == 'tab_switch' %}<span class="badge badge-yellow">Tab Switch</span>
               {% elif log.event_type == 'window_minimize' %}<span class="badge badge-orange">Lost Focus</span>
               {% elif log.event_type == 'fullscreen_exit' %}<span class="badge badge-red">Exited Fullscreen</span>
+              {% elif log.event_type == 'screenshot_attempt' %}<span class="badge badge-red">Screenshot Attempt</span>
               {% elif log.event_type == 'connected' %}<span class="badge badge-green">● Connected</span>
               {% elif log.event_type == 'disconnected' %}<span class="badge badge-red">● Disconnected</span>
               {% elif log.event_type == 'consent_given' %}<span class="badge badge-green">✓ Consented to Monitoring</span>
@@ -313,6 +323,8 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
     const feColor = fe > 0 ? 'text-accent' : 'text-success';
     const lf = s.lost_focus_count || 0;
     const lfColor = lf > 0 ? 'text-accent' : 'text-success';
+    const sc = s.screenshot_attempt_count || 0;
+    const scColor = sc > 0 ? 'text-danger' : 'text-success';
     const barColor = 'green';
     const isConnected = s.connected !== false;
     const dotClass = isConnected ? 'connected' : 'disconnected';
@@ -347,6 +359,10 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
           <div class="monitor-stat">
             <div class="monitor-stat-val lost-focus-count ${lfColor}">${lf}</div>
             <div class="monitor-stat-label">Lost Focus</div>
+          </div>
+          <div class="monitor-stat">
+            <div class="monitor-stat-val screenshot-count ${scColor}">${sc}</div>
+            <div class="monitor-stat-label">Screenshots</div>
           </div>
 
         </div>
@@ -390,6 +406,8 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
         badge = '<span class="badge badge-orange">Lost Focus</span>';
       else if (log.event_type === 'fullscreen_exit')
         badge = '<span class="badge badge-red">Exited Fullscreen</span>';
+      else if (log.event_type === 'screenshot_attempt')
+        badge = '<span class="badge badge-red">Screenshot Attempt</span>';
       else if (log.event_type === 'connected')
         badge = '<span class="badge badge-green">● Connected</span>';
       else if (log.event_type === 'disconnected')
@@ -504,6 +522,14 @@ document.querySelectorAll('.terminate-btn').forEach(bindTerminateBtn);
             if (lfEl) {
               lfEl.textContent = lf;
               lfEl.className = 'monitor-stat-val lost-focus-count ' + (lf > 0 ? 'text-accent' : 'text-success');
+            }
+
+            // Update screenshot-attempt count (informational only, no auto-terminate)
+            const sc = s.screenshot_attempt_count || 0;
+            const scEl = card.querySelector('.screenshot-count');
+            if (scEl) {
+              scEl.textContent = sc;
+              scEl.className = 'monitor-stat-val screenshot-count ' + (sc > 0 ? 'text-danger' : 'text-success');
             }
 
             // Keep filter/sort data attributes in sync

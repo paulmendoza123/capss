@@ -81,7 +81,7 @@
             <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam.duration_minutes }} min</span>
             {% if exam.score is not none and exam.total_points %}
             {% set ep = exam.passing_score if exam.passing_score is not none else 75 %}
-            <span class="exam-meta-item fw-600 {% if (exam.score * 100 / exam.total_points) >= ep %}text-success{% else %}text-danger{% endif %}">
+            {% set score_cls = 'text-success' if (exam.score * 100 / exam.total_points) >= ep else 'text-danger' %}<span class="exam-meta-item fw-600 {{ score_cls }}">
               {{ exam.score|score_fmt }}/{{ exam.total_points }} ({{ (exam.score * 100 / exam.total_points)|int }}%)
             </span>
             {% elif exam.session_status == 'terminated' and exam.total_points %}
