@@ -537,7 +537,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // ── Exam timing fields (Create Exam + exam Settings) ─────────────────────
 // Two independent timers that can be combined: the overall exam duration and
-// the time per question. Either can be off, but never both.
+// the time per question. Either can be off, but not both unless the whole
+// exam timer is switched off with the master "Exam Timer" toggle (no time limit).
 (function () {
   function init() {
     const dToggle = document.getElementById('durationToggle');
@@ -552,6 +553,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const qOff = document.getElementById('questionTimeOffHint');
     const warnGroup = document.getElementById('timeWarningGroup');
     const errEl = document.getElementById('timingError');
+    const master = document.getElementById('timerMasterToggle');
+    const options = document.getElementById('timerOptions');
     let errTimer = null;
 
     function showError(msg) {
@@ -563,7 +566,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function sync() {
-      const dOn = dToggle.checked, qOn = qToggle.checked;
+      // Master switch off = no time limit: hide the timers and don't submit/validate them.
+      const timerOn = !master || master.checked;
+      if (options) options.style.display = timerOn ? '' : 'none';
+      const dOn = timerOn && dToggle.checked, qOn = timerOn && qToggle.checked;
       dGroup.style.display = dOn ? '' : 'none';
       if (dOff) dOff.style.display = dOn ? 'none' : '';
       // Disabled inputs are not submitted, and are skipped by required/min checks.
@@ -576,6 +582,13 @@ document.addEventListener('DOMContentLoaded', function () {
       qUnit.disabled = !qOn;
       qInput.required = qOn;
     }
+
+    if (master) master.addEventListener('change', () => {
+      showError('');
+      // Turning the timer back on with both timers off would be invalid: restore the duration.
+      if (master.checked && !dToggle.checked && !qToggle.checked) dToggle.checked = true;
+      sync();
+    });
 
     function guard(toggle, other) {
       toggle.addEventListener('change', () => {
@@ -603,6 +616,7 @@ document.addEventListener('DOMContentLoaded', function () {
     qUnit.addEventListener('change', checkQuestionRange);
     const form = dToggle.closest('form');
     if (form) form.addEventListener('submit', (e) => {
+      if (master && !master.checked) return; // untimed exam: nothing to validate
       if (!dToggle.checked && !qToggle.checked) {
         e.preventDefault();
         showError('Turn on at least one timer: the exam duration, the time per question, or both.');

@@ -628,6 +628,7 @@
 
       <div class="divider"></div>
 
+      {% set t_timer_on = (exam.duration_minutes or 0) > 0 or (exam.question_time_seconds or 0) > 0 %}
       {% set t_duration_on = (exam.duration_minutes or 0) > 0 %}
       {% set t_duration = exam.duration_minutes or 60 %}
       {% set _qs = exam.question_time_seconds or 0 %}

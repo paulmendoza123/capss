@@ -1,6 +1,8 @@
 {# Shared by Create Exam and the exam Settings tab.
    Optional context (defaults shown): t_duration_on=true, t_duration=60,
-   t_q_on=false, t_q_value=30, t_q_unit='seconds', t_warning=5 #}
+   t_q_on=false, t_q_value=30, t_q_unit='seconds', t_warning=5,
+   t_timer_on=true (false = "No time limit") #}
+{% set _t_on = t_timer_on if t_timer_on is defined else true %}
 {% set _d_on = t_duration_on if t_duration_on is defined else true %}
 {% set _d_val = t_duration if (t_duration is defined and t_duration) else 60 %}
 {% set _q_on = t_q_on if t_q_on is defined else false %}
@@ -8,6 +10,19 @@
 {% set _q_unit = t_q_unit if t_q_unit is defined else 'seconds' %}
 {% set _warn = t_warning if (t_warning is defined and t_warning is not none) else 5 %}
 
+<!-- Master switch: turn the exam timer off completely for an untimed exam (timed is the default) -->
+<div class="form-group" style="margin-bottom:1rem">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+    <label class="form-label" style="margin:0">Exam Timer</label>
+    <label class="toggle-switch">
+      <input type="checkbox" name="timer_enabled" id="timerMasterToggle" {% if _t_on %}checked{% endif %} />
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+  <div class="form-hint">Turn this off to give the exam no time limit at all. Students can take as long as they need until you close the exam.</div>
+</div>
+
+<div id="timerOptions">
 <!-- Overall exam duration: toggle on = Duration + Time Warning inputs shown, off = hidden -->
 <div class="form-group" style="margin-bottom:1rem">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
@@ -55,6 +70,7 @@
     </div>
   </div>
 </div>
+</div><!-- /#timerOptions -->
 <div id="timingError" class="form-hint" role="alert" style="display:none;color:var(--danger);margin-bottom:0.75rem"></div>
 
 <style>

@@ -1639,9 +1639,13 @@ def read_exam_timing(form):
     """Read the two exam timers from a create/settings form.
 
     Returns (duration_minutes, question_seconds, error). Either timer can be
-    switched off (stored as 0) and they can be combined, but at least one must
-    stay on so the exam always has a time limit.
+    switched off (stored as 0) and they can be combined. The teacher can also
+    turn the exam timer off completely ("No time limit"): both values are then
+    stored as 0. Timed exams are the default; the master switch is
+    `timer_enabled` in the form.
     """
+    if not form.get('timer_enabled'):
+        return 0, 0, None
     duration_on = bool(form.get('duration_enabled'))
     question_on = bool(form.get('question_time_enabled'))
     duration = 0
@@ -1657,7 +1661,7 @@ def read_exam_timing(form):
         if question_seconds < MIN_QUESTION_SECONDS or question_seconds > MAX_QUESTION_SECONDS:
             return 0, 0, 'Time per question must be between 5 seconds and 60 minutes.'
     if not duration_on and not question_on:
-        return 0, 0, 'Turn on at least one timer: the exam duration, the time per question, or both.'
+        return 0, 0, 'Turn on at least one timer: the exam duration, the time per question, or both. To remove the time limit, turn off the exam timer.'
     return duration, question_seconds, None
 
 
