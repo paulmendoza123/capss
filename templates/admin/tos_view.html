@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block title %}View TOS{% endblock %}
+{% block content %}
+<style>
+.xl-wrap { overflow:auto; max-height:75vh; background:#fff; border:1px solid #d0d0d0; border-radius:6px; }
+table.xl { border-collapse:collapse; table-layout:fixed; background:#fff; color:#000; font-family:Calibri,Arial,sans-serif; font-size:14.6px; }
+table.xl td { padding:1px 4px; height:20px; border:1px solid #e1e1e1; color:#000; }
+table.xl th.xl-colhead, table.xl th.xl-rowhead, table.xl th.xl-corner { background:#f3f3f3; color:#555; font-weight:400; font-size:12px; border:1px solid #d0d0d0; text-align:center; position:sticky; z-index:2; }
+table.xl th.xl-colhead { top:0; }
+table.xl th.xl-rowhead { left:0; z-index:1; }
+table.xl th.xl-corner { top:0; left:0; z-index:3; }
+</style>
+<div class="page-header">
+  <div>
+    <div class="page-title">{{ tos.original_name|tos_label }}</div>
+    <div class="page-subtitle">Table of Specification · {{ 'PDF' if is_pdf else 'Excel' }} · Uploaded by {{ teacher_name }} · {{ tos.uploaded_at|time12 }}</div>
+  </div>
+  <div class="flex gap-2" style="flex-wrap:wrap">
+    <a href="{{ url_for('admin_download_tos', tos_id=tos.id) }}" class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Download</a>
+    <a href="javascript:history.back()" class="btn btn-ghost">← Back</a>
+  </div>
+</div>
+
+{% if is_pdf %}
+<div class="card" style="padding:0.5rem">
+  <iframe src="{{ url_for('admin_tos_raw', tos_id=tos.id) }}" title="TOS PDF" style="width:100%;height:78vh;border:0;border-radius:8px"></iframe>
+  <div class="text-xs text-muted" style="padding:0.5rem">If the PDF does not show in your browser, use the Download button.</div>
+</div>
+{% elif error %}
+<div class="card"><div class="text-muted">{{ error }}</div></div>
+{% else %}
+  {% if sheets|length > 1 %}
+  <div class="flex gap-1 mb-2" style="flex-wrap:wrap" id="tosSheetTabs">
+    {% for s in sheets %}
+    <button type="button" class="btn btn-ghost btn-sm{% if loop.first %} active{% endif %}" onclick="showTosSheet({{ loop.index0 }}, this)">{{ s.name }}</button>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% for s in sheets %}
+  <div class="card tos-sheet" data-sheet="{{ loop.index0 }}" {% if not loop.first %}style="display:none"{% endif %}>
+    <div class="card-title mb-1">{{ s.name }}</div>
+    <div class="xl-wrap">{{ s.html }}</div>
+  </div>
+  {% endfor %}
+  {% if truncated %}<div class="text-xs text-muted mt-1">Only the first 300 rows of each sheet are shown here. Download the file to see everything.</div>{% endif %}
+  <script>
+  function showTosSheet(i, btn) {
+    document.querySelectorAll('.tos-sheet').forEach(el => el.style.display = (el.dataset.sheet == i) ? '' : 'none');
+    document.querySelectorAll('#tosSheetTabs button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  </script>
+{% endif %}
+{% endblock %}

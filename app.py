@@ -293,10 +293,10 @@ def time12_filter(value):
 
 @app.template_filter('tos_label')
 def tos_label(name):
-    """TOS file name without its .xlsx/.xlsm extension, for display."""
+    """TOS file name without its .xlsx/.xlsm/.pdf extension, for display."""
     n = (name or '').strip()
     low = n.lower()
-    for ext in ('.xlsx', '.xlsm'):
+    for ext in ('.xlsx', '.xlsm', '.pdf'):
         if low.endswith(ext):
             return n[:-len(ext)]
     return n
@@ -3125,7 +3125,17 @@ def teacher_import_exam(class_id):
 # ── Quiz vs Periodic Exam + Table of Specification (TOS) ─────────────────────
 EXAM_CATEGORIES = ('quiz', 'periodic')
 EXAM_CATEGORY_LABELS = {'quiz': 'Quiz', 'periodic': 'Periodic Exam'}
-TOS_EXTENSIONS = ('xlsx', 'xlsm')
+TOS_EXTENSIONS = ('xlsx', 'xlsm', 'pdf')
+TOS_XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+
+def _tos_is_pdf(name):
+    return (name or '').lower().endswith('.pdf')
+
+
+def _tos_mimetype(name):
+    """Content type for a stored TOS file: PDF or Excel."""
+    return 'application/pdf' if _tos_is_pdf(name) else TOS_XLSX_MIME
 
 # A Periodic Exam is either a Midterm or a Final Exam.
 PERIODIC_TYPES = ('midterm', 'final')
@@ -3210,14 +3220,18 @@ def _resolve_tos(conn, teacher_id, form, files, existing_tos_id=None):
         name = os.path.basename(upload.filename)
         ext = name.rsplit('.', 1)[-1].lower() if '.' in name else ''
         if ext not in TOS_EXTENSIONS:
-            return None, 'The Table of Specification (TOS) must be an Excel file (.xlsx).'
+            return None, 'The Table of Specification (TOS) must be a PDF or Excel (.xlsx) file.'
         data = upload.read()
-        try:
-            import io
-            from openpyxl import load_workbook
-            load_workbook(io.BytesIO(data), read_only=True).close()
-        except Exception:
-            return None, 'Could not read the TOS file. Make sure it is a valid Excel (.xlsx) file.'
+        if ext == 'pdf':
+            if not data.lstrip()[:5] == b'%PDF-':
+                return None, 'Could not read the TOS file. Make sure it is a valid PDF file.'
+        else:
+            try:
+                import io
+                from openpyxl import load_workbook
+                load_workbook(io.BytesIO(data), read_only=True).close()
+            except Exception:
+                return None, 'Could not read the TOS file. Make sure it is a valid Excel (.xlsx) or PDF file.'
         cur = conn.execute(
             'INSERT INTO tos_files (teacher_id, original_name, file_data) VALUES (?,?,?)',
             (teacher_id, name, data))
@@ -3230,7 +3244,7 @@ def _resolve_tos(conn, teacher_id, form, files, existing_tos_id=None):
             return row['id'], None
     if existing_tos_id:
         return existing_tos_id, None
-    return None, ('A Table of Specification (TOS) Excel file is required for Periodic Exam questions. '
+    return None, ('A Table of Specification (TOS) file (PDF or Excel) is required for Periodic Exam questions. '
                   'Please upload one.')
 
 
@@ -3247,7 +3261,7 @@ def teacher_download_tos(tos_id):
     safe_name = row['original_name'].replace('"', '')
     return Response(
         row['file_data'],
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        mimetype=_tos_mimetype(row['original_name']),
         headers={'Content-Disposition': f'attachment; filename="{safe_name}"'})
 
 
@@ -4918,12 +4932,12 @@ def teacher_bank_import_file():
     if not uploaded or uploaded.filename == '':
         flash('No file selected.', 'error')
         return redirect(_bank_url(category))
-    # Periodic Exam imports must come with a Table of Specification (TOS) Excel
+    # Periodic Exam imports must come with a Table of Specification (TOS) file (PDF or Excel)
     # file — check it up front so nothing is parsed or saved without one.
     tos_upload = request.files.get('tos_file')
     picked_tos = (request.form.get('tos_id') or '').strip()
     if category == 'periodic' and (not tos_upload or not tos_upload.filename) and not picked_tos:
-        flash('A Table of Specification (TOS) is required when importing Periodic Exam questions — upload an Excel file or choose one you already uploaded.', 'error')
+        flash('A Table of Specification (TOS) is required when importing Periodic Exam questions — upload a PDF or Excel file, or choose one you already uploaded.', 'error')
         return redirect(_bank_url(category))
 
     if _upload_too_large(uploaded):
@@ -5670,7 +5684,7 @@ def admin_exam_overview():
 
     query = '''
         SELECT e.*, COALESCE(e.exam_category, 'quiz') AS category,
-               t.original_name AS tos_name,
+               t.original_name AS tos_name, t.id AS tos_file_id,
                c.subject_name, c.block_name, c.program, c.year_level, u.full_name as teacher_name,
                COUNT(DISTINCT es.id) as session_count
         FROM exams e
@@ -6122,8 +6136,230 @@ def admin_download_tos(tos_id):
     safe_name = row['original_name'].replace('"', '')
     return Response(
         row['file_data'],
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        mimetype=_tos_mimetype(row['original_name']),
         headers={'Content-Disposition': f'attachment; filename="{safe_name}"'})
+
+
+# ── Excel TOS preview: render a sheet as HTML with its original formatting ───
+_TOS_BORDER_CSS = {'thin': '1px solid', 'hair': '1px dotted', 'medium': '2px solid', 'thick': '3px solid',
+                   'dashed': '1px dashed', 'mediumDashed': '2px dashed', 'dotted': '1px dotted',
+                   'double': '3px double', 'dashDot': '1px dashed', 'slantDashDot': '1px dashed',
+                   'dashDotDot': '1px dotted', 'mediumDashDot': '2px dashed', 'mediumDashDotDot': '2px dotted'}
+
+
+def _tos_theme_colors(wb):
+    """The workbook's theme palette in Excel's theme-index order, or the Office defaults."""
+    default = ['FFFFFF', '000000', 'E7E6E6', '44546A', '4472C4', 'ED7D31', 'A5A5A5', 'FFC000', '5B9BD5', '70AD47']
+    try:
+        import re
+        xml = wb.loaded_theme.decode('utf-8') if isinstance(wb.loaded_theme, bytes) else (wb.loaded_theme or '')
+        sec = re.search(r'<a:clrScheme.*?</a:clrScheme>', xml, re.S).group(0)
+        vals = []
+        for tag in ('dk1', 'lt1', 'dk2', 'lt2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6'):
+            m = re.search(r'<a:%s>.*?(?:val|lastClr)="([0-9A-Fa-f]{6})"' % tag, sec, re.S)
+            vals.append(m.group(1) if m else None)
+        if None in vals:
+            return default
+        # Excel swaps the first two pairs: 0=lt1, 1=dk1, 2=lt2, 3=dk2
+        return [vals[1], vals[0], vals[3], vals[2]] + vals[4:]
+    except Exception:
+        return default
+
+
+def _tos_color(color, theme):
+    """openpyxl Color -> '#rrggbb' or None."""
+    if color is None:
+        return None
+    try:
+        if color.type == 'rgb' and isinstance(color.rgb, str) and len(color.rgb) in (6, 8):
+            return '#' + color.rgb[-6:]
+        if color.type == 'theme' and color.theme is not None and 0 <= color.theme < len(theme):
+            base = theme[color.theme]
+            r, g, b = int(base[0:2], 16), int(base[2:4], 16), int(base[4:6], 16)
+            t = color.tint or 0
+            if t > 0:
+                r, g, b = [round(c + (255 - c) * t) for c in (r, g, b)]
+            elif t < 0:
+                r, g, b = [round(c * (1 + t)) for c in (r, g, b)]
+            return '#%02x%02x%02x' % (r, g, b)
+        if color.type == 'indexed' and color.indexed is not None:
+            from openpyxl.styles.colors import COLOR_INDEX
+            if 0 <= color.indexed < len(COLOR_INDEX):
+                return '#' + COLOR_INDEX[color.indexed][-6:]
+    except Exception:
+        pass
+    return None
+
+
+def _tos_cell_text(cell):
+    import datetime
+    v = cell.value
+    if v is None:
+        return ''
+    fmt = cell.number_format or ''
+    if isinstance(v, bool):
+        return 'TRUE' if v else 'FALSE'
+    if isinstance(v, datetime.datetime):
+        return v.strftime('%m/%d/%Y') if v.time() == datetime.time(0) else v.strftime('%m/%d/%Y %I:%M %p')
+    if isinstance(v, datetime.date):
+        return v.strftime('%m/%d/%Y')
+    if isinstance(v, (int, float)):
+        if '%' in fmt:
+            d = len(fmt.split('.')[1].rstrip('%')) if '.' in fmt else 0
+            return f'{v * 100:.{d}f}%'
+        if isinstance(v, float) and v.is_integer():
+            return str(int(v))
+        if isinstance(v, float):
+            if '.' in fmt:
+                d = len(''.join(ch for ch in fmt.split('.')[1] if ch in '0#'))
+                return f'{v:,.{d}f}' if ',' in fmt else f'{v:.{d}f}'
+            return f'{v:.10g}'
+    return str(v)
+
+
+def _render_tos_sheet(ws, theme, max_rows=300, max_cols=40):
+    """One worksheet as an Excel-looking HTML table. Returns (html, truncated)."""
+    from markupsafe import escape
+    from openpyxl.utils import get_column_letter
+    max_r = min(ws.max_row or 1, max_rows)
+    truncated = (ws.max_row or 0) > max_rows
+    max_c = min(ws.max_column or 1, max_cols)
+
+    merges, covered = {}, set()
+    for mr in ws.merged_cells.ranges:
+        if mr.min_row > max_r or mr.min_col > max_c:
+            continue
+        rs = min(mr.max_row, max_r) - mr.min_row + 1
+        cs = min(mr.max_col, max_c) - mr.min_col + 1
+        merges[(mr.min_row, mr.min_col)] = (rs, cs)
+        for r in range(mr.min_row, min(mr.max_row, max_r) + 1):
+            for c in range(mr.min_col, min(mr.max_col, max_c) + 1):
+                if (r, c) != (mr.min_row, mr.min_col):
+                    covered.add((r, c))
+
+    # trim empty trailing rows / columns (formatting-only cells would otherwise stretch the sheet)
+    last_r, last_c = 1, 1
+    for row in ws.iter_rows(min_row=1, max_row=max_r, max_col=max_c):
+        for cell in row:
+            if cell.value not in (None, ''):
+                last_r, last_c = max(last_r, cell.row), max(last_c, cell.column)
+    for (r, c), (rs, cs) in merges.items():
+        last_r, last_c = max(last_r, r + rs - 1), max(last_c, c + cs - 1)
+    max_r, max_c = last_r, last_c
+
+    widths = {}
+    for key, dim in ws.column_dimensions.items():
+        lo = dim.min or 0
+        hi = dim.max or lo
+        for c in range(lo, min(hi, max_c) + 1):
+            widths[c] = (dim.width, bool(dim.hidden))
+    def col_px(c):
+        w, hidden = widths.get(c, (None, False))
+        if hidden:
+            return 0
+        return int((w if w else 8.43) * 7 + 5)
+
+    out = ['<table class="xl"><colgroup><col style="width:42px">']
+    out += [f'<col style="width:{col_px(c)}px">' for c in range(1, max_c + 1)]
+    out.append('</colgroup><thead><tr><th class="xl-corner"></th>')
+    out += [f'<th class="xl-colhead">{get_column_letter(c)}</th>' for c in range(1, max_c + 1)]
+    out.append('</tr></thead><tbody>')
+
+    for r in range(1, max_r + 1):
+        rd = ws.row_dimensions.get(r)
+        if rd is not None and rd.hidden:
+            continue
+        h = f' style="height:{round(rd.height * 1.333)}px"' if rd is not None and rd.height else ''
+        out.append(f'<tr{h}><th class="xl-rowhead">{r}</th>')
+        for c in range(1, max_c + 1):
+            if (r, c) in covered or col_px(c) == 0:
+                continue
+            cell = ws.cell(row=r, column=c)
+            rs, cs = merges.get((r, c), (1, 1))
+            css, attrs = [], ''
+            if rs > 1: attrs += f' rowspan="{rs}"'
+            if cs > 1: attrs += f' colspan="{cs}"'
+            f = cell.font
+            if f is not None:
+                if f.b: css.append('font-weight:700')
+                if f.i: css.append('font-style:italic')
+                if f.u: css.append('text-decoration:underline')
+                if f.sz: css.append(f'font-size:{round(float(f.sz) * 1.333)}px')
+                if f.name: css.append("font-family:'%s',Calibri,Arial,sans-serif" % str(f.name).replace("'", '').replace('"', '').replace(';', ''))
+                fc = _tos_color(f.color, theme)
+                if fc: css.append(f'color:{fc}')
+            fl = cell.fill
+            if fl is not None and fl.fill_type == 'solid':
+                bg = _tos_color(fl.fgColor, theme)
+                if bg: css.append(f'background:{bg}')
+            al = cell.alignment
+            horiz = al.horizontal if al is not None else None
+            if horiz in ('center', 'centerContinuous'): css.append('text-align:center')
+            elif horiz == 'right': css.append('text-align:right')
+            elif horiz in ('left', 'justify', 'fill'): css.append('text-align:left')
+            elif isinstance(cell.value, (int, float)) and not isinstance(cell.value, bool): css.append('text-align:right')
+            vert = al.vertical if al is not None else None
+            css.append('vertical-align:' + {'center': 'middle', 'top': 'top'}.get(vert, 'bottom'))
+            if al is not None and al.wrap_text:
+                css.append('white-space:pre-wrap;overflow-wrap:anywhere')
+            else:
+                right_empty = c + cs > max_c or ws.cell(row=r, column=c + cs).value in (None, '')
+                css.append('white-space:nowrap;overflow:' + ('visible' if right_empty and horiz not in ('center', 'right') else 'hidden'))
+            b = cell.border
+            if b is not None:
+                for side, name in ((b.left, 'left'), (b.right, 'right'), (b.top, 'top'), (b.bottom, 'bottom')):
+                    if side is not None and side.style in _TOS_BORDER_CSS:
+                        css.append(f'border-{name}:{_TOS_BORDER_CSS[side.style]} {_tos_color(side.color, theme) or "#000"}')
+            text = _tos_cell_text(cell)
+            out.append(f'<td{attrs} style="{";".join(css)}">{escape(text)}</td>')
+        out.append('</tr>')
+    out.append('</tbody></table>')
+    return ''.join(out), truncated
+
+
+@app.route('/admin/tos/<int:tos_id>/view')
+@role_required('admin')
+def admin_view_tos(tos_id):
+    """Admins can read a TOS in the browser: a PDF is shown as-is, an Excel file as tables."""
+    conn = get_db()
+    row = conn.execute('SELECT * FROM tos_files WHERE id=?', (tos_id,)).fetchone()
+    if not row:
+        flash('TOS file not found.', 'error')
+        return redirect(url_for('admin_exam_overview'))
+    name = row['original_name']
+    teacher = conn.execute('SELECT full_name FROM users WHERE id=?', (row['teacher_id'],)).fetchone()
+    sheets, truncated, error = [], False, None
+    if not _tos_is_pdf(name):
+        import io
+        from markupsafe import Markup
+        try:
+            wb = load_workbook(io.BytesIO(row['file_data']), data_only=True)
+            theme = _tos_theme_colors(wb)
+            for ws in wb.worksheets:
+                if ws.sheet_state != 'visible':
+                    continue
+                html, trunc = _render_tos_sheet(ws, theme)
+                truncated = truncated or trunc
+                sheets.append({'name': ws.title, 'html': Markup(html)})
+            wb.close()
+        except Exception:
+            error = 'This Excel file could not be previewed. You can still download it.'
+    return render_template('admin/tos_view.html', tos=row, teacher_name=(teacher['full_name'] if teacher else '—'),
+                           is_pdf=_tos_is_pdf(name), sheets=sheets, truncated=truncated, error=error)
+
+
+@app.route('/admin/tos/<int:tos_id>/raw')
+@role_required('admin')
+def admin_tos_raw(tos_id):
+    """Inline copy of a PDF TOS (used by the viewer page's embedded reader)."""
+    conn = get_db()
+    row = conn.execute('SELECT * FROM tos_files WHERE id=?', (tos_id,)).fetchone()
+    if not row or not _tos_is_pdf(row['original_name']):
+        flash('TOS file not found.', 'error')
+        return redirect(url_for('admin_exam_overview'))
+    from flask import Response
+    return Response(row['file_data'], mimetype='application/pdf',
+                    headers={'Content-Disposition': 'inline'})
 
 # ── Class Management ──
 @app.route('/admin/classes')

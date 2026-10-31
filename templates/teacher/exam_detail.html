@@ -372,8 +372,8 @@
           {% elif exam_category == 'periodic' %}
           <div class="form-group" style="margin-top:0.75rem">
             <label class="form-label">Table of Specification (TOS) for this question <span style="color:var(--danger)">*</span></label>
-            <input type="file" name="tos_file" class="form-control tos-file-input" accept=".xlsx,.xlsm" required style="padding:0.45rem 0.65rem;font-size:0.9rem">
-            <div class="form-hint">Required for Periodic Exam questions (Excel .xlsx).</div>
+            <input type="file" name="tos_file" class="form-control tos-file-input" accept=".xlsx,.xlsm,.pdf" required style="padding:0.45rem 0.65rem;font-size:0.9rem">
+            <div class="form-hint">Required for Periodic Exam questions (PDF or Excel .xlsx).</div>
             {% if tos_list %}
             <div style="margin-top:0.5rem">
               <label class="form-label" style="font-size:0.78rem;font-weight:500">…or reuse a TOS you already uploaded</label>

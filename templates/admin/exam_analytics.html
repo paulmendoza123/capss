@@ -59,7 +59,11 @@
     <div class="form-group">
       <div class="form-label">Table of Specification (TOS)</div>
       {% if exam_tos %}
-      <a href="{{ url_for('admin_download_tos', tos_id=exam_tos.id) }}" class="text-sm">{{ exam_tos.original_name.rsplit('.', 1)[0] if '.' in exam_tos.original_name else exam_tos.original_name }}</a>
+      <div class="text-sm fw-600">{{ exam_tos.original_name|tos_label }}</div>
+      <div class="flex gap-1 mt-1" style="flex-wrap:wrap">
+        <a href="{{ url_for('admin_view_tos', tos_id=exam_tos.id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg> View</a>
+        <a href="{{ url_for('admin_download_tos', tos_id=exam_tos.id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Download</a>
+      </div>
       <div class="text-xs text-muted">Uploaded {{ exam_tos.uploaded_at|time12 }}</div>
       {% else %}
       <div class="text-sm text-muted">No TOS attached yet</div>

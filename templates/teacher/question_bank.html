@@ -464,9 +464,9 @@
       </div>
       <div class="form-group" id="impTosWrap" style="display:none;margin-bottom:1rem">
         <label class="form-label">Table of Specification (TOS) <span style="color:var(--danger)">*</span></label>
-        <input type="file" name="tos_file" id="impTosFile" accept=".xlsx,.xlsm" class="form-control"
+        <input type="file" name="tos_file" id="impTosFile" accept=".xlsx,.xlsm,.pdf" class="form-control"
                style="padding:0.45rem 0.65rem;font-size:0.9rem">
-        <div class="form-hint">Required for Periodic Exams — upload the TOS as an Excel file (.xlsx).</div>
+        <div class="form-hint">Required for Periodic Exams — upload the TOS as a PDF or Excel file (.xlsx).</div>
         {% if tos_list %}
         <div style="margin-top:0.5rem">
           <label class="form-label" style="font-size:0.78rem;font-weight:500">…or use a TOS you already uploaded</label>
@@ -530,9 +530,9 @@ function updateImportPreview(input) {
       </div>
       <div class="form-group" id="addTosWrap" style="display:none;margin-bottom:0.85rem">
         <label class="form-label">Table of Specification (TOS) <span style="color:var(--danger)">*</span></label>
-        <input type="file" name="tos_file" id="addTosFile" accept=".xlsx,.xlsm" class="form-control"
+        <input type="file" name="tos_file" id="addTosFile" accept=".xlsx,.xlsm,.pdf" class="form-control"
                style="padding:0.45rem 0.65rem;font-size:0.9rem">
-        <div class="form-hint">Required for Periodic Exams — upload the TOS as an Excel file (.xlsx).</div>
+        <div class="form-hint">Required for Periodic Exams — upload the TOS as a PDF or Excel file (.xlsx).</div>
         {% if tos_list %}
         <div style="margin-top:0.5rem">
           <label class="form-label" style="font-size:0.78rem;font-weight:500">…or reuse a TOS you already uploaded</label>
@@ -1364,8 +1364,8 @@ function confirmDeleteGroup(id, name, qcount) {
         <div class="text-xs" style="margin-bottom:0.4rem">
           {% if q.tos_id %}Current: {{ q.tos_name|tos_label }}{% else %}<span class="text-muted">None</span>{% endif %}
         </div>
-        <input type="file" name="tos_file" class="form-control" accept=".xlsx,.xlsm" style="padding:0.45rem 0.65rem;font-size:0.9rem">
-        <div class="form-hint">Optional — only choose a file to replace this question's TOS (Excel .xlsx).</div>
+        <input type="file" name="tos_file" class="form-control" accept=".xlsx,.xlsm,.pdf" style="padding:0.45rem 0.65rem;font-size:0.9rem">
+        <div class="form-hint">Optional — only choose a file to replace this question's TOS (PDF or Excel .xlsx).</div>
         {% set other_tos = tos_list | rejectattr('id', 'equalto', q.tos_id or 0) | list %}
         {% if other_tos %}
         <select name="tos_id" class="form-select" style="margin-top:0.4rem">

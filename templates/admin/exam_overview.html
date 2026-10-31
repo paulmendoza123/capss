@@ -98,7 +98,9 @@
             {% else %}<span class="badge badge-purple">Periodic Exam</span>{% endif %}
             {% else %}<span class="badge badge-gray">Quiz</span>{% endif %}
             {% if exam.category == 'periodic' and exam.tos_name %}
-            <div class="text-xs text-muted" title="Table of Specification">TOS: {{ exam.tos_name.rsplit('.', 1)[0] if '.' in exam.tos_name else exam.tos_name }}</div>
+            <div class="text-xs text-muted" title="Table of Specification">TOS: {{ exam.tos_name|tos_label }}
+              · <a href="{{ url_for('admin_view_tos', tos_id=exam.tos_file_id) }}">View</a>
+              · <a href="{{ url_for('admin_download_tos', tos_id=exam.tos_file_id) }}">Download</a></div>
             {% endif %}
           </td>
           <td class="text-sm">{{ exam.teacher_name }}</td>
