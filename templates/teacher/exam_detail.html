@@ -721,6 +721,47 @@
       </div>
     </form>
   </div>
+
+<!-- Exam Code Card -->
+<div class="card" style="max-width:580px;margin-top:1.25rem">
+  <div class="card-title mb-1"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> Exam Access Code</div>
+  <div class="text-muted text-sm mb-2">Share this code with your students so they can enter the exam directly.</div>
+  <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+    <div id="exam-code-display" style="
+      font-size:2rem;font-weight:800;letter-spacing:0.35em;
+      font-family:monospace;
+      background:rgba(var(--accent-rgb),0.08);
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:0.5rem 1.25rem;
+      user-select:all;
+    ">{{ exam.exam_code or '——' }}</div>
+    <div style="display:flex;flex-direction:column;gap:0.4rem">
+      <button onclick="copyCode()" class="btn btn-ghost btn-sm" id="copy-btn"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg> Copy Code</button>
+      <form method="POST" action="{{ url_for('teacher_regenerate_exam_code', exam_id=exam.id) }}"
+            onsubmit="return confirm('Generate a new code? The old code will stop working.')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg> New Code</button>
+      </form>
+    </div>
+  </div>
+  <div class="form-hint" style="margin-top:0.75rem">
+    Students go to <strong>My Exams → Join by Code</strong> and enter this code to access the exam.
+  </div>
+</div>
+
+<script>
+function copyCode() {
+  const code = document.getElementById('exam-code-display').textContent.trim();
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = 'Copy Code'; }, 2000);
+  }).catch(() => {
+    prompt('Copy this code:', code);
+  });
+}
+</script>
 </div>
 
 <style>

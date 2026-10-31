@@ -4095,33 +4095,6 @@ def teacher_finish_editing(exam_id):
         flash('Exam is ready. Open it from the class page when you want students to start.', 'success')
     return redirect(url_for('teacher_class_detail', class_id=exam['class_id']))
 
-@app.route('/teacher/class/<int:class_id>/monitoring')
-@role_required('teacher')
-def teacher_class_monitoring(class_id):
-    conn = get_db()
-    cls = conn.execute(
-        'SELECT * FROM classes WHERE id=? AND teacher_id=?',
-        (class_id, session['user_id'])
-    ).fetchone()
-    if not cls:
-        flash('Class not found.', 'error')
-        return redirect(url_for('teacher_home'))
-    # Get ALL exams for this class (active + upcoming so teacher can open/close)
-    exams = conn.execute(
-        "SELECT * FROM exams WHERE class_id=? ORDER BY scheduled_at", (class_id,)
-    ).fetchall()
-    monitoring_data = []
-    for exam in exams:
-        sessions = conn.execute('''
-            SELECT es.id, u.full_name, es.tab_switch_count, es.status,
-                   es.started_at, es.submitted_at, es.score, es.total_points
-            FROM exam_sessions es JOIN users u ON es.student_id = u.id
-            WHERE es.exam_id=?
-            ORDER BY es.started_at DESC
-        ''', (exam['id'],)).fetchall()
-        monitoring_data.append({'exam': dict(exam), 'sessions': [dict(s) for s in sessions]})
-    return render_template('teacher/class_monitoring.html', cls=cls, monitoring_data=monitoring_data)
-
 @app.route('/teacher/exam/<int:exam_id>/regenerate-code', methods=['POST'])
 @role_required('teacher')
 def teacher_regenerate_exam_code(exam_id):
@@ -4137,10 +4110,10 @@ def teacher_regenerate_exam_code(exam_id):
     conn.execute('UPDATE exams SET exam_code=? WHERE id=?', (new_code, exam_id))
     conn.commit()
     flash(f'New exam code generated: {new_code}', 'success')
-    return redirect(url_for('teacher_exam_settings', exam_id=exam_id))
+    return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
 
 
-@app.route('/teacher/exam/<int:exam_id>/settings', methods=['GET', 'POST'])
+@app.route('/teacher/exam/<int:exam_id>/settings', methods=['POST'])
 @role_required('teacher')
 def teacher_exam_settings(exam_id):
     conn = get_db()
@@ -4225,13 +4198,8 @@ def teacher_exam_settings(exam_id):
                       1 if request.form.get('randomize_sections') else 0, exam_id))
         conn.commit()
         flash('Settings saved.', 'success')
-        redirect_to = request.form.get('redirect_to')
-        if redirect_to == 'detail':
-            return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
-        exam = conn.execute('''
-            SELECT e.*, c.teacher_id FROM exams e JOIN classes c ON e.class_id = c.id WHERE e.id=?
-        ''', (exam_id,)).fetchone()
-    return render_template('teacher/exam_settings.html', exam=exam)
+        return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
+    return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
 
 def _exam_locked_response(exam_id):
     """While an exam is open (status 'active') students may be taking it, so

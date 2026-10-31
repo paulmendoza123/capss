@@ -37,7 +37,6 @@ spark/
     │   ├── exam_detail.html      # Questions + Monitoring + Results + Settings tabs
     │   ├── exam_monitoring.html  # Live student monitoring
     │   ├── exam_results.html
-    │   ├── exam_settings.html
     │   ├── my_exams.html
     │   ├── question_bank.html
     │   └── profile.html
