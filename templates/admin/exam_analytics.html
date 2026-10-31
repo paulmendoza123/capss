@@ -72,7 +72,7 @@
     {% endif %}
     <div class="form-group">
       <div class="form-label">Duration</div>
-      <div class="font-mono">{{ exam.duration_minutes }} minutes</div>
+      <div class="font-mono">{{ exam|exam_time }}</div>
     </div>
     <div class="form-group">
       <div class="form-label">Status</div>

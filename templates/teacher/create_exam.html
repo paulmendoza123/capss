@@ -23,7 +23,7 @@
         <option value="quiz">Quiz</option>
         <option value="periodic">Periodic Exam (Midterm / Final Term)</option>
       </select>
-      <div class="form-hint">Quizzes and Periodic Exams use separate question banks — their questions can't be mixed. Periodic Exams are built on one Table of Specification (TOS).</div>
+      <div class="form-hint">Quizzes and Periodic Exams use separate question banks.</div>
     </div>
     <div class="form-group" id="periodicTypeGroup" style="display:none">
       <label class="form-label">Periodic Exam Type <span style="color:var(--danger)">*</span></label>
@@ -32,42 +32,39 @@
         <option value="midterm">Midterm Exam</option>
         <option value="final">Final Exam</option>
       </select>
-      <div class="form-hint">Tell the system whether this Periodic Exam is the Midterm or the Final Exam.</div>
+      <div class="form-hint">Is this the Midterm or the Final?</div>
     </div>
     <div class="form-group" id="tosGroup" style="display:none">
       <label class="form-label">Table of Specification (TOS) <span style="color:var(--danger)">*</span></label>
-      <input type="file" name="tos_file" id="tosFile" class="form-control" accept=".xlsx,.xlsm,.pdf" style="padding:0.45rem 0.65rem;font-size:0.9rem">
-      <div class="form-hint">PDF or Excel (.xlsx). Only questions that belong to this TOS can be added to or imported into this exam.</div>
-      {% if tos_list %}
-      <div style="margin-top:0.5rem">
-        <label class="form-label" style="font-size:0.78rem;font-weight:500">…or use a TOS you already uploaded</label>
-        <select name="tos_id" id="tosSelect" class="form-select" style="max-width:340px" onchange="syncTosField()">
-          <option value="">— Upload a new file instead —</option>
+      <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap">
+        <input type="file" name="tos_file" id="tosFile" class="form-control" accept=".xlsx,.xlsm,.pdf"
+               style="padding:0.45rem 0.65rem;font-size:0.9rem;flex:1 1 200px;min-width:0;width:auto">
+        {% if tos_list %}
+        <span class="text-sm text-muted" style="flex:0 0 auto">or</span>
+        <select name="tos_id" id="tosSelect" class="form-select" style="flex:1 1 200px;min-width:0;width:auto" onchange="syncTosField()">
+          <option value="">— Choose an already uploaded TOS —</option>
           {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name|tos_label }}</option>{% endfor %}
         </select>
+        {% endif %}
       </div>
-      {% endif %}
+      <div class="form-hint">PDF or Excel (.xlsx){% if tos_list %}, or pick one you already uploaded{% endif %}. Only questions that belong to this TOS can be added to or imported into this exam.</div>
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Duration (minutes)</label>
-        <input type="number" name="duration_minutes" class="form-control" value="60" min="5" required />
-      </div>
-      <div class="form-group">
-        <label class="form-label">Scheduled Date & Time</label>
-        <div class="dt-split" data-dt-split>
-          <input type="date" class="form-control" data-dt="date" aria-label="Scheduled date" />
-          <input type="time" class="form-control" data-dt="time" aria-label="Scheduled time" />
-          <input type="hidden" name="scheduled_at" />
-        </div>
+    <div class="divider"></div>
+
+    <div class="form-group">
+      <label class="form-label">Scheduled Date & Time</label>
+      <div class="dt-split" data-dt-split>
+        <input type="date" class="form-control" data-dt="date" aria-label="Scheduled date" />
+        <input type="time" class="form-control" data-dt="time" aria-label="Scheduled time" />
+        <input type="hidden" name="scheduled_at" />
       </div>
     </div>
 
-    <div class="form-group">
-      <label class="form-label">Time Warning (minutes before the end)</label>
-      <input type="number" name="time_warning_minutes" class="form-control" value="5" min="0" max="120" style="max-width:160px" />
-      <div class="form-hint">Students get a "time left" popup when this many minutes remain. Set to 0 to turn it off.</div>
-    </div>
+    <div class="divider"></div>
+
+    {% include 'teacher/exam_timing_fields.html' %}
+
+    <div class="divider"></div>
 
     <!-- Tab Switch Monitoring -->
     <div class="form-group" style="margin-bottom:0.5rem">
@@ -78,15 +75,13 @@
           <span class="toggle-slider"></span>
         </label>
       </div>
-      <div class="form-hint" id="tabSwitchHint" style="min-height:1.2em">
-        Students will be auto-terminated when they reach the tab switch limit.
-      </div>
+      <div class="form-hint" id="tabSwitchHint" style="min-height:1.2em"></div>
     </div>
 
     <div id="tabLimitGroup" class="form-group" style="margin-top:0.25rem">
       <label class="form-label">Tab Switch Limit</label>
       <input type="number" name="tab_switch_limit" class="form-control" value="3" min="1" max="20" style="max-width:160px" />
-      <div class="form-hint">Exam auto-terminates when student hits this limit.</div>
+      <div class="form-hint">Exam auto-terminates at this limit.</div>
     </div>
 
     <!-- Fullscreen Mode Enforcement -->
@@ -98,16 +93,14 @@
           <span class="toggle-slider"></span>
         </label>
       </div>
-      <div class="form-hint">
-        Students must enter fullscreen before starting. Exiting fullscreen counts as a violation, same as switching tabs.
-      </div>
+      <div class="form-hint">Students must be in fullscreen. Exiting counts as a violation.</div>
     </div>
 
     <div class="divider"></div>
     <div class="form-group">
       <label class="form-label">Passing Score (%)</label>
       <input type="number" name="passing_score" class="form-control" value="50" min="1" max="100" style="max-width:160px" />
-      <div class="form-hint">Students scoring at or above this percentage will pass.</div>
+      <div class="form-hint">Students at or above this percentage pass.</div>
     </div>
     <div class="divider"></div>
     <div class="flex gap-3 mb-2" style="flex-wrap:wrap">
@@ -171,13 +164,10 @@ document.addEventListener('DOMContentLoaded', syncTosField);
 function toggleTabLimit(cb) {
   const group = document.getElementById('tabLimitGroup');
   const hint = document.getElementById('tabSwitchHint');
-  if (cb.checked) {
-    group.style.display = '';
-    hint.textContent = 'Students will be auto-terminated when they reach the tab switch limit.';
-  } else {
-    group.style.display = 'none';
-    hint.textContent = 'Tab switching is monitored and logged, but only the teacher can manually terminate students.';
-  }
+  group.style.display = cb.checked ? '' : 'none';
+  if (hint) hint.textContent = cb.checked
+    ? 'Students are auto-terminated at the tab switch limit.'
+    : 'Switches are logged; only you can terminate students.';
 }
 // Run on page load in case of form re-render with toggle off
 document.addEventListener('DOMContentLoaded', function() {

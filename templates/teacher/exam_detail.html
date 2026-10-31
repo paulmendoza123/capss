@@ -615,26 +615,29 @@
         <label class="form-label">Exam Title</label>
         <input type="text" name="title" class="form-control" value="{{ exam.title }}" required />
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Duration (minutes)</label>
-          <input type="number" name="duration_minutes" class="form-control" value="{{ exam.duration_minutes }}" min="5" required />
-        </div>
-        <div class="form-group">
-          <label class="form-label">Scheduled Date & Time</label>
-          <div class="dt-split" data-dt-split>
-            <input type="date" class="form-control" data-dt="date" aria-label="Scheduled date" />
-            <input type="time" class="form-control" data-dt="time" aria-label="Scheduled time" />
-            <input type="hidden" name="scheduled_at" value="{{ (exam.scheduled_at or '')|replace(' ', 'T') }}" />
-          </div>
+      <div class="divider"></div>
+
+      <div class="form-group">
+        <label class="form-label">Scheduled Date & Time</label>
+        <div class="dt-split" data-dt-split>
+          <input type="date" class="form-control" data-dt="date" aria-label="Scheduled date" />
+          <input type="time" class="form-control" data-dt="time" aria-label="Scheduled time" />
+          <input type="hidden" name="scheduled_at" value="{{ (exam.scheduled_at or '')|replace(' ', 'T') }}" />
         </div>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Time Warning (minutes before the end)</label>
-        <input type="number" name="time_warning_minutes" class="form-control" value="{{ exam.time_warning_minutes if exam.time_warning_minutes is not none else 5 }}" min="0" max="120" style="max-width:160px" />
-        <div class="form-hint">Students get a "time left" popup when this many minutes remain. Set to 0 to turn it off.</div>
-      </div>
+      <div class="divider"></div>
+
+      {% set t_duration_on = (exam.duration_minutes or 0) > 0 %}
+      {% set t_duration = exam.duration_minutes or 60 %}
+      {% set _qs = exam.question_time_seconds or 0 %}
+      {% set t_q_on = _qs > 0 %}
+      {% set t_q_unit = 'minutes' if (_qs >= 60 and _qs % 60 == 0) else 'seconds' %}
+      {% set t_q_value = (_qs // 60) if (_qs >= 60 and _qs % 60 == 0) else (_qs or 30) %}
+      {% set t_warning = exam.time_warning_minutes if exam.time_warning_minutes is not none else 5 %}
+      {% include 'teacher/exam_timing_fields.html' %}
+
+      <div class="divider"></div>
 
       <!-- Tab Switch Monitoring -->
       <div class="form-group" style="margin-bottom:0.5rem">
@@ -647,20 +650,14 @@
             <span class="toggle-slider"></span>
           </label>
         </div>
-        <div class="form-hint" id="tabSwitchHint" style="min-height:1.2em">
-          {% if exam.tab_switch_enabled %}
-            Students will be auto-terminated when they reach the tab switch limit.
-          {% else %}
-            Tab switching is monitored and logged, but only the teacher can manually terminate students.
-          {% endif %}
-        </div>
+        <div class="form-hint" id="tabSwitchHint" style="min-height:1.2em">{% if exam.tab_switch_enabled %}Students are auto-terminated at the tab switch limit.{% else %}Switches are logged; only you can terminate students.{% endif %}</div>
       </div>
 
       <div id="tabLimitGroup" class="form-group" style="margin-top:0.25rem;{% if not exam.tab_switch_enabled %}display:none{% endif %}">
         <label class="form-label">Tab Switch Limit</label>
         <input type="number" name="tab_switch_limit" class="form-control"
           value="{{ exam.tab_switch_limit if exam.tab_switch_limit else 3 }}" min="1" max="20" style="max-width:160px" />
-        <div class="form-hint">Exam auto-terminates when student hits this limit.</div>
+        <div class="form-hint">Exam auto-terminates at this limit.</div>
       </div>
 
       <!-- Fullscreen Mode Enforcement -->
@@ -673,9 +670,7 @@
             <span class="toggle-slider"></span>
           </label>
         </div>
-        <div class="form-hint">
-          Students must enter fullscreen before starting. Exiting fullscreen counts as a violation, same as switching tabs.
-        </div>
+        <div class="form-hint">Students must be in fullscreen. Exiting counts as a violation.</div>
       </div>
 
       <!-- Exam Status -->
@@ -693,7 +688,7 @@
         <input type="number" name="passing_score" class="form-control"
                value="{{ exam.passing_score if exam.passing_score is not none else 50 }}"
                min="1" max="100" style="max-width:160px" />
-        <div class="form-hint">Students scoring at or above this percentage will pass.</div>
+        <div class="form-hint">Students at or above this percentage pass.</div>
       </div>
       <div class="divider"></div>
       <div class="flex gap-3 mb-2" style="flex-wrap:wrap">
@@ -725,7 +720,7 @@
 <!-- Exam Code Card -->
 <div class="card" style="max-width:580px;margin-top:1.25rem">
   <div class="card-title mb-1"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> Exam Access Code</div>
-  <div class="text-muted text-sm mb-2">Share this code with your students so they can enter the exam directly.</div>
+  <div class="text-muted text-sm mb-2">Share this code so students can join the exam.</div>
   <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
     <div id="exam-code-display" style="
       font-size:2rem;font-weight:800;letter-spacing:0.35em;
@@ -745,9 +740,7 @@
       </form>
     </div>
   </div>
-  <div class="form-hint" style="margin-top:0.75rem">
-    Students go to <strong>My Exams → Join by Code</strong> and enter this code to access the exam.
-  </div>
+  <div class="form-hint" style="margin-top:0.75rem">Students use <strong>My Exams → Join by Code</strong>.</div>
 </div>
 
 <script>
@@ -1097,13 +1090,10 @@ document.addEventListener('DOMContentLoaded', function () {
 function toggleTabLimit(cb) {
   const group = document.getElementById('tabLimitGroup');
   const hint = document.getElementById('tabSwitchHint');
-  if (cb.checked) {
-    group.style.display = '';
-    hint.textContent = 'Students will be auto-terminated when they reach the tab switch limit.';
-  } else {
-    group.style.display = 'none';
-    hint.textContent = 'Tab switching is monitored and logged, but only the teacher can manually terminate students.';
-  }
+  group.style.display = cb.checked ? '' : 'none';
+  if (hint) hint.textContent = cb.checked
+    ? 'Students are auto-terminated at the tab switch limit.'
+    : 'Switches are logged; only you can terminate students.';
 }
 
 /* Switch the Add Question form between Multiple Choice, Short Answer, and Fill in the Blank fields */

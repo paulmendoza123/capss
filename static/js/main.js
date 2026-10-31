@@ -534,3 +534,85 @@ document.addEventListener('DOMContentLoaded', function () {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
+
+// ── Exam timing fields (Create Exam + exam Settings) ─────────────────────
+// Two independent timers that can be combined: the overall exam duration and
+// the time per question. Either can be off, but never both.
+(function () {
+  function init() {
+    const dToggle = document.getElementById('durationToggle');
+    const qToggle = document.getElementById('questionTimeToggle');
+    if (!dToggle || !qToggle) return;
+    const dGroup = document.getElementById('durationGroup');
+    const dInput = document.getElementById('durationInput');
+    const dOff = document.getElementById('durationOffHint');
+    const qGroup = document.getElementById('questionTimeGroup');
+    const qInput = document.getElementById('questionTimeInput');
+    const qUnit = document.getElementById('questionTimeUnit');
+    const qOff = document.getElementById('questionTimeOffHint');
+    const warnGroup = document.getElementById('timeWarningGroup');
+    const errEl = document.getElementById('timingError');
+    let errTimer = null;
+
+    function showError(msg) {
+      if (!errEl) return;
+      errEl.textContent = msg;
+      errEl.style.display = msg ? '' : 'none';
+      clearTimeout(errTimer);
+      if (msg) errTimer = setTimeout(() => showError(''), 4000);
+    }
+
+    function sync() {
+      const dOn = dToggle.checked, qOn = qToggle.checked;
+      dGroup.style.display = dOn ? '' : 'none';
+      if (dOff) dOff.style.display = dOn ? 'none' : '';
+      // Disabled inputs are not submitted, and are skipped by required/min checks.
+      dInput.disabled = !dOn;
+      dInput.required = dOn;
+      warnGroup.style.display = dOn ? '' : 'none';
+      qGroup.style.display = qOn ? '' : 'none';
+      if (qOff) qOff.style.display = qOn ? 'none' : '';
+      qInput.disabled = !qOn;
+      qUnit.disabled = !qOn;
+      qInput.required = qOn;
+    }
+
+    function guard(toggle, other) {
+      toggle.addEventListener('change', () => {
+        if (!toggle.checked && !other.checked) {
+          toggle.checked = true; // the exam must keep at least one time limit
+          showError('At least one timer must stay on: the exam duration, the time per question, or both.');
+        } else {
+          showError('');
+        }
+        sync();
+      });
+    }
+    guard(dToggle, qToggle);
+    guard(qToggle, dToggle);
+
+    // Keep the value inside 5 s – 60 min whichever unit is picked
+    function checkQuestionRange() {
+      if (!qToggle.checked) return true;
+      const secs = (parseInt(qInput.value, 10) || 0) * (qUnit.value === 'minutes' ? 60 : 1);
+      const ok = secs >= 5 && secs <= 3600;
+      qInput.setCustomValidity(ok ? '' : 'Time per question must be between 5 seconds and 60 minutes.');
+      return ok;
+    }
+    qInput.addEventListener('input', checkQuestionRange);
+    qUnit.addEventListener('change', checkQuestionRange);
+    const form = dToggle.closest('form');
+    if (form) form.addEventListener('submit', (e) => {
+      if (!dToggle.checked && !qToggle.checked) {
+        e.preventDefault();
+        showError('Turn on at least one timer: the exam duration, the time per question, or both.');
+        return;
+      }
+      if (!checkQuestionRange()) { e.preventDefault(); qInput.reportValidity(); }
+    });
+    sync();
+    checkQuestionRange();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();

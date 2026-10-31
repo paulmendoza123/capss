@@ -1027,6 +1027,11 @@ def init_db():
         'ALTER TABLE exams ADD COLUMN randomize_sections INTEGER DEFAULT 0',
         'ALTER TABLE exam_sessions ADD COLUMN choice_order TEXT',
         'ALTER TABLE exam_sessions ADD COLUMN section_order TEXT',
+        # Time-per-question: 0 = off. q_index / q_started_at track, per student,
+        # which question they are on and when it opened (server-side clock).
+        'ALTER TABLE exams ADD COLUMN question_time_seconds INTEGER DEFAULT 0',
+        'ALTER TABLE exam_sessions ADD COLUMN q_index INTEGER DEFAULT 0',
+        'ALTER TABLE exam_sessions ADD COLUMN q_started_at TEXT',
     ):
         try:
             conn.execute(_stmt)
@@ -1533,6 +1538,7 @@ def auto_complete_finished_exams(conn):
             SET status = 'completed'
             WHERE status = 'active'
               AND activated_at IS NOT NULL
+              AND duration_minutes > 0
               AND datetime(activated_at, '+' || duration_minutes || ' minutes', '+15 minutes')
                   <= datetime('now', 'localtime')
               AND id NOT IN (SELECT DISTINCT exam_id FROM exam_sessions WHERE status = 'ongoing')
@@ -1623,6 +1629,113 @@ def clean_time_warning(raw, duration):
     except (TypeError, ValueError):
         minutes = DEFAULT_TIME_WARNING_MINUTES
     return max(0, min(minutes, max((duration or 0) - 1, 0)))
+
+QUESTION_CLOCK_GRACE_SECONDS = 3   # lets an in-flight last edit land right after a question closes
+MIN_QUESTION_SECONDS = 5
+MAX_QUESTION_SECONDS = 3600
+
+
+def read_exam_timing(form):
+    """Read the two exam timers from a create/settings form.
+
+    Returns (duration_minutes, question_seconds, error). Either timer can be
+    switched off (stored as 0) and they can be combined, but at least one must
+    stay on so the exam always has a time limit.
+    """
+    duration_on = bool(form.get('duration_enabled'))
+    question_on = bool(form.get('question_time_enabled'))
+    duration = 0
+    question_seconds = 0
+    if duration_on:
+        duration = form.get('duration_minutes', type=int) or 0
+        if duration < 1:
+            return 0, 0, 'Enter an exam duration of at least 1 minute, or turn the duration off.'
+    if question_on:
+        value = form.get('question_time_value', type=int) or 0
+        unit = (form.get('question_time_unit') or 'seconds').lower()
+        question_seconds = value * 60 if unit == 'minutes' else value
+        if question_seconds < MIN_QUESTION_SECONDS or question_seconds > MAX_QUESTION_SECONDS:
+            return 0, 0, 'Time per question must be between 5 seconds and 60 minutes.'
+    if not duration_on and not question_on:
+        return 0, 0, 'Turn on at least one timer: the exam duration, the time per question, or both.'
+    return duration, question_seconds, None
+
+
+def _fmt_seconds(secs):
+    secs = int(secs or 0)
+    if secs >= 60 and secs % 60 == 0:
+        return f'{secs // 60} min'
+    if secs >= 60:
+        return f'{secs // 60}m {secs % 60}s'
+    return f'{secs}s'
+
+
+@app.template_filter('exam_time')
+def exam_time_filter(exam):
+    """Short label for an exam's timers, e.g. '60 min', '30s per question',
+    '60 min + 30s per question' or 'No time limit'."""
+    parts = []
+    duration = int(_q_get(exam, 'duration_minutes', 0) or 0)
+    per_q = int(_q_get(exam, 'question_time_seconds', 0) or 0)
+    if duration:
+        parts.append(f'{duration} min')
+    if per_q:
+        parts.append(f'{_fmt_seconds(per_q)} per question')
+    return ' + '.join(parts) if parts else 'No time limit'
+
+
+def _parse_clock_ts(raw):
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).strip().replace('T', ' '))
+    except ValueError:
+        return None
+
+
+def question_clock_state(conn, exam, sess, total, now=None, persist=True):
+    """Where a student is in a time-per-question exam, from the server clock.
+
+    Each question gets `question_time_seconds`. If time passes with nobody
+    asking (closed laptop, dropped connection), the clock keeps running and the
+    student is moved on by however many whole questions elapsed. Returns None
+    when the exam has no per-question timer.
+    """
+    per_q = int(_q_get(exam, 'question_time_seconds', 0) or 0)
+    if per_q <= 0:
+        return None
+    now = now or datetime.now()
+    idx = int(_q_get(sess, 'q_index', 0) or 0)
+    started = _parse_clock_ts(_q_get(sess, 'q_started_at', None))
+    if started is None:
+        return {'started': False, 'index': idx, 'total': total,
+                'remaining': per_q, 'finished': idx >= total}
+    elapsed = max(0.0, (now - started).total_seconds())
+    if elapsed >= per_q:
+        steps = int(elapsed // per_q)
+        idx += steps
+        started = started + timedelta(seconds=steps * per_q)
+        elapsed = max(0.0, (now - started).total_seconds())
+        if persist:
+            conn.execute('UPDATE exam_sessions SET q_index=?, q_started_at=? WHERE id=?',
+                         (idx, started.isoformat(sep=' '), sess['id']))
+            conn.commit()
+    finished = idx >= total
+    remaining = 0 if finished else max(0, int(-(-(per_q - elapsed) // 1)))
+    return {'started': True, 'index': idx, 'total': total,
+            'remaining': remaining, 'finished': finished}
+
+
+def question_position(sess, question_id):
+    """Position of a question in THIS student's display order (None if unknown)."""
+    order = load_json_or_none(_q_get(sess, 'question_order', None))
+    if not order:
+        return None
+    try:
+        return order.index(int(question_id))
+    except (ValueError, TypeError):
+        return None
+
 
 def handle_profile_update(conn, user, with_year_level=False):
     """Update the editable parts of a profile (first/last name, and year level for students).
@@ -2256,8 +2369,28 @@ def student_take_exam(exam_id):
         score = 0
         has_essay = any(q['question_type'] == 'essay' for q in questions)
 
+        # Time per question: questions whose time is already up are locked, so
+        # the submitted form can't change them. They keep whatever was saved
+        # while they were open. A short grace period lets the very last edit
+        # (typed just before the clock ran out) still count.
+        locked_before = None
+        if int(_q_get(exam, 'question_time_seconds', 0) or 0) > 0:
+            grace_state = question_clock_state(
+                conn, exam, exam_sess, len(questions),
+                now=datetime.now() - timedelta(seconds=QUESTION_CLOCK_GRACE_SECONDS),
+                persist=False)
+            if grace_state and load_json_or_none(_q_get(exam_sess, 'question_order', None)):
+                locked_before = grace_state['index']
+
         for q in questions:
             ans = request.form.get(f'answer_{q["id"]}', '').strip()
+            if locked_before is not None:
+                pos = question_position(exam_sess, q['id'])
+                if pos is not None and pos < locked_before:
+                    prev = conn.execute(
+                        'SELECT answer_text FROM answers WHERE session_id=? AND question_id=?',
+                        (sess_id, q['id'])).fetchone()
+                    ans = (prev['answer_text'] or '') if prev else ''
             conn.execute('''
                 INSERT OR REPLACE INTO answers (session_id, question_id, answer_text)
                 VALUES (?, ?, ?)
@@ -2395,7 +2528,8 @@ def student_take_exam(exam_id):
     # Persist the question order for this session (first time only). Also saved
     # when only sections are randomized, so the review pages can follow the
     # student's order.
-    if (exam['randomize_questions'] or _q_get(exam, 'randomize_sections', 0)) \
+    question_seconds = int(_q_get(exam, 'question_time_seconds', 0) or 0)
+    if (exam['randomize_questions'] or _q_get(exam, 'randomize_sections', 0) or question_seconds) \
             and saved_order is None and existing:
         new_order = json.dumps([q['id'] for q in all_questions])
         conn.execute('UPDATE exam_sessions SET question_order=? WHERE id=?',
@@ -2417,26 +2551,36 @@ def student_take_exam(exam_id):
     # Timer is based on when the exam was opened (activated_at), not when the
     # individual student started. This gives all students the same shared clock.
     # activated_at is stored in local time, so compare with datetime.now().
-    total_seconds = exam['duration_minutes'] * 60
-    activated_at = exam['activated_at']
-    if activated_at:
-        if isinstance(activated_at, str):
-            try:
-                activated_at = datetime.strptime(activated_at, '%Y-%m-%d %H:%M:%S')
-            except ValueError:
-                activated_at = datetime.strptime(activated_at, '%Y-%m-%d %H:%M')
-        elapsed = int((datetime.now() - activated_at).total_seconds())
-    else:
-        # Fallback: use the student's own started_at if activated_at is missing
-        started_at = existing['started_at']
-        if isinstance(started_at, str):
-            started_at = datetime.strptime(started_at, '%Y-%m-%d %H:%M:%S')
-        elapsed = int((datetime.now() - started_at).total_seconds())
-    time_remaining_seconds = max(0, total_seconds - elapsed)
+    # The overall duration is optional: when it is switched off (0) there is no
+    # shared countdown and only the per-question timer (if any) applies.
+    total_seconds = int(exam['duration_minutes'] or 0) * 60
+    time_remaining_seconds = None
+    if total_seconds > 0:
+        activated_at = exam['activated_at']
+        if activated_at:
+            if isinstance(activated_at, str):
+                try:
+                    activated_at = datetime.strptime(activated_at, '%Y-%m-%d %H:%M:%S')
+                except ValueError:
+                    activated_at = datetime.strptime(activated_at, '%Y-%m-%d %H:%M')
+            elapsed = int((datetime.now() - activated_at).total_seconds())
+        else:
+            # Fallback: use the student's own started_at if activated_at is missing
+            started_at = existing['started_at']
+            if isinstance(started_at, str):
+                started_at = datetime.strptime(started_at, '%Y-%m-%d %H:%M:%S')
+            elapsed = int((datetime.now() - started_at).total_seconds())
+        time_remaining_seconds = max(0, total_seconds - elapsed)
+
+    # Per-question clock (only when the teacher set a time per question)
+    question_state = question_clock_state(conn, exam, existing, len(all_questions)) \
+        if question_seconds else None
 
     return render_template('student/take_exam.html', exam=exam, sections_data=sections_data,
                            exam_session=existing, saved_map=saved_map,
-                           time_remaining_seconds=time_remaining_seconds)
+                           time_remaining_seconds=time_remaining_seconds,
+                           question_seconds=question_seconds, question_state=question_state,
+                           total_questions=len(all_questions))
 
 @app.route('/student/exam/<int:exam_id>/result')
 @role_required('student')
@@ -3044,8 +3188,9 @@ def _copy_exam(conn, exam, dst_class_id):
           _q_get(exam, 'exam_category', 'quiz') or 'quiz', _q_get(exam, 'tos_id', None),
           _q_get(exam, 'periodic_type', None)))
     new_exam_id = ecur.lastrowid
-    conn.execute('UPDATE exams SET shuffle_choices=?, randomize_sections=? WHERE id=?',
-                 (_q_get(exam, 'shuffle_choices', 0), _q_get(exam, 'randomize_sections', 0), new_exam_id))
+    conn.execute('UPDATE exams SET shuffle_choices=?, randomize_sections=?, question_time_seconds=? WHERE id=?',
+                 (_q_get(exam, 'shuffle_choices', 0), _q_get(exam, 'randomize_sections', 0),
+                  _q_get(exam, 'question_time_seconds', 0), new_exam_id))
 
     section_id_map = {}
     for sec in conn.execute('SELECT * FROM sections WHERE exam_id=?', (exam['id'],)).fetchall():
@@ -3300,7 +3445,7 @@ def teacher_create_exam(class_id):
         return redirect(url_for('teacher_home'))
     if request.method == 'POST':
         title = request.form.get('title', '').strip()
-        duration = request.form.get('duration_minutes', type=int)
+        duration, question_seconds, timing_err = read_exam_timing(request.form)
         scheduled_at = request.form.get('scheduled_at', '').strip()
         if scheduled_at:
             scheduled_at = scheduled_at.replace('T', ' ')  # normalize datetime-local format
@@ -3317,8 +3462,11 @@ def teacher_create_exam(class_id):
         # Only Periodic Exams carry a Midterm / Final Exam type; quizzes never do.
         periodic_type = _norm_periodic_type(request.form.get('periodic_type')) if exam_category == 'periodic' else None
         tos_list = _teacher_tos_list(conn, session['user_id'])
-        if not title or not duration:
-            flash('Title and duration are required.', 'error')
+        if not title:
+            flash('Title is required.', 'error')
+            return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
+        if timing_err:
+            flash(timing_err, 'error')
             return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
         if not exam_category:
             flash('Please choose whether this is a Quiz or a Periodic Exam.', 'error')
@@ -3341,8 +3489,8 @@ def teacher_create_exam(class_id):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (title, class_id, duration, scheduled_at or None, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, passing_score, exam_code, time_warning, exam_category, exam_tos_id, periodic_type))
         exam_id = cur.lastrowid
-        conn.execute('UPDATE exams SET shuffle_choices=?, randomize_sections=? WHERE id=?',
-                     (shuffle_choices, randomize_sections, exam_id))
+        conn.execute('UPDATE exams SET shuffle_choices=?, randomize_sections=?, question_time_seconds=? WHERE id=?',
+                     (shuffle_choices, randomize_sections, question_seconds, exam_id))
 
         conn.commit()
         flash('Exam created!', 'success')
@@ -4155,7 +4303,10 @@ def teacher_exam_settings(exam_id):
             flash('Exam deleted.', 'success')
             return redirect(url_for('teacher_class_detail', class_id=class_id))
         title = request.form.get('title', '').strip()
-        duration = request.form.get('duration_minutes', type=int)
+        duration, question_seconds, timing_err = read_exam_timing(request.form)
+        if timing_err:
+            flash(timing_err, 'error')
+            return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
         scheduled_at = request.form.get('scheduled_at', '').strip()
         if scheduled_at:
             scheduled_at = scheduled_at.replace('T', ' ')  # normalize datetime-local format
@@ -4204,12 +4355,15 @@ def teacher_exam_settings(exam_id):
                 randomize_questions=?, tab_switch_limit=?, tab_switch_enabled=?, fullscreen_required=?, status=?, passing_score=?,
                 manually_closed=? WHERE id=?
             ''', (title, duration, new_scheduled_at, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, status, passing_score, manually_closed_val, exam_id))
-        conn.execute('UPDATE exams SET time_warning_minutes=? WHERE id=?',
-                     (clean_time_warning(request.form.get('time_warning_minutes'),
-                                         duration or exam['duration_minutes']), exam_id))
-        conn.execute('UPDATE exams SET shuffle_choices=?, randomize_sections=? WHERE id=?',
+        # The "time left" warning belongs to the overall duration, so it is only
+        # updated while the duration is on (it is kept if the duration is off).
+        if duration:
+            conn.execute('UPDATE exams SET time_warning_minutes=? WHERE id=?',
+                         (clean_time_warning(request.form.get('time_warning_minutes'), duration), exam_id))
+        conn.execute('UPDATE exams SET shuffle_choices=?, randomize_sections=?, question_time_seconds=? WHERE id=?',
                      (1 if request.form.get('shuffle_choices') else 0,
-                      1 if request.form.get('randomize_sections') else 0, exam_id))
+                      1 if request.form.get('randomize_sections') else 0,
+                      question_seconds, exam_id))
         conn.commit()
         flash('Settings saved.', 'success')
         return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
@@ -7394,7 +7548,8 @@ def api_exam_status(exam_id):
         except ValueError:
             activated_at = datetime.strptime(exam['activated_at'], '%Y-%m-%d %H:%M')
         elapsed = int((datetime.now() - activated_at).total_seconds())
-        time_remaining = max(0, exam['duration_minutes'] * 60 - elapsed)
+        if exam['duration_minutes']:
+            time_remaining = max(0, exam['duration_minutes'] * 60 - elapsed)
 
     return jsonify({
         'exam_status': exam['status'] if exam else None,
@@ -7402,6 +7557,47 @@ def api_exam_status(exam_id):
         'tab_switch_count': sess['tab_switch_count'] if sess else 0,
         'time_remaining_seconds': time_remaining,
     })
+
+@app.route('/api/question-clock', methods=['POST'])
+@login_required
+def api_question_clock():
+    """The student's per-question timer, kept on the server so a refresh (or a
+    tampered browser clock) can't give anyone extra time.
+
+    action 'sync'  -> current question + seconds left
+           'start' -> open question 1 (called once consent / fullscreen are done)
+           'next'  -> move on early; only honoured for the question the student is on
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    action = data.get('action') or 'sync'
+    conn = get_db()
+    sess = conn.execute('SELECT * FROM exam_sessions WHERE id=? AND student_id=?',
+                        (data.get('session_id'), session['user_id'])).fetchone()
+    if not sess:
+        return jsonify({'status': 'error'}), 403
+    if sess['status'] != 'ongoing':
+        return jsonify({'status': 'ended'})
+    exam = conn.execute('SELECT * FROM exams WHERE id=?', (sess['exam_id'],)).fetchone()
+    if not exam or int(_q_get(exam, 'question_time_seconds', 0) or 0) <= 0:
+        return jsonify({'status': 'error', 'reason': 'no question timer'}), 400
+    total = conn.execute('SELECT COUNT(*) FROM questions WHERE exam_id=?', (exam['id'],)).fetchone()[0]
+
+    state = question_clock_state(conn, exam, sess, total)
+    now = datetime.now()
+    if action == 'start' and not state['started']:
+        conn.execute('UPDATE exam_sessions SET q_started_at=? WHERE id=?',
+                     (now.isoformat(sep=' '), sess['id']))
+        conn.commit()
+    elif action == 'next' and state['started'] and not state['finished']:
+        if data.get('from_index') == state['index']:
+            conn.execute('UPDATE exam_sessions SET q_index=?, q_started_at=? WHERE id=?',
+                         (state['index'] + 1, now.isoformat(sep=' '), sess['id']))
+            conn.commit()
+    if action in ('start', 'next'):
+        sess = conn.execute('SELECT * FROM exam_sessions WHERE id=?', (sess['id'],)).fetchone()
+        state = question_clock_state(conn, exam, sess, total)
+    state['status'] = 'ok'
+    return jsonify(state)
 
 @app.route('/api/heartbeat', methods=['POST'])
 @login_required
@@ -7696,6 +7892,27 @@ def api_save_answer():
         if not conn.execute('SELECT 1 FROM questions WHERE id=? AND exam_id=?',
                             (question_id, sess['exam_id'])).fetchone():
             return jsonify({'status': 'error', 'reason': 'invalid question'})
+        # Time per question: once a question's time is up it is locked. Only the
+        # open question accepts answers (plus the one just before it, for a few
+        # seconds, so an edit made right at the buzzer is not lost).
+        qexam = conn.execute('SELECT * FROM exams WHERE id=?', (sess['exam_id'],)).fetchone()
+        if qexam and int(_q_get(qexam, 'question_time_seconds', 0) or 0) > 0:
+            pos = question_position(sess, question_id)
+            if pos is not None:
+                total_q = conn.execute('SELECT COUNT(*) FROM questions WHERE exam_id=?',
+                                       (sess['exam_id'],)).fetchone()[0]
+                qstate = question_clock_state(conn, qexam, sess, total_q)
+                if not qstate['started']:
+                    allowed = pos == 0
+                elif qstate['finished']:
+                    allowed = False
+                else:
+                    allowed = pos == qstate['index']
+                    if not allowed and pos == qstate['index'] - 1:
+                        allowed = (int(_q_get(qexam, 'question_time_seconds', 0)) - qstate['remaining']
+                                   ) <= QUESTION_CLOCK_GRACE_SECONDS
+                if not allowed:
+                    return jsonify({'status': 'error', 'reason': 'question closed'})
         if answer_text == '':
             # Nothing to save — and if a prior (now-cleared) answer exists, remove it
             # so the question no longer counts as "answered" in monitoring/progress.

@@ -31,7 +31,7 @@
       <div>
         <a href="{{ url_for('teacher_exam_monitoring', exam_id=exam.id) }}" class="exam-card-title" style="text-decoration:none;color:inherit;">{{ exam.title }} →</a>
         <div class="exam-card-meta">
-          <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam.duration_minutes }} min</span>
+          <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam|exam_time }}</span>
           {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at|time12 }}</span>{% endif %}
           {% if exam.exam_category == 'periodic' %}<span class="exam-meta-item"><span class="badge {{ exam.periodic_type|exam_type_badge }}">{{ (exam.periodic_type|periodic_label) or 'Periodic Exam' }}</span></span>{% endif %}
           <span class="exam-meta-item">Tab limit: {{ exam.tab_switch_limit }}</span>

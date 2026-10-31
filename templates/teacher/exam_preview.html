@@ -49,7 +49,10 @@
 {% endblock %}
 {% block topbar_title %}{{ exam.title }}{% endblock %}
 {% block topbar_actions %}
-<div class="exam-timer">{{ "%02d"|format(exam.duration_minutes) }}:00</div>
+<div style="display:flex;align-items:center;gap:0.9rem">
+  {% if (exam.question_time_seconds or 0) > 0 %}<div class="exam-timer" title="Time per question" style="font-size:1.2rem">{{ "%02d"|format(exam.question_time_seconds // 60) }}:{{ "%02d"|format(exam.question_time_seconds % 60) }}</div>{% endif %}
+  {% if (exam.duration_minutes or 0) > 0 %}<div class="exam-timer" title="Exam duration">{{ "%02d"|format(exam.duration_minutes) }}:00</div>{% endif %}
+</div>
 {% endblock %}
 {% block content %}
 

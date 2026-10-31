@@ -57,7 +57,7 @@
             {% if exam.exam_category == 'periodic' %}<div><span class="badge {{ exam.periodic_type|exam_type_badge }}">{{ (exam.periodic_type|periodic_label) or 'Periodic Exam' }}</span></div>{% endif %}
           </td>
           <td class="text-sm">{{ exam.subject_name }} · {{ exam.block_name }}</td>
-          <td class="font-mono text-sm">{{ exam.duration_minutes }}m</td>
+          <td class="font-mono text-sm">{{ exam|exam_time }}</td>
           <td>
             {% if exam.status == 'upcoming' %}<span class="badge badge-gray">Upcoming</span>
             {% elif exam.status == 'active' %}<span class="badge badge-green">Active</span>

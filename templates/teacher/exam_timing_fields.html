@@ -1,0 +1,64 @@
+{# Shared by Create Exam and the exam Settings tab.
+   Optional context (defaults shown): t_duration_on=true, t_duration=60,
+   t_q_on=false, t_q_value=30, t_q_unit='seconds', t_warning=5 #}
+{% set _d_on = t_duration_on if t_duration_on is defined else true %}
+{% set _d_val = t_duration if (t_duration is defined and t_duration) else 60 %}
+{% set _q_on = t_q_on if t_q_on is defined else false %}
+{% set _q_val = t_q_value if t_q_value is defined else 30 %}
+{% set _q_unit = t_q_unit if t_q_unit is defined else 'seconds' %}
+{% set _warn = t_warning if (t_warning is defined and t_warning is not none) else 5 %}
+
+<!-- Overall exam duration: toggle on = Duration + Time Warning inputs shown, off = hidden -->
+<div class="form-group" style="margin-bottom:1rem">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+    <label class="form-label" style="margin:0">Exam Duration</label>
+    <label class="toggle-switch">
+      <input type="checkbox" name="duration_enabled" id="durationToggle" {% if _d_on %}checked{% endif %} />
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+  <div class="form-hint">Set a total time limit for the whole exam.</div>
+  <div class="timing-grid">
+    <div id="durationGroup" class="timing-col">
+      <label class="form-label" for="durationInput">Duration (min)</label>
+      <input type="number" name="duration_minutes" id="durationInput" class="form-control"
+             value="{{ _d_val }}" min="1" max="1440" />
+      <div class="form-hint">Answers are auto-submitted when time runs out.</div>
+    </div>
+    <div id="timeWarningGroup" class="timing-col">
+      <label class="form-label" for="timeWarningInput">Time Warning (min)</label>
+      <input type="number" name="time_warning_minutes" id="timeWarningInput" class="form-control"
+             value="{{ _warn }}" min="0" max="120" />
+      <div class="form-hint">Shows a “time left” popup. 0 = off.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Time per question (can be switched on, alone or together with the duration) -->
+<div class="form-group" style="margin-bottom:0.5rem">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+    <label class="form-label" style="margin:0">Time per Question</label>
+    <label class="toggle-switch">
+      <input type="checkbox" name="question_time_enabled" id="questionTimeToggle" {% if _q_on %}checked{% endif %} />
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+  <div class="form-hint">Each question has its own countdown. Students can’t go back.</div>
+  <div id="questionTimeGroup" style="margin-top:0.6rem">
+    <div style="display:flex;align-items:center;gap:0.5rem">
+      <input type="number" name="question_time_value" id="questionTimeInput" class="form-control"
+             value="{{ _q_val }}" min="1" max="3600" style="max-width:120px" />
+      <select name="question_time_unit" id="questionTimeUnit" class="form-select" style="max-width:140px">
+        <option value="seconds" {% if _q_unit == 'seconds' %}selected{% endif %}>seconds</option>
+        <option value="minutes" {% if _q_unit == 'minutes' %}selected{% endif %}>minutes</option>
+      </select>
+    </div>
+  </div>
+</div>
+<div id="timingError" class="form-hint" role="alert" style="display:none;color:var(--danger);margin-bottom:0.75rem"></div>
+
+<style>
+.timing-grid { display:grid; grid-template-columns:1fr 1fr; gap:0.75rem 1rem; align-items:start; margin-top:0.6rem; }
+.timing-col .form-label { margin-bottom:0.35rem; }
+.timing-col .form-control { width:100%; max-width:180px; }
+</style>

@@ -82,10 +82,26 @@
 {% endblock %}
 {% block topbar_title %}{{ exam.title }}{% endblock %}
 {% block topbar_actions %}
-<div id="exam-timer" class="exam-timer">{{ "%02d"|format(exam.duration_minutes) }}:00</div>
+{% set per_q = (question_seconds or 0) > 0 and (total_questions or 0) > 0 %}
+{% set has_duration = (exam.duration_minutes or 0) > 0 %}
+<div style="display:flex;align-items:center;gap:0.9rem">
+  {% if per_q %}
+  <div title="Time left for this question" style="text-align:center;line-height:1.1">
+    {% if has_duration %}<div style="font-size:0.6rem;letter-spacing:0.05em;text-transform:uppercase;color:var(--text3)">Question</div>{% endif %}
+    <div id="question-timer" class="exam-timer" {% if has_duration %}style="font-size:1.2rem"{% endif %}>{{ "%02d"|format(question_seconds // 60) }}:{{ "%02d"|format(question_seconds % 60) }}</div>
+  </div>
+  {% endif %}
+  {% if has_duration %}
+  <div title="Time left for the whole exam" style="text-align:center;line-height:1.1">
+    {% if per_q %}<div style="font-size:0.6rem;letter-spacing:0.05em;text-transform:uppercase;color:var(--text3)">Exam</div>{% endif %}
+    <div id="exam-timer" class="exam-timer">{{ "%02d"|format(exam.duration_minutes) }}:00</div>
+  </div>
+  {% endif %}
+</div>
 {% endblock %}
 {% block content %}
 {% set warn_min = exam.time_warning_minutes if exam.time_warning_minutes is not none else 5 %}
+{% set per_q = (question_seconds or 0) > 0 and (total_questions or 0) > 0 %}
 
 <script>
 // ── Compensate for the topbar switching to position:fixed on this page ──
@@ -296,9 +312,11 @@
 <input type="hidden" id="exam-session-id" value="{{ exam_session.id }}" />
 <input type="hidden" id="exam-id" value="{{ exam.id }}" />
 <input type="hidden" id="exam-class-id" value="{{ exam.class_id }}" />
-<input type="hidden" id="exam-duration" value="{{ exam.duration_minutes }}" />
+<input type="hidden" id="exam-duration" value="{{ exam.duration_minutes or 0 }}" />
+<input type="hidden" id="question-seconds" value="{{ question_seconds if (question_seconds and total_questions) else 0 }}" />
+<input type="hidden" id="question-total" value="{{ total_questions or 0 }}" />
 <input type="hidden" id="time-warning-minutes" value="{{ warn_min }}" />
-<input type="hidden" id="time-remaining" value="{{ time_remaining_seconds }}" />
+<input type="hidden" id="time-remaining" value="{{ time_remaining_seconds if time_remaining_seconds is not none else '' }}" />
 <input type="hidden" id="tab-limit" value="{{ exam.tab_switch_limit }}" />
 <input type="hidden" id="tab-switch-enabled" value="{{ '1' if exam.tab_switch_enabled else '0' }}" />
 <input type="hidden" id="fullscreen-required" value="{{ '1' if exam.fullscreen_required else '0' }}" />
@@ -392,7 +410,7 @@
     {% endfor %}
 
     <!-- Section Navigation -->
-    <div class="flex justify-between items-center mt-3">
+    <div class="flex justify-between items-center mt-3 section-nav">
       {% if not loop.first %}
       <button type="button" class="btn btn-ghost" onclick="goSection({{ loop.index0 - 1 }})">← Previous</button>
       {% else %}
@@ -408,6 +426,19 @@
   </div>
   {% endfor %}
 </form>
+
+{% if per_q %}
+<style>
+  /* Time per question replaces section navigation (forward-only, one question at a time) */
+  .section-nav { display: none !important; }
+</style>
+<!-- Time-per-question navigation: forward only, one question at a time -->
+<div id="question-nav" class="flex justify-between items-center mt-3" style="display:none;gap:0.75rem">
+  <div class="text-sm text-muted">Each question is timed. You can't go back once you move on.</div>
+  <button type="button" id="next-question-btn" class="btn btn-primary">Next Question →</button>
+  <button type="button" id="submit-exam-btn-q" class="btn btn-success btn-lg" style="display:none">Submit Exam ✓</button>
+</div>
+{% endif %}
 
 <script>
 // ── Keep the section title box sticky right below the topbar ──
@@ -437,6 +468,54 @@ const examTitleFallback = {{ exam.title | tojson }};
 const SESSION_KEY = 'exam_section_{{ exam_session.id }}';
 const ANSWERS_KEY = 'exam_answers_{{ exam_session.id }}';
 let currentSection = 0;
+
+// ── TIME PER QUESTION: one question on screen at a time ──
+const PER_QUESTION = {{ 'true' if per_q else 'false' }};
+const questionBlocks = Array.from(document.querySelectorAll('.question-block'));
+let currentQuestion = 0;
+
+function showExamQuestion(qIdx) {
+  if (!PER_QUESTION || qIdx < 0 || qIdx >= questionBlocks.length) return;
+  currentQuestion = qIdx;
+  const block = questionBlocks[qIdx];
+  const page = block.closest('.exam-section-page');
+  const secIdx = parseInt(page.dataset.sectionIndex);
+  document.querySelectorAll('.exam-section-page').forEach(el => {
+    el.style.display = el === page ? '' : 'none';
+  });
+  page.querySelectorAll('.question-block').forEach(b => {
+    b.style.display = b === block ? '' : 'none';
+  });
+  // The section's instructions are shown with its first question only
+  const announcement = page.querySelector('.section-announcement');
+  if (announcement) announcement.style.display = page.querySelector('.question-block') === block ? '' : 'none';
+  const titleEl = document.getElementById('header-section-title');
+  if (titleEl) titleEl.textContent = sectionTitles[secIdx] || examTitleFallback;
+  const parts = [];
+  if (totalSections > 1) parts.push(`Section ${secIdx + 1} of ${totalSections}`);
+  parts.push(`Question ${qIdx + 1} of ${questionBlocks.length}`);
+  document.getElementById('section-indicator').textContent = parts.join(' · ');
+  const isLast = qIdx === questionBlocks.length - 1;
+  const nav = document.getElementById('question-nav');
+  if (nav) nav.style.display = 'flex';
+  const nextBtn = document.getElementById('next-question-btn');
+  const submitBtn = document.getElementById('submit-exam-btn-q');
+  if (nextBtn) nextBtn.style.display = isLast ? 'none' : '';
+  if (submitBtn) submitBtn.style.display = isLast ? '' : 'none';
+  window.scrollTo(0, 0);
+}
+
+// Save whatever is entered on the question being left (same rules as a section change)
+function saveCurrentQuestionAnswer() {
+  const block = questionBlocks[currentQuestion];
+  const save = window._examFlushSaveAnswer || window._examSaveAnswer;
+  if (!block || !save) return;
+  block.querySelectorAll('input[type=radio]:checked').forEach(r => save(r.dataset.qid, r.value));
+  block.querySelectorAll('textarea.auto-save').forEach(ta => {
+    if (ta.value.trim() !== '') save(ta.dataset.qid, ta.value);
+  });
+}
+window._examQuestionUI = { show: showExamQuestion, saveCurrent: saveCurrentQuestionAnswer };
 
 // ── RESTORE LOCAL ANSWERS INTO DOM FIRST (before goSection hides sections) ──
 // This must run before goSection so the correct checked state is in the DOM
@@ -526,8 +605,13 @@ function saveCurrentSectionAnswers() {
   });
 }
 
-// Restore last visited section
+// Restore last visited section (not used with time per question: the server
+// clock decides which question is open, and exam.js shows it)
 (function restoreSection() {
+  if (PER_QUESTION) {
+    document.querySelectorAll('.exam-section-page').forEach(el => { el.style.display = 'none'; });
+    return;
+  }
   let startIdx = 0;
   try {
     const saved = localStorage.getItem(SESSION_KEY);

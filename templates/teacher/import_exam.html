@@ -30,7 +30,7 @@
       <input type="checkbox" name="exam_ids" value="{{ e.id }}" />
       <span style="flex:1;min-width:0">
         <span class="fw-600">{{ e.title }}</span>
-        <span class="text-sm text-muted"> · {{ e.q_count }} question{{ '' if e.q_count == 1 else 's' }} · {{ e.duration_minutes }} min · {{ 'Periodic Exam' if e.exam_category == 'periodic' else 'Quiz' }}</span>
+        <span class="text-sm text-muted"> · {{ e.q_count }} question{{ '' if e.q_count == 1 else 's' }} · {{ e|exam_time }} · {{ 'Periodic Exam' if e.exam_category == 'periodic' else 'Quiz' }}</span>
       </span>
       {% if (e.title or '')|trim|lower in existing %}<span class="badge badge-gray" title="This class already has an exam with the same title">Same title here</span>{% endif %}
     </label>

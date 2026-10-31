@@ -464,18 +464,18 @@
       </div>
       <div class="form-group" id="impTosWrap" style="display:none;margin-bottom:1rem">
         <label class="form-label">Table of Specification (TOS) <span style="color:var(--danger)">*</span></label>
-        <input type="file" name="tos_file" id="impTosFile" accept=".xlsx,.xlsm,.pdf" class="form-control"
-               style="padding:0.45rem 0.65rem;font-size:0.9rem">
-        <div class="form-hint">Required for Periodic Exams — upload the TOS as a PDF or Excel file (.xlsx).</div>
-        {% if tos_list %}
-        <div style="margin-top:0.5rem">
-          <label class="form-label" style="font-size:0.78rem;font-weight:500">…or use a TOS you already uploaded</label>
-          <select name="tos_id" id="impTosPick" class="form-select" onchange="bankTosPicked('imp')">
-            <option value="">— Upload a new file instead —</option>
+        <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap">
+          <input type="file" name="tos_file" id="impTosFile" accept=".xlsx,.xlsm,.pdf" class="form-control"
+                 style="padding:0.45rem 0.65rem;font-size:0.9rem;flex:1 1 240px;min-width:0;width:auto">
+          {% if tos_list %}
+          <span class="text-sm text-muted" style="flex:0 0 auto">or</span>
+          <select name="tos_id" id="impTosPick" class="form-select" style="flex:1 1 240px;min-width:0;width:auto" onchange="bankTosPicked('imp')">
+            <option value="">— Choose an already uploaded TOS —</option>
             {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name|tos_label }}</option>{% endfor %}
           </select>
+          {% endif %}
         </div>
-        {% endif %}
+        <div class="form-hint">Required for Periodic Exams — upload the TOS as a PDF or Excel file (.xlsx){% if tos_list %}, or pick one you already uploaded{% endif %}.</div>
       </div>
 
       <div class="form-group" style="margin-bottom:1rem">

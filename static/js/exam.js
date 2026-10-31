@@ -3,7 +3,12 @@
   const SESSION_ID = parseInt(document.getElementById('exam-session-id')?.value);
   const EXAM_ID = parseInt(document.getElementById('exam-id')?.value);
   const CLASS_ID = parseInt(document.getElementById('exam-class-id')?.value);
-  const DURATION_SECONDS = parseInt(document.getElementById('exam-duration')?.value) * 60;
+  // 0 = the teacher switched the overall duration off (no shared countdown)
+  const DURATION_SECONDS = (parseInt(document.getElementById('exam-duration')?.value) || 0) * 60;
+  const HAS_DURATION = DURATION_SECONDS > 0;
+  // Time per question (0 = off). Each question has its own server-kept countdown.
+  const QUESTION_SECONDS = parseInt(document.getElementById('question-seconds')?.value) || 0;
+  const PER_QUESTION = QUESTION_SECONDS > 0 && !!window._examQuestionUI;
   // Teacher-set "time left" warning (minutes before the end). 0 = no popup; default 5.
   const _warnRaw = parseInt(document.getElementById('time-warning-minutes')?.value);
   const WARNING_MINUTES = Number.isNaN(_warnRaw) ? 5 : Math.max(0, _warnRaw);
@@ -20,7 +25,7 @@
 
   // Use server-calculated remaining time so timer persists across page reloads/re-entries
   const remainingEl = document.getElementById('time-remaining');
-  let timerSeconds = remainingEl ? parseInt(remainingEl.value) : DURATION_SECONDS;
+  let timerSeconds = (remainingEl && remainingEl.value !== '') ? parseInt(remainingEl.value) : DURATION_SECONDS;
   let autoSubmitted = false;
 
   // ── EXAM TIMER — counts down from the teacher-set duration and auto-submits at 0 ──
@@ -44,9 +49,11 @@
       showTimeWarningModal();
     }
   }
+  let timerIntervalId = null;
+  if (HAS_DURATION) {
   renderTimer(); // show the correct time immediately, don't wait for the first tick
   maybeShowTimeWarning(); // covers reloading the page after the warning mark has already passed
-  const timerIntervalId = setInterval(() => {
+  timerIntervalId = setInterval(() => {
     if (terminated) { clearInterval(timerIntervalId); return; }
     if (timerSeconds <= 0) {
       renderTimer();
@@ -61,6 +68,83 @@
     renderTimer();
     maybeShowTimeWarning();
   }, 1000);
+  }
+
+  // ── TIME PER QUESTION ──
+  // The server owns this clock (see /api/question-clock) so refreshing the page
+  // can't reset it. The browser just counts down locally and re-syncs every 5s.
+  // It only starts once consent (and fullscreen, if required) are done, so the
+  // student never loses question time to those screens.
+  let qIndex = 0, qRemaining = QUESTION_SECONDS, qStarted = false, qBusy = false;
+  let fsGatePassed = false;
+  const qTimerEl = document.getElementById('question-timer');
+
+  function renderQuestionTimer() {
+    if (!qTimerEl) return;
+    qTimerEl.textContent = formatTime(qRemaining);
+    qTimerEl.classList.toggle('danger', qRemaining <= 5);
+  }
+
+  function applyQuestionState(st) {
+    if (!st || st.status !== 'ok') return;
+    if (st.finished) {
+      // every question's time has run out (also covers reopening the page late)
+      if (!autoSubmitted && !terminated) { autoSubmitted = true; submitExam(); }
+      return;
+    }
+    if (!st.started) return;
+    const changed = !qStarted || st.index !== qIndex;
+    qStarted = true;
+    qIndex = st.index;
+    // keep the local countdown unless it has drifted from the server's
+    if (changed || Math.abs(qRemaining - st.remaining) > 2) qRemaining = st.remaining;
+    if (changed) window._examQuestionUI.show(qIndex);
+    renderQuestionTimer();
+  }
+
+  async function questionClock(action) {
+    try {
+      const res = await fetch('/api/question-clock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ session_id: SESSION_ID, action: action, from_index: qIndex })
+      });
+      const st = await res.json();
+      applyQuestionState(st);
+      return st;
+    } catch (e) { return null; }
+  }
+
+  function questionClockReady() {
+    if (!CONSENT_GIVEN) return false;
+    const fs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+    return !FULLSCREEN_REQUIRED || fs || fsGatePassed;
+  }
+  function tryStartQuestionClock() {
+    if (PER_QUESTION && !qStarted && questionClockReady()) questionClock('start');
+  }
+
+  async function advanceQuestion() {
+    if (qBusy || terminated || autoSubmitted || !qStarted) return;
+    qBusy = true;
+    try {
+      window._examQuestionUI.saveCurrent(); // keep what was entered on the question being left
+      await questionClock('next');
+    } finally { qBusy = false; }
+  }
+
+  if (PER_QUESTION) {
+    renderQuestionTimer();
+    questionClock('sync').then(st => { if (st && st.status === 'ok' && !st.started) tryStartQuestionClock(); });
+    setInterval(() => {
+      if (terminated || autoSubmitted || !qStarted) return;
+      if (qRemaining > 0) { qRemaining -= 1; renderQuestionTimer(); }
+      if (qRemaining <= 0) advanceQuestion(); // time is up: move on (or submit after the last one)
+    }, 1000);
+    setInterval(() => { if (!terminated && qStarted && !qBusy) questionClock('sync'); }, 5000);
+    document.getElementById('next-question-btn')?.addEventListener('click', advanceQuestion);
+  }
 
   // ── "TIME LEFT" MODAL — shown once as the exam nears its time limit ──
   function showTimeWarningModal() {
@@ -190,6 +274,7 @@
         CONSENT_GIVEN = true;
         if (consentModal) consentModal.style.display = 'none';
         startMonitoring();
+        tryStartQuestionClock();
       } else {
         throw new Error(data.message || 'Could not record consent.');
       }
@@ -242,6 +327,8 @@
     enterFsBtn?.addEventListener('click', () => {
       requestFullscreen();
       if (fsGate) fsGate.style.display = 'none';
+      fsGatePassed = true;
+      tryStartQuestionClock();
     });
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -597,6 +684,11 @@
 
   document.getElementById('submit-exam-btn-bottom')?.addEventListener('click', (e) => {
     e.preventDefault();
+    confirmAndSubmit();
+  });
+  document.getElementById('submit-exam-btn-q')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    window._examQuestionUI?.saveCurrent();
     confirmAndSubmit();
   });
 })();
