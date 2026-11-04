@@ -636,3 +636,151 @@ document.addEventListener('DOMContentLoaded', function () {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
+
+
+/* ───────────────────────── SPARK dialogs ─────────────────────────
+   Replaces the browser's native confirm()/alert() with an on-brand modal.
+   - sparkConfirm(message, opts) -> Promise<boolean>
+   - sparkAlert(message, opts)   -> Promise<void>   (window.alert now uses this)
+   - Any <form>/<button>/<a> with data-confirm="message" asks first.
+     Optional: data-confirm-title, data-confirm-ok (button text),
+               data-confirm-danger="true|false" (auto-detected from the wording).
+*/
+(function () {
+  var queue = Promise.resolve();
+
+  var ICON_WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>';
+  var ICON_Q = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></svg>';
+  var ICON_INFO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>';
+
+  var DANGER_RE = /\b(delete|remove|terminate|revoke|replace|leave|clear)\b/i;
+  var OK_LABELS = [
+    [/\bterminate\b/i, 'Terminate'], [/\bdelete\b/i, 'Delete'], [/\brevoke\b/i, 'Revoke'],
+    [/\breplace\b/i, 'Replace'], [/\bremove\b/i, 'Remove'], [/\bleave\b/i, 'Leave class'],
+    [/\breset\b.*\bpassword\b/i, 'Reset password'], [/\bgenerate\b/i, 'Generate'],
+    [/\bmark\b.*\bended\b/i, 'Mark as ended'], [/\bdownload\b/i, 'Download'], [/\bgrant\b/i, 'Grant access']
+  ];
+  var TITLES = [
+    [/\bterminate\b/i, 'Terminate this exam?'], [/\bdelete\b/i, 'Delete this item?'],
+    [/\brevoke\b/i, 'Revoke access?'], [/\breplace\b/i, 'Replace the database?'],
+    [/\bremove\b/i, 'Remove this item?'], [/\bleave\b/i, 'Leave this class?'],
+    [/\breset\b.*\bpassword\b/i, 'Reset password?'], [/\bgenerate\b/i, 'Generate a new code?'],
+    [/\bmark\b.*\bended\b/i, 'End this semester?'], [/\bdownload\b/i, 'Download backup?'],
+    [/\bgrant\b/i, 'Grant admin access?']
+  ];
+  function pick(table, msg, fallback) {
+    for (var i = 0; i < table.length; i++) if (table[i][0].test(msg)) return table[i][1];
+    return fallback;
+  }
+
+  function buildDialog(kind, message, opts) {
+    opts = opts || {};
+    var msg = String(message == null ? '' : message);
+    var isConfirm = kind === 'confirm';
+    var danger = opts.danger != null ? !!opts.danger : (isConfirm && DANGER_RE.test(msg));
+    var title = opts.title || (isConfirm ? pick(TITLES, msg, danger ? 'Are you sure?' : 'Please confirm') : 'Notice');
+    var okText = opts.confirmText || (isConfirm ? pick(OK_LABELS, msg, 'Continue') : 'OK');
+
+    var overlay = document.createElement('div');
+    overlay.className = 'spark-dialog-overlay';
+    overlay.innerHTML =
+      '<div class="spark-dialog" role="' + (isConfirm ? 'alertdialog' : 'dialog') + '" aria-modal="true" aria-labelledby="sd-title" aria-describedby="sd-msg">' +
+        '<div class="spark-dialog-icon ' + (danger ? 'is-danger' : (isConfirm ? 'is-ask' : 'is-info')) + '">' + (danger ? ICON_WARN : (isConfirm ? ICON_Q : ICON_INFO)) + '</div>' +
+        '<h2 class="spark-dialog-title" id="sd-title"></h2>' +
+        '<p class="spark-dialog-msg" id="sd-msg"></p>' +
+        '<div class="spark-dialog-actions">' +
+          (isConfirm ? '<button type="button" class="btn btn-ghost" data-sd="cancel">Cancel</button>' : '') +
+          '<button type="button" class="btn ' + (danger ? 'btn-danger' : 'btn-primary') + '" data-sd="ok"></button>' +
+        '</div>' +
+      '</div>';
+    overlay.querySelector('#sd-title').textContent = title;   // textContent: never interpret the message as HTML
+    overlay.querySelector('#sd-msg').textContent = msg;
+    overlay.querySelector('[data-sd="ok"]').textContent = okText;
+    return { overlay: overlay, danger: danger, isConfirm: isConfirm };
+  }
+
+  function show(kind, message, opts) {
+    return new Promise(function (resolve) {
+      var d = buildDialog(kind, message, opts);
+      var prevFocus = document.activeElement;
+      var okBtn = d.overlay.querySelector('[data-sd="ok"]');
+      var cancelBtn = d.overlay.querySelector('[data-sd="cancel"]');
+      var done = false;
+
+      function close(result) {
+        if (done) return; done = true;
+        document.removeEventListener('keydown', onKey, true);
+        d.overlay.classList.remove('open');
+        setTimeout(function () { d.overlay.remove(); }, 160);
+        try { if (prevFocus && prevFocus.focus) prevFocus.focus(); } catch (e) {}
+        resolve(result);
+      }
+      function onKey(e) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(false); }
+        else if (e.key === 'Tab') {
+          var f = d.overlay.querySelectorAll('button');
+          var first = f[0], last = f[f.length - 1];
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+      }
+      okBtn.addEventListener('click', function () { close(true); });
+      if (cancelBtn) cancelBtn.addEventListener('click', function () { close(false); });
+      d.overlay.addEventListener('mousedown', function (e) { if (e.target === d.overlay) close(false); });
+      document.addEventListener('keydown', onKey, true);
+
+      document.body.appendChild(d.overlay);
+      requestAnimationFrame(function () { d.overlay.classList.add('open'); });
+      // For destructive actions, focus "Cancel" so a stray Enter can't delete something.
+      (d.danger && cancelBtn ? cancelBtn : okBtn).focus();
+    });
+  }
+
+  // Dialogs are shown one at a time, in order.
+  function enqueue(kind, message, opts) {
+    var p = queue.then(function () { return show(kind, message, opts); });
+    queue = p.catch(function () {});
+    return p;
+  }
+
+  window.sparkConfirm = function (message, opts) { return enqueue('confirm', message, opts); };
+  window.sparkAlert = function (message, opts) { return enqueue('alert', message, opts).then(function () {}); };
+  // Existing code calls alert('...') for validation/errors: route it through the styled dialog.
+  window.alert = function (message) { window.sparkAlert(message); };
+
+  // ── data-confirm: ask before submitting a form / pressing a button / following a link ──
+  var bypass = new WeakSet();
+
+  function optsFrom(el) {
+    var o = {};
+    if (el.dataset.confirmTitle) o.title = el.dataset.confirmTitle;
+    if (el.dataset.confirmOk) o.confirmText = el.dataset.confirmOk;
+    if (el.dataset.confirmDanger) o.danger = el.dataset.confirmDanger === 'true';
+    return o;
+  }
+
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (!form || !form.matches || !form.matches('form[data-confirm]') || bypass.has(form)) return;
+    e.preventDefault();
+    var submitter = e.submitter || null;
+    window.sparkConfirm(form.dataset.confirm, optsFrom(form)).then(function (ok) {
+      if (!ok) return;
+      bypass.add(form);
+      try { submitter ? form.requestSubmit(submitter) : form.requestSubmit(); }
+      catch (err) { form.submit(); }
+    });
+  }, true);
+
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest ? e.target.closest('[data-confirm]:not(form)') : null;
+    if (!el || bypass.has(el)) return;
+    e.preventDefault(); e.stopPropagation();
+    window.sparkConfirm(el.dataset.confirm, optsFrom(el)).then(function (ok) {
+      if (!ok) return;
+      bypass.add(el);
+      el.click();                       // re-run the original click (submits its form / follows its link)
+      setTimeout(function () { bypass.delete(el); }, 0);
+    });
+  }, true);
+})();

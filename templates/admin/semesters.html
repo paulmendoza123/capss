@@ -52,7 +52,7 @@
                 <input type="hidden" name="semester_id" value="{{ s.id }}">
                 {% if s.status == 'active' %}
                 <input type="hidden" name="status" value="ended">
-                <button type="submit" class="btn btn-ghost btn-sm" onclick="return confirm('Mark this semester as Ended? Its classes will show as Ended.')"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> End</button>
+                <button type="submit" class="btn btn-ghost btn-sm" data-confirm="Mark this semester as Ended? Its classes will show as Ended."><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> End</button>
                 {% else %}
                 <input type="hidden" name="status" value="active">
                 <button type="submit" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-unlock"/></svg> Set Active</button>
@@ -62,7 +62,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="delete">
                 <input type="hidden" name="semester_id" value="{{ s.id }}">
-                <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this semester and its subject assignments? This cannot be undone.')"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete</button>
+                <button type="submit" class="btn btn-danger btn-sm" data-confirm="Delete this semester and its subject assignments? This cannot be undone."><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete</button>
               </form>
             </div>
           </td>

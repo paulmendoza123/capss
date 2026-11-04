@@ -147,7 +147,7 @@
             <div class="flex gap-1">
               <a class="btn btn-ghost btn-sm" href="{{ url_for('teacher_download_tos', tos_id=f.id) }}" title="Download"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg></a>
               <form method="POST" action="{{ url_for('teacher_delete_tos', tos_id=f.id) }}" style="display:inline"
-                    onsubmit="return confirm('Delete this TOS file?')">
+                    data-confirm="Delete this TOS file?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-danger btn-sm" {% if f.question_count or f.exam_count %}disabled title="Still in use"{% else %}title="Delete"{% endif %}><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
               </form>
@@ -1162,7 +1162,7 @@ function confirmDeleteGroup(id, name, qcount) {
                 <div class="flex gap-1">
                   <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></button>
                   <form method="POST" action="{{ url_for('teacher_delete_question', question_id=q.id) }}"
-                        onsubmit="return confirm('Delete this question?')" style="display:inline">
+                        data-confirm="Delete this question?" style="display:inline">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="redirect_to" value="bank">
                     <button type="submit" class="btn btn-danger btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
@@ -1215,7 +1215,7 @@ function confirmDeleteGroup(id, name, qcount) {
             <div class="flex gap-1">
               <button class="btn btn-ghost btn-sm" onclick="openModal('edit-bq-{{ q.id }}')"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg></button>
               <form method="POST" action="{{ url_for('teacher_delete_question', question_id=q.id) }}"
-                    onsubmit="return confirm('Delete this question?')" style="display:inline">
+                    data-confirm="Delete this question?" style="display:inline">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="redirect_to" value="bank">
                 <button type="submit" class="btn btn-danger btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>

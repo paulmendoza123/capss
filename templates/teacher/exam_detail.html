@@ -53,7 +53,7 @@
           <div class="flex gap-1">
             <button type="button" class="btn btn-ghost btn-sm" onclick="openSectionEdit('{{ sd.section.id }}')">Edit</button>
             <form method="POST" action="{{ url_for('teacher_delete_section', section_id=sd.section.id) }}"
-                  onsubmit="return confirm('Delete this section and all its questions?')">
+                  data-confirm="Delete this section and all its questions?">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-danger btn-sm">Delete Section</button>
             </form>
@@ -128,7 +128,7 @@
           <div class="flex gap-1 mt-1">
             <button type="button" class="btn btn-ghost btn-sm" onclick="openQuestionEdit('{{ q.id }}')">Edit</button>
             <form method="POST" action="{{ url_for('teacher_delete_question', question_id=q.id) }}"
-                  onsubmit="return confirm('Delete this question?')" style="display:inline">
+                  data-confirm="Delete this question?" style="display:inline">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-danger btn-sm">Delete</button>
             </form>
@@ -713,7 +713,7 @@
       <div class="flex gap-2" style="flex-wrap:wrap">
         <button type="submit" class="btn btn-primary btn-lg">Save Settings</button>
         <button type="submit" name="action" value="delete" class="btn btn-danger btn-lg"
-          onclick="return confirm('Delete this exam and ALL its data? This cannot be undone.')"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete Exam</button>
+          data-confirm="Delete this exam and ALL its data? This cannot be undone."><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete Exam</button>
       </div>
     </form>
   </div>
@@ -735,7 +735,7 @@
     <div style="display:flex;flex-direction:column;gap:0.4rem">
       <button onclick="copyCode()" class="btn btn-ghost btn-sm" id="copy-btn"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg> Copy Code</button>
       <form method="POST" action="{{ url_for('teacher_regenerate_exam_code', exam_id=exam.id) }}"
-            onsubmit="return confirm('Generate a new code? The old code will stop working.')">
+            data-confirm="Generate a new code? The old code will stop working.">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg> New Code</button>
       </form>
@@ -752,7 +752,7 @@ function copyCode() {
     btn.textContent = '✓ Copied!';
     setTimeout(() => { btn.textContent = 'Copy Code'; }, 2000);
   }).catch(() => {
-    prompt('Copy this code:', code);
+    sparkAlert('Your browser blocked automatic copying. Please copy the code manually:\n\n' + code, { title: 'Copy this code' });
   });
 }
 </script>

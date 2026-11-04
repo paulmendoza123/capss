@@ -100,12 +100,19 @@
       this.value === 'admin' ? 'block' : 'none';
   });
 
+  var adminConfirmed = false;
   document.querySelector('form').addEventListener('submit', function (e) {
     var role = document.getElementById('role-select').value;
-    if (role === 'admin') {
+    if (role === 'admin' && !adminConfirmed) {
+      e.preventDefault();
+      var form = this, submitter = e.submitter || null;
       var name = (document.querySelector('input[name="first_name"]').value + ' ' + document.querySelector('input[name="last_name"]').value).trim() || 'this person';
-      var ok = confirm('Grant full admin access to ' + name + '? This gives them control over all users, exams, and system settings.');
-      if (!ok) e.preventDefault();
+      sparkConfirm('Grant full admin access to ' + name + '? This gives them control over all users, exams, and system settings.', { danger: true, confirmText: 'Grant access' })
+        .then(function (ok) {
+          if (!ok) return;
+          adminConfirmed = true;
+          try { submitter ? form.requestSubmit(submitter) : form.requestSubmit(); } catch (err) { form.submit(); }
+        });
     }
   });
 </script>

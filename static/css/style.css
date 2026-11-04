@@ -2989,3 +2989,53 @@ html[data-theme="dark"] .status-completed, html[data-theme="dark"] .badge.st-chi
   position: relative;
   z-index: 30;
 }
+
+/* ── Error pages (403 / 404 / 429 / 500) ── */
+.error-wrap { min-height: 60vh; display: flex; align-items: center; justify-content: center; padding: 2rem 1rem; }
+.error-card {
+  width: 100%; max-width: 460px; text-align: center;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 22px; padding: 2.25rem 2rem 2rem;
+  box-shadow: 0 2px 4px rgba(20,40,20,0.08), 0 24px 48px -18px rgba(20,40,20,0.30), 0 5px 0 var(--border);
+}
+.error-code { font-size: 3.6rem; font-weight: 800; line-height: 1; letter-spacing: -0.02em; color: var(--accent); margin-bottom: 0.6rem; }
+.error-title { font-size: 1.35rem; font-weight: 700; color: var(--text); margin: 0 0 0.5rem; }
+.error-msg { color: var(--text2); font-size: 0.95rem; line-height: 1.55; margin: 0 0 1.5rem; }
+.error-actions { display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
+
+/* ── SPARK confirm / alert dialog (replaces the browser's native popups) ── */
+.spark-dialog-overlay {
+  position: fixed; inset: 0; z-index: 10050;
+  display: flex; align-items: center; justify-content: center; padding: 1rem;
+  background: rgba(18, 28, 18, 0.55);
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  opacity: 0; transition: opacity 0.16s ease;
+}
+.spark-dialog-overlay.open { opacity: 1; }
+.spark-dialog {
+  width: 100%; max-width: 420px; text-align: center;
+  background: var(--card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 22px;
+  padding: 1.75rem 1.6rem 1.4rem;
+  box-shadow: 0 2px 4px rgba(10,20,10,0.12), 0 28px 60px -16px rgba(10,20,10,0.5), 0 5px 0 var(--border);
+  transform: translateY(8px) scale(0.97); transition: transform 0.18s ease;
+}
+.spark-dialog-overlay.open .spark-dialog { transform: none; }
+.spark-dialog-icon {
+  width: 52px; height: 52px; margin: 0 auto 0.9rem; border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 0 rgba(0,0,0,0.14), 0 10px 16px -8px rgba(0,0,0,0.35);
+}
+.spark-dialog-icon svg { width: 26px; height: 26px; }
+.spark-dialog-icon.is-danger { background: #fbe4e1; color: #b3342b; }
+.spark-dialog-icon.is-ask    { background: #e7eddc; color: var(--accent); }
+.spark-dialog-icon.is-info   { background: #e7eddc; color: var(--accent); }
+html[data-theme="dark"] .spark-dialog-icon.is-danger { background: #4a2420; color: #ff9a90; }
+html[data-theme="dark"] .spark-dialog-icon.is-ask,
+html[data-theme="dark"] .spark-dialog-icon.is-info   { background: #26382a; color: var(--accent); }
+.spark-dialog-title { font-size: 1.12rem; font-weight: 700; margin: 0 0 0.45rem; color: var(--text); }
+.spark-dialog-msg { margin: 0 0 1.35rem; color: var(--text2); font-size: 0.93rem; line-height: 1.55; white-space: pre-line; overflow-wrap: anywhere; }
+.spark-dialog-actions { display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
+.spark-dialog-actions .btn { min-width: 108px; justify-content: center; }
+@media (max-width: 420px) { .spark-dialog-actions .btn { flex: 1 1 100%; } }
+@media (prefers-reduced-motion: reduce) { .spark-dialog-overlay, .spark-dialog { transition: none; } }

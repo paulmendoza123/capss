@@ -668,7 +668,8 @@
       modal.style.display = 'flex';
     } else {
       // Fallback only if the modal markup is somehow missing from the page.
-      if (confirm('Are you sure you want to submit your exam? This cannot be undone.')) submitExam();
+      sparkConfirm('Are you sure you want to submit your exam? This cannot be undone.', { danger: false, confirmText: 'Submit exam' })
+        .then(ok => { if (ok) submitExam(); });
     }
   }
 

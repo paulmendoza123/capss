@@ -14,7 +14,7 @@
 {% if unassigned and semesters %}
 <div class="card mb-2">
   <form method="POST" action="{{ url_for('admin_assign_semester') }}" class="flex gap-2" style="flex-wrap:wrap;align-items:center"
-        onsubmit="return confirm('Assign all classes that have no semester to the selected semester?')">
+        data-confirm="Assign all classes that have no semester to the selected semester?">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <span class="text-sm"><strong>{{ unassigned }}</strong> class(es) have no semester.</span>
     <select name="semester_id" class="form-select" style="width:auto;min-width:220px" required>

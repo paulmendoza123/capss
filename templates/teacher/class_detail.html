@@ -108,11 +108,11 @@
           <td>{{ s.program or '—' }}</td>
           <td>{{ s.year_level or '—' }}</td>
           <td>
-            <form method="POST" action="{{ url_for('teacher_reset_student_password', class_id=cls.id, student_id=s.id) }}" style="display:inline" onsubmit="return confirm('Reset the password of {{ s.full_name }}? A temporary password will be generated, and they must change it the next time they log in.')">
+            <form method="POST" action="{{ url_for('teacher_reset_student_password', class_id=cls.id, student_id=s.id) }}" style="display:inline" data-confirm="Reset the password of {{ s.full_name }}? A temporary password will be generated, and they must change it the next time they log in.">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> Reset Password</button>
             </form>
-            <form method="POST" action="{{ url_for('teacher_remove_student', class_id=cls.id, student_id=s.id) }}" style="display:inline" onsubmit="return confirm('Remove {{ s.full_name }} from this class? They can rejoin later with the class code{{ ' (if allowed on the list)' if cls.restrict_join else '' }}.')">
+            <form method="POST" action="{{ url_for('teacher_remove_student', class_id=cls.id, student_id=s.id) }}" style="display:inline" data-confirm="Remove {{ s.full_name }} from this class? They can rejoin later with the class code{{ ' (if allowed on the list)' if cls.restrict_join else '' }}.">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn btn-ghost btn-sm" style="color:#e74c3c">✕ Remove</button>
             </form>
@@ -205,7 +205,7 @@
               {% else %}<span class="badge badge-gray">Not yet joined</span>{% endif %}
             </td>
             <td>
-              <form method="POST" action="{{ url_for('teacher_remove_allowed_email', class_id=cls.id) }}" style="display:inline" onsubmit="return confirm('Remove {{ a.email }} from the allowed list?')">
+              <form method="POST" action="{{ url_for('teacher_remove_allowed_email', class_id=cls.id) }}" style="display:inline" data-confirm="Remove {{ a.email }} from the allowed list?">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="email" value="{{ a.email }}">
                 <button type="submit" class="btn btn-ghost btn-sm" style="color:#e74c3c">✕ Remove</button>
@@ -218,7 +218,7 @@
     </div>
   </div>
   <div style="margin-top:1rem">
-    <form method="POST" action="{{ url_for('teacher_clear_allowed_emails', class_id=cls.id) }}" onsubmit="return confirm('This removes the whole list.{{ ' Since the class is currently Restricted, no one will be able to join until you add emails back.' if cls.restrict_join else '' }} Continue?')">
+    <form method="POST" action="{{ url_for('teacher_clear_allowed_emails', class_id=cls.id) }}" data-confirm="This removes the whole list.{{ ' Since the class is currently Restricted, no one will be able to join until you add emails back.' if cls.restrict_join else '' }} Continue?">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-ghost btn-sm" style="color:#e74c3c"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Clear Entire List</button>
     </form>

@@ -157,16 +157,27 @@
     var rmSlot = e.target.closest('.slot-remove');
     if (rmSlot) {
       var row = rmSlot.closest('.sched-slot');
-      if (hasData(row) && !confirm('Remove this time? It is deleted when you press Save.')) return;
-      if (row.parentNode.querySelectorAll('.sched-slot').length > 1) row.remove(); else clearFields(row);
-      refresh(); return;
+      var doRemoveSlot = function () {
+        if (row.parentNode.querySelectorAll('.sched-slot').length > 1) row.remove(); else clearFields(row);
+        refresh();
+      };
+      if (hasData(row)) {
+        sparkConfirm('Remove this time? It is deleted when you press Save.', { danger: true, confirmText: 'Remove' })
+          .then(function (ok) { if (ok) doRemoveSlot(); });
+      } else { doRemoveSlot(); }
+      return;
     }
     var rm = e.target.closest('.off-remove');
     if (rm) {
       var b = rm.closest('.off-block');
-      if (hasData(b) && !confirm('Remove this teacher and their schedule from this subject? It is deleted when you press Save.')) return;
-      if (wrap.querySelectorAll('.off-block').length > 1) b.remove(); else clearFields(b);
-      refresh();
+      var doRemoveBlock = function () {
+        if (wrap.querySelectorAll('.off-block').length > 1) b.remove(); else clearFields(b);
+        refresh();
+      };
+      if (hasData(b)) {
+        sparkConfirm('Remove this teacher and their schedule from this subject? It is deleted when you press Save.', { danger: true, confirmText: 'Remove' })
+          .then(function (ok) { if (ok) doRemoveBlock(); });
+      } else { doRemoveBlock(); }
     }
   });
   refresh();

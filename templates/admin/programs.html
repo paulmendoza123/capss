@@ -34,7 +34,7 @@
         <div class="fw-600 font-mono" style="color:var(--accent)">{{ p.code }}</div>
         <div class="text-sm text-muted">{{ p.name }}</div>
       </div>
-      <form method="POST" onsubmit="return confirm('Delete program {{ p.code }}?')">
+      <form method="POST" data-confirm="Delete program {{ p.code }}?">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="delete" />
         <input type="hidden" name="program_id" value="{{ p.id }}" />

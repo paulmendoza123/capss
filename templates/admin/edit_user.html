@@ -75,7 +75,7 @@
   {% endif %}
   <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border)">
     <div class="card-title mb-1">Reset Password</div>
-    <form method="POST" action="{{ url_for('admin_reset_password', user_id=user.id) }}" onsubmit="return confirm('Reset password for {{ user.full_name }}? The new password will be shown once.')">
+    <form method="POST" action="{{ url_for('admin_reset_password', user_id=user.id) }}" data-confirm="Reset password for {{ user.full_name }}? The new password will be shown once.">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">New Password</label>

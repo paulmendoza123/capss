@@ -292,7 +292,7 @@ function bindTerminateBtn(btn) {
   btn.addEventListener('click', async () => {
     const id = parseInt(btn.dataset.id);
     const name = btn.dataset.name;
-    if (!confirm(`Terminate ${name}'s exam? This cannot be undone.`)) return;
+    if (!(await sparkConfirm(`Terminate ${name}'s exam? Their saved answers will be scored and they will be locked out. This cannot be undone.`, { danger: true, confirmText: 'Terminate' }))) return;
     try {
       const res = await fetch(`/api/terminate-session/${id}`, { method: 'POST' });
       const data = await res.json();

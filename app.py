@@ -23,6 +23,14 @@ from flask_limiter.util import get_remote_address
 
 app = Flask(__name__)
 
+# Behind nginx every request reaches Flask from 127.0.0.1. Trust ONE proxy hop
+# so request.remote_addr is the real client IP (X-Forwarded-For). Without this
+# the per-IP rate limits (login: 15/min, etc.) were shared by ALL users, so a
+# class logging in together would block each other. gunicorn only listens on
+# 127.0.0.1 (see deploy/spark.service), so only nginx can set these headers.
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
 # ── Upload limit: 10 MB per imported file ──
 MAX_UPLOAD_MB = 10
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
@@ -45,6 +53,52 @@ def _upload_too_large(file_storage):
 def _file_too_large(_e):
     flash(f'File is too large. The maximum allowed size is {MAX_UPLOAD_MB} MB.', 'error')
     return redirect(request.referrer or '/')
+
+# ── Friendly error pages (same SPARK look instead of the raw browser/Werkzeug page) ──
+_ERROR_INFO = {
+    403: ('Access denied', "You don't have permission to open this page."),
+    404: ('Page not found', "We couldn't find the page you're looking for. The link may be old or mistyped."),
+    429: ('Too many attempts', 'You made too many requests in a short time. Please wait about a minute, then try again.'),
+    500: ('Something went wrong', 'The system ran into a problem. Your saved work is safe. Please try again, or tell your teacher/admin if it keeps happening.'),
+}
+
+
+def _error_wants_json():
+    return (request.path.startswith('/api/') or request.is_json
+            or request.accept_mimetypes.best == 'application/json')
+
+
+def _render_error(code):
+    title, message = _ERROR_INFO[code]
+    if _error_wants_json():
+        return jsonify({'status': 'error', 'message': message}), code
+    try:
+        home = {'student': '/student', 'teacher': '/teacher', 'admin': '/admin'}.get(session.get('role'), '/login')
+        return render_template('error.html', code=code, title=title, message=message, home_url=home), code
+    except Exception:
+        # never let the error page itself crash (e.g. DB is the thing that broke)
+        return f'{code} - {title}', code
+
+
+@app.errorhandler(403)
+def _err_403(_e):
+    return _render_error(403)
+
+
+@app.errorhandler(404)
+def _err_404(_e):
+    return _render_error(404)
+
+
+@app.errorhandler(429)
+def _err_429(_e):
+    return _render_error(429)
+
+
+@app.errorhandler(500)
+def _err_500(_e):
+    return _render_error(500)
+
 
 _PW_ALPHABET = string.ascii_letters + string.digits
 INSTANCE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')

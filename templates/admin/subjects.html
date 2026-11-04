@@ -61,7 +61,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="delete">
                 <input type="hidden" name="subject_id" value="{{ s.id }}">
-                <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this subject and its offerings?')"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
+                <button type="submit" class="btn btn-danger btn-sm" data-confirm="Delete this subject and its offerings?"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg></button>
               </form>
             </div>
           </td>

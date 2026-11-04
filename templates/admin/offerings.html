@@ -75,7 +75,7 @@
               <a href="{{ url_for('admin_edit_offering', subject_id=s.id, semester_id=sem.id, program=f_program, year_level=f_year) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Edit</a>
               {% if rows %}
               <form method="POST" action="{{ url_for('admin_clear_offering', subject_id=s.id) }}" style="display:inline"
-                    onsubmit="return confirm('Remove all teachers and schedules of {{ s.code }} for this semester?')">
+                    data-confirm="Remove all teachers and schedules of {{ s.code }} for this semester?">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="semester_id" value="{{ sem.id }}">
                 <input type="hidden" name="program" value="{{ f_program }}">

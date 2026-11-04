@@ -60,7 +60,7 @@
       <div class="fw-600 text-sm mb-1">Database Backup</div>
       <div class="text-xs text-muted mb-2">Download a full copy of the database to your device.</div>
       <a href="{{ url_for('admin_backup_db') }}" class="btn btn-primary btn-sm"
-         onclick="return confirm('Download a backup of the database?')">
+         data-confirm="Download a backup of the database?">
         Download Backup
       </a>
       {% if db_size is defined %}
@@ -79,7 +79,7 @@
       </div>
       {% endif %}
       <form method="POST" action="{{ url_for('admin_restore_db') }}" enctype="multipart/form-data" id="restoreForm"
-            onsubmit="return confirm('This will REPLACE the entire database with the uploaded backup. Continue?')">
+            data-confirm="This will REPLACE the entire database with the uploaded backup. Continue?">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
           <label class="form-label">Backup file</label>
