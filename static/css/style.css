@@ -2943,3 +2943,38 @@ html[data-theme="dark"] .choice-item.selected .choice-label-badge { color: #1420
   .fib-blank-input.form-control { width: 120px; min-width: 90px; }
 }
 @media (prefers-reduced-motion: reduce) { .exam-progress-fill, .choice-item, .question-block { transition: none; } }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   v3.1 — buttons & accents follow the chosen theme color
+   (these used hardcoded greens, so they ignored the sidebar color picker)
+   ═══════════════════════════════════════════════════════════════════ */
+.btn-primary, .btn-success {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 68%, #fff) 0%, var(--accent) 100%);
+  box-shadow: 0 4px 0 var(--accent-hover), 0 10px 16px -6px rgba(var(--accent-rgb), 0.55);
+}
+.btn-primary:hover, .btn-success:hover {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 68%, #fff) 0%, var(--accent-hover) 100%);
+}
+.btn-primary:active, .btn-success:active { box-shadow: 0 1px 0 var(--accent-hover); }
+html[data-theme="dark"] .btn-primary, html[data-theme="dark"] .btn-success {
+  background: linear-gradient(180deg, var(--accent2) 0%, var(--accent) 100%);
+  color: #10170c;
+  box-shadow: 0 4px 0 color-mix(in srgb, var(--accent) 55%, #000), 0 10px 16px -6px rgba(0,0,0,0.5);
+}
+html[data-theme="dark"] .btn-primary:hover, html[data-theme="dark"] .btn-success:hover {
+  background: linear-gradient(180deg, var(--accent2) 0%, var(--accent-hover) 100%);
+}
+
+.sidebar-logo .logo-icon { color: var(--nav-2); }
+.cc-pill { background: rgba(var(--accent-rgb), 0.16); color: var(--accent-hover); }
+html[data-theme="dark"] .cc-pill { background: rgba(var(--accent-rgb), 0.18); color: var(--accent); }
+.badge-green, .badge-blue { color: var(--accent-hover); background: rgba(var(--accent-rgb), 0.14); border-color: rgba(var(--accent-rgb), 0.40); }
+html[data-theme="dark"] .badge-green, html[data-theme="dark"] .badge-blue { color: var(--accent); background: rgba(var(--accent-rgb), 0.18); border-color: rgba(var(--accent-rgb), 0.40); }
+.status-completed, .badge.st-chip-completed { background: var(--accent-hover); }
+.exam-card[data-status="completed"], .exam-card.st-completed { border-left-color: var(--accent-hover); }
+html[data-theme="dark"] .status-completed, html[data-theme="dark"] .badge.st-chip-completed { background: #5a7d4a; }
+.stat-value.green { color: var(--accent2); }
+.stat-card::before { background: linear-gradient(180deg, var(--accent2), var(--accent)); }
+.style-chip.active { background: var(--accent); border-color: var(--accent); }
+.question-code .fib-blank-input.form-control { border-bottom-color: var(--accent2); }
