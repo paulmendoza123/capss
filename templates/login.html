@@ -17,7 +17,7 @@
     --text: #1f2a18;
     --text2: #3d4a34;
     --text3: #5d6650;
-    --card: #fafbf0;
+    --card: #ffffff;
     --card2: #f0f2de; --accent-hover: #354c2b; --accent-rgb: 78,101,61; --accent2-rgb: 105,126,80; --primary: #4e653d; --shadow-accent: 0 6px 18px rgba(78,101,61,0.28);
     --shadow: 0 4px 24px rgba(53,76,43,0.08);
     --shadow-lg: 0 8px 48px rgba(53,76,43,0.16);
@@ -25,8 +25,16 @@
   /* Also hide the theme toggle button on the login page */
   .theme-toggle-btn { display: none !important; }
   html[data-theme="dark"] .btn-primary, html[data-theme="dark"] .auth-logo-icon, html[data-theme="dark"] .auth-logo-icon .icon { color: #fff; }
-  body { background: radial-gradient(900px 480px at 100% -8%, rgba(195,202,146,0.45), transparent 60%), radial-gradient(1000px 520px at -8% 108%, rgba(133,152,100,0.20), transparent 60%), var(--bg); }
-  .auth-card { box-shadow: 0 2px 4px rgba(53,76,43,0.10), 0 24px 44px -16px rgba(53,76,43,0.32), 0 6px 0 rgba(78,101,61,0.20); }
+  /* Lighter background. Uses body:has(.auth-page) so it beats the same selector in style.css */
+  body:has(.auth-page) {
+    background:
+      radial-gradient(900px 480px at 100% -8%, rgba(195,202,146,0.22), transparent 60%),
+      radial-gradient(1000px 520px at -8% 108%, rgba(133,152,100,0.10), transparent 60%),
+      linear-gradient(160deg, #f9faf0 0%, #f2f4e2 100%);
+    background-attachment: fixed;
+  }
+  /* Card stays the focal point: pure white, visible border, stronger shadow */
+  .auth-card { background: #fff; border: 1px solid #cdd4a6; border-top: 4px solid #4e653d; box-shadow: 0 2px 4px rgba(53,76,43,0.10), 0 28px 56px -16px rgba(53,76,43,0.38), 0 6px 0 rgba(78,101,61,0.22); }
   .auth-logo-icon { width: 52px; height: 52px; background: linear-gradient(135deg, #859864, #4e653d); box-shadow: 0 4px 0 #354c2b, 0 10px 16px -6px rgba(78,101,61,0.5); }
 </style>
 {% endblock %}

@@ -2783,12 +2783,12 @@ html[data-theme="dark"] .badge-green, html[data-theme="dark"] .badge-blue { colo
    ═══════════════════════════════════════════════════════════════════ */
 html:not([data-theme="dark"]) body {
   background:
-    radial-gradient(900px 480px at 100% -8%, rgba(195,202,146,0.34), transparent 60%),
-    radial-gradient(1000px 520px at -8% 108%, rgba(133,152,100,0.15), transparent 60%),
-    #f2f3e3;
+    radial-gradient(900px 480px at 100% -8%, rgba(195,202,146,0.45), transparent 60%),
+    radial-gradient(1000px 520px at -8% 108%, rgba(133,152,100,0.20), transparent 60%),
+    #eceed9;
   background-attachment: fixed;
 }
-html:not([data-theme="dark"]) .topbar { background-color: rgba(242,243,227,0.84); }
+html:not([data-theme="dark"]) .topbar { background-color: rgba(236,238,217,0.82); }
 
 /* tabular numbers for timers, scores, counters */
 .exam-timer, .stat-value, .monitor-stat-val, .result-score { font-variant-numeric: tabular-nums; }
@@ -2978,3 +2978,14 @@ html[data-theme="dark"] .status-completed, html[data-theme="dark"] .badge.st-chi
 .stat-card::before { background: linear-gradient(180deg, var(--accent2), var(--accent)); }
 .style-chip.active { background: var(--accent); border-color: var(--accent); }
 .question-code .fib-blank-input.form-control { border-bottom-color: var(--accent2); }
+
+/* ── FIX: kebab menu hidden behind the next card ──
+   Cards animate in (cc-rise, fill-mode "both"), so each card is its own stacking
+   context and later cards paint over an open dropdown. Lift the card whose menu is open. */
+.class-card.menu-open,
+.exam-card.menu-open,
+.class-card:has(.card-menu-dropdown.open),
+.exam-card:has(.card-menu-dropdown.open) {
+  position: relative;
+  z-index: 30;
+}

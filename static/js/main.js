@@ -34,7 +34,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const dropdown = btn.nextElementSibling;
       const isOpen = dropdown.classList.contains('open');
       document.querySelectorAll('.card-menu-dropdown.open').forEach(d => d.classList.remove('open'));
-      if (!isOpen) dropdown.classList.add('open');
+      document.querySelectorAll('.menu-open').forEach(c => c.classList.remove('menu-open'));
+      if (!isOpen) {
+        dropdown.classList.add('open');
+        const host = btn.closest('.class-card, .exam-card');
+        if (host) host.classList.add('menu-open');
+      }
     });
   });
   document.querySelectorAll('.card-menu-dropdown').forEach(dropdown => {
@@ -42,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.addEventListener('click', () => {
     document.querySelectorAll('.card-menu-dropdown.open').forEach(d => d.classList.remove('open'));
+    document.querySelectorAll('.menu-open').forEach(c => c.classList.remove('menu-open'));
   });
 
   // Auto-dismiss alerts after 4s
