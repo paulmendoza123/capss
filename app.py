@@ -926,6 +926,24 @@ def init_db():
         conn.commit()
     except Exception:
         pass  # Column already exists
+    # Personal theme color (sidebar + accent), one of THEME_COLORS; NULL = default green
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN theme_color TEXT DEFAULT 'green'")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+    # Per-class card color picked by the teacher; NULL = follow the teacher's theme color
+    try:
+        conn.execute('ALTER TABLE classes ADD COLUMN card_color TEXT')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+    # Per-class card design (gradient / dots / wave / soft); NULL = gradient
+    try:
+        conn.execute('ALTER TABLE classes ADD COLUMN card_style TEXT')
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
     # Screenshot attempts (Print Screen key etc.): informational counter, never ends an exam
     try:
         conn.execute('ALTER TABLE exam_sessions ADD COLUMN screenshot_attempt_count INTEGER DEFAULT 0')
@@ -1894,6 +1912,95 @@ def role_required(*roles):
         return decorated
     return decorator
 
+# ─── Theme colors ────────────────────────────────────────────────────────────
+# Each user can pick a color theme (sidebar + buttons + accents). The CSS for
+# every key lives in static/css/style.css as html[data-accent="<key>"]; green
+# is the default and needs no override. Teachers can also pick a color per class card.
+THEME_COLORS = [
+    ('green',  'Moss',   '#5b6e4e'),   # Mosswood (default) - soft, muted
+    ('blue',   'Blue',   '#3573d3'),
+    ('purple', 'Purple', '#895cd4'),
+    ('teal',   'Teal',   '#1c817f'),
+    ('pink',   'Pink',   '#cb3d7e'),
+    ('red',    'Red',    '#cd444c'),
+    ('orange', 'Orange', '#b35c27'),
+    ('slate',  'Slate',  '#677589'),
+]
+THEME_COLOR_KEYS = {key for key, _label, _hex in THEME_COLORS}
+
+# Whole-card designs a teacher can pick per class (CSS: .class-card.cc-s-<key>)
+CARD_STYLES = [
+    ('gradient', 'Gradient'),
+    ('dots',     'Dots'),
+    ('wave',     'Wave'),
+    ('soft',     'Soft'),
+]
+CARD_STYLE_KEYS = {key for key, _label in CARD_STYLES}
+
+
+@app.context_processor
+def inject_theme_color():
+    """Makes the logged-in user's theme color available to every template."""
+    color = 'green'
+    uid = session.get('user_id')
+    if uid:
+        try:
+            row = get_db().execute('SELECT theme_color FROM users WHERE id=?', (uid,)).fetchone()
+            if row and row['theme_color'] in THEME_COLOR_KEYS:
+                color = row['theme_color']
+        except Exception:
+            pass
+    return {'theme_color': color, 'theme_colors': THEME_COLORS, 'card_styles': CARD_STYLES}
+
+
+@app.route('/api/theme-color', methods=['POST'])
+@login_required
+def api_theme_color():
+    """Saves the logged-in user's theme color (any role)."""
+    data = request.get_json(force=True, silent=True) or {}
+    color = str(data.get('color') or '').strip().lower()
+    if color not in THEME_COLOR_KEYS:
+        return jsonify({'status': 'error', 'message': 'Unknown color.'}), 400
+    conn = get_db()
+    conn.execute('UPDATE users SET theme_color=? WHERE id=?', (color, session['user_id']))
+    conn.commit()
+    return jsonify({'status': 'ok', 'color': color})
+
+
+@app.route('/teacher/class/<int:class_id>/card-color', methods=['POST'])
+@role_required('teacher')
+def teacher_class_card_color(class_id):
+    """Sets (or clears, with an empty color) the card color of one of the
+    teacher's own classes."""
+    data = request.get_json(force=True, silent=True) or {}
+    color = str(data.get('color') or '').strip().lower()
+    if color and color not in THEME_COLOR_KEYS:
+        return jsonify({'status': 'error', 'message': 'Unknown color.'}), 400
+    conn = get_db()
+    if not _get_owned_class(conn, class_id):
+        return jsonify({'status': 'error', 'message': 'Class not found.'}), 404
+    conn.execute('UPDATE classes SET card_color=? WHERE id=?', (color or None, class_id))
+    conn.commit()
+    return jsonify({'status': 'ok', 'color': color})
+
+
+@app.route('/teacher/class/<int:class_id>/card-style', methods=['POST'])
+@role_required('teacher')
+def teacher_class_card_style(class_id):
+    """Sets (or clears, with an empty value) the card design of one of the
+    teacher's own classes. Students see the same design."""
+    data = request.get_json(force=True, silent=True) or {}
+    style = str(data.get('style') or '').strip().lower()
+    if style and style not in CARD_STYLE_KEYS:
+        return jsonify({'status': 'error', 'message': 'Unknown design.'}), 400
+    conn = get_db()
+    if not _get_owned_class(conn, class_id):
+        return jsonify({'status': 'error', 'message': 'Class not found.'}), 404
+    conn.execute('UPDATE classes SET card_style=? WHERE id=?', (style or None, class_id))
+    conn.commit()
+    return jsonify({'status': 'ok', 'style': style})
+
+
 # ─── Auth Routes ─────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -2114,6 +2221,9 @@ def student_home():
     conn = get_db()
     classes = conn.execute('''
         SELECT c.*, u.full_name as teacher_name,
+               -- Students see the SAME card color the teacher sees: the color the teacher
+               -- picked for the class, or (if left on Auto) the teacher's own theme color.
+               COALESCE(NULLIF(c.card_color, ''), NULLIF(u.theme_color, ''), 'green') AS card_color_resolved,
                (SELECT GROUP_CONCAT(o.schedule, ';') FROM subject_offerings o
                   WHERE o.subject_id = c.subject_id AND o.semester_id = c.semester_id
                     AND o.teacher_id = c.teacher_id AND COALESCE(o.schedule, '') <> ''
@@ -2603,10 +2713,8 @@ def student_exam_result(exam_id):
     if exam_sess['status'] == 'ongoing':
         return redirect(url_for('student_take_exam', exam_id=exam_id))
 
-    # Terminated students cannot view the result page — redirect them away
-    if exam_sess['status'] == 'terminated':
-        return redirect(url_for('student_class_detail', class_id=exam['class_id']))
-
+    # A terminated student sees the score for the answers saved before the exam
+    # ended (no pass/fail verdict); the page itself explains that.
     questions = []
     # If teacher enabled "Show results to students", show full answer review immediately after submit.
     # Otherwise show score only.
@@ -3897,6 +4005,38 @@ def recompute_session_score(conn, exam_id, session_id):
     conn.execute('UPDATE exam_sessions SET score=?, needs_grading=? WHERE id=?',
                  (new_score, 1 if still_pending else 0, session_id))
     return new_score, still_pending
+
+
+def terminate_session_with_partial_score(conn, session_id):
+    """Ends an ongoing exam session as 'terminated' but KEEPS the credit the
+    student already earned: the score is computed from the answers that were
+    saved before the exam ended (auto-save stores them as the student works),
+    using the same question_credit() rules as a normal submit.
+
+    Essay answers can't be scored automatically, so if the student had written
+    any, the session is flagged needs_grading and the teacher can still grade
+    them. Returns the new score, or None if the session was not ongoing."""
+    sess = conn.execute('SELECT * FROM exam_sessions WHERE id=?', (session_id,)).fetchone()
+    if not sess or sess['status'] != 'ongoing':
+        return None
+    questions = conn.execute('SELECT * FROM questions WHERE exam_id=?', (sess['exam_id'],)).fetchall()
+    total_points = sum(q['points'] for q in questions)
+    score = 0.0
+    essay_waiting = False
+    for q in questions:
+        row = conn.execute('SELECT answer_text FROM answers WHERE session_id=? AND question_id=?',
+                           (session_id, q['id'])).fetchone()
+        text = (row['answer_text'] or '') if row else ''
+        score += q['points'] * question_credit(q, text)
+        if q['question_type'] == 'essay' and text.strip():
+            essay_waiting = True
+    conn.execute("""
+        UPDATE exam_sessions
+        SET status='terminated', submitted_at=datetime('now','localtime'),
+            score=?, total_points=?, needs_grading=?
+        WHERE id=? AND status='ongoing'
+    """, (score, total_points, 1 if essay_waiting else 0, session_id))
+    return score
 
 
 @app.route('/teacher/exam/<int:exam_id>/student/<int:student_id>/grade-essay/<int:question_id>', methods=['POST'])
@@ -7458,9 +7598,8 @@ def log_suspicious():
         terminated = False
         # Auto-terminate only when tab_switch_enabled is ON and limit is reached
         if exam and exam['tab_switch_enabled'] and exam['tab_switch_limit'] and new_count >= exam['tab_switch_limit']:
-            total_points = conn.execute('SELECT COALESCE(SUM(points),0) FROM questions WHERE exam_id=?', (sess['exam_id'],)).fetchone()[0]
-            conn.execute("UPDATE exam_sessions SET status='terminated', submitted_at=datetime('now','localtime'), score=0, total_points=? WHERE id=?",
-                         (total_points, session_id,))
+            # Terminated, but the student keeps the score for what they already answered
+            terminate_session_with_partial_score(conn, session_id)
             conn.commit()
             terminated = True
         return jsonify({'status': 'logged', 'count': new_count, 'terminated': terminated})
@@ -7870,11 +8009,10 @@ def api_terminate_session(session_id):
             WHERE e.id=?
         ''', (sess['exam_id'],)).fetchone()
         if exam and (exam['teacher_id'] == session['user_id'] or session.get('role') == 'admin'):
-            total_points = conn.execute('SELECT COALESCE(SUM(points),0) FROM questions WHERE exam_id=?', (exam['id'],)).fetchone()[0]
-            conn.execute(
-                "UPDATE exam_sessions SET status='terminated', submitted_at=datetime('now','localtime'), score=0, total_points=? WHERE id=?",
-                (total_points, session_id,)
-            )
+            # Keep the credit for the answers already saved; only an ongoing session
+            # can be terminated (a submitted score must never be wiped out).
+            if terminate_session_with_partial_score(conn, session_id) is None:
+                return jsonify({'status': 'error', 'message': 'This session is not ongoing.'}), 409
             conn.commit()
             return jsonify({'status': 'terminated'})
     return jsonify({'status': 'error', 'message': 'Not authorized or session not found'}), 403

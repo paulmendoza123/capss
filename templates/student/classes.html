@@ -71,7 +71,7 @@ function openJoinClassModal() {
 
 <div class="cards-grid">
   {% for cls in classes %}
-  <div class="class-card" data-search="{{ (cls.subject_name ~ ' ' ~ cls.subject_code ~ ' ' ~ cls.block_name ~ ' ' ~ cls.class_code ~ ' ' ~ cls.teacher_name) | lower }}" data-teacher="{{ cls.teacher_name | lower }}" data-year="{{ (cls.year_level or '') | lower }}">
+  <div class="class-card cc-c-{{ cls.card_color_resolved }} cc-s-{{ cls.card_style or 'gradient' }}" data-search="{{ (cls.subject_name ~ ' ' ~ cls.subject_code ~ ' ' ~ cls.block_name ~ ' ' ~ cls.class_code ~ ' ' ~ cls.teacher_name) | lower }}" data-teacher="{{ cls.teacher_name | lower }}" data-year="{{ (cls.year_level or '') | lower }}">
     <a href="{{ url_for('student_class_detail', class_id=cls.id) }}" class="class-card-link" aria-label="Open {{ cls.subject_name }}"></a>
     <div class="card-menu">
       <button type="button" class="card-menu-btn" aria-label="Class options">⋮</button>

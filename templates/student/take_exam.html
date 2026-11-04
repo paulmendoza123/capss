@@ -160,7 +160,7 @@
     {% if exam.tab_switch_enabled and exam.tab_switch_limit %}
     <div style="color:var(--text2);font-size:0.85rem;line-height:1.6;margin-bottom:1rem">
       <strong>Automatic ending:</strong> this exam ends automatically after {{ exam.tab_switch_limit }}
-      tab switch{{ '' if exam.tab_switch_limit == 1 else 'es' }}, and the attempt is recorded with a score of 0.
+      tab switch{{ '' if exam.tab_switch_limit == 1 else 'es' }}, and your score counts only the answers saved before it ended.
     </div>
     {% endif %}
     <div style="color:var(--text2);font-size:0.85rem;line-height:1.6;margin-bottom:1rem">
@@ -302,9 +302,9 @@
     <div style="font-size:3rem;margin-bottom:0.5rem"><svg class="icon icon-danger" aria-hidden="true"><use href="#i-ban"/></svg></div>
     <div style="color:var(--danger);font-size:1.2rem;font-weight:700;margin-bottom:0.75rem">Exam Terminated</div>
     <div id="terminated-modal-message" style="color:var(--text2);font-size:0.9rem;margin-bottom:1.5rem">
-      Your exam has been terminated. You cannot retake this exam.
+      Your exam has ended. Your score counts the answers you already saved. You cannot retake this exam.
     </div>
-    <div style="color:var(--text3);font-size:0.78rem">Redirecting you back…</div>
+    <div style="color:var(--text3);font-size:0.78rem">Showing your score…</div>
   </div>
 </div>
 
@@ -323,10 +323,17 @@
 <input type="hidden" id="consent-given" value="{{ '1' if exam_session.consent_given else '0' }}" />
 
 <!-- Exam Header -->
+{% set total_q = namespace(n=0) %}{% for sd in sections_data %}{% set total_q.n = total_q.n + (sd.questions|length) %}{% endfor %}
 <div class="exam-header">
-  <div>
-    <div class="fw-700" id="header-section-title" style="font-size:1rem">{{ sections_data[0].title or exam.title }}</div>
-    <div class="text-sm text-muted" id="section-indicator"></div>
+  <div class="exam-header-top">
+    <div>
+      <div class="fw-700" id="header-section-title">{{ sections_data[0].title or exam.title }}</div>
+      <div class="text-sm text-muted" id="section-indicator"></div>
+    </div>
+  </div>
+  <div class="exam-progress" aria-live="polite">
+    <div class="exam-progress-meta"><span id="progress-label">0 of {{ total_q.n }} answered</span><span id="progress-pct">0%</span></div>
+    <div class="exam-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="{{ total_q.n }}" aria-valuenow="0" id="progress-track"><div class="exam-progress-fill" id="progress-fill"></div></div>
   </div>
 </div>
 
@@ -345,7 +352,7 @@
 
     {% for q in sd.questions %}
     <div class="question-block no-select">
-      <div class="question-num">Question {{ loop.index }} · {{ q.points }} pt(s)</div>
+      <div class="question-num"><span class="q-badge">{{ loop.index }}</span><span>Question {{ loop.index }}</span><span class="q-pts">{{ q.points }} pt(s)</span></div>
       {% if q.question_type != 'fill_blank' %}
       {% if '\n' in q.question_text %}
       <pre class="question-code no-select">{{ q.question_text }}</pre>
@@ -621,6 +628,45 @@ function saveCurrentSectionAnswers() {
     }
   } catch(e) {}
   goSection(startIdx);
+})();
+</script>
+
+<script>
+// ── Answered-progress bar (display only; does not touch saving/grading) ──
+(function examProgress() {
+  const blocks = Array.from(document.querySelectorAll('.question-block'));
+  const total = blocks.length;
+  const label = document.getElementById('progress-label');
+  const pct = document.getElementById('progress-pct');
+  const fill = document.getElementById('progress-fill');
+  const track = document.getElementById('progress-track');
+  if (!total || !label || !fill) return;
+
+  function isAnswered(b) {
+    if (b.querySelector('input[type=radio]:checked')) return true;
+    const blanks = b.querySelectorAll('.fib-blank-input');
+    if (blanks.length) return Array.from(blanks).some(i => i.value.trim() !== '');
+    const ta = b.querySelector('textarea.auto-save');
+    return !!(ta && ta.value.trim() !== '');
+  }
+  function update() {
+    let n = 0;
+    blocks.forEach(b => { const a = isAnswered(b); b.classList.toggle('is-answered', a); if (a) n++; });
+    const p = Math.round((n / total) * 100);
+    label.textContent = n + ' of ' + total + ' answered';
+    pct.textContent = p + '%';
+    fill.style.width = p + '%';
+    if (track) track.setAttribute('aria-valuenow', n);
+  }
+  // Radios are checked programmatically by main.js on click (no change event),
+  // so listen to clicks/keys too and re-read the state right after they run.
+  const later = () => setTimeout(update, 0);
+  document.addEventListener('input', update);
+  document.addEventListener('change', update);
+  document.addEventListener('click', later);
+  document.addEventListener('keyup', later);
+  window.addEventListener('load', () => setTimeout(update, 50));
+  update();
 })();
 </script>
 

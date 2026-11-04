@@ -39,7 +39,7 @@
 
 {% if active_exams %}
 <div class="exam-section mb-3" data-section="active">
-  <div class="text-xs text-muted font-mono mb-2" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon icon-ok" aria-hidden="true"><use href="#i-dot"/></svg> Active</div>
+  <div class="status-head status-active"><svg class="icon icon-ok" aria-hidden="true"><use href="#i-dot"/></svg> Active</div>
   {% for exam in active_exams %}
   <div class="exam-card mb-1 exam-item" data-title="{{ exam.title | lower }}" data-subject="{{ exam.subject_name | lower }}" data-status="{{ exam.display_status }}" data-classkey="{{ (exam.subject_name ~ ' · ' ~ exam.block_name) | lower }}">
     <div class="flex items-center justify-between">
@@ -52,7 +52,10 @@
       </div>
       <div>
         {% if exam.session_status == 'terminated' %}
-          <span class="badge badge-red">Terminated</span>
+          <div class="flex gap-1 items-center">
+            <span class="badge badge-red">Terminated</span>
+            <a href="{{ url_for('student_exam_result', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">View Score</a>
+          </div>
         {% elif exam.session_status == 'submitted' %}
           <div class="flex gap-1 items-center">
             <span class="badge badge-green">Submitted</span>
@@ -74,7 +77,7 @@
 
 {% if upcoming %}
 <div class="exam-section mb-3" data-section="upcoming">
-  <div class="text-xs text-muted font-mono mb-2" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> Upcoming</div>
+  <div class="status-head status-upcoming"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> Upcoming</div>
   {% for exam in upcoming %}
   <div class="exam-card mb-1 exam-item" data-title="{{ exam.title | lower }}" data-subject="{{ exam.subject_name | lower }}" data-status="{{ exam.display_status }}" data-classkey="{{ (exam.subject_name ~ ' · ' ~ exam.block_name) | lower }}">
     <div class="exam-card-title">{{ exam.title }}</div>
@@ -91,7 +94,7 @@
 
 {% if completed %}
 <div class="exam-section mb-3" data-section="completed">
-  <div class="text-xs text-muted font-mono mb-2" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon icon-ok" aria-hidden="true"><use href="#i-check-circle"/></svg> Completed</div>
+  <div class="status-head status-completed"><svg class="icon icon-ok" aria-hidden="true"><use href="#i-check-circle"/></svg> Completed</div>
   {% for exam in completed %}
   <div class="exam-card mb-1 exam-item" data-title="{{ exam.title | lower }}" data-subject="{{ exam.subject_name | lower }}" data-status="{{ exam.display_status }}" data-classkey="{{ (exam.subject_name ~ ' · ' ~ exam.block_name) | lower }}">
     <div class="flex items-center justify-between">
@@ -108,7 +111,10 @@
       </div>
       <div>
         {% if exam.session_status == 'terminated' %}
-          <span class="badge badge-red">Terminated</span>
+          <div class="flex gap-1 items-center">
+            <span class="badge badge-red">Terminated</span>
+            <a href="{{ url_for('student_exam_result', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">View Score</a>
+          </div>
         {% elif exam.session_status == 'submitted' %}
           <div class="flex gap-1 items-center">
             <span class="badge badge-green">Submitted</span>

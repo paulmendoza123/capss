@@ -221,7 +221,7 @@
     if (!wm || !text) return;
     const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="380" height="220">' +
-      '<text x="190" y="110" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" ' +
+      '<text x="190" y="110" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="15" ' +
       'fill="rgba(120,120,120,0.22)" transform="rotate(-25 190 110)">' + esc + '</text></svg>';
     wm.style.backgroundImage = 'url("data:image/svg+xml;utf8,' + encodeURIComponent(svg) + '")';
   })();
@@ -253,7 +253,7 @@
   const consentErrorEl = document.getElementById('consent-error');
 
   function goToExamsList() {
-    window.location.href = CLASS_ID ? `/student/class/${CLASS_ID}` : '/student';
+    window.location.href = EXAM_ID ? `/student/exam/${EXAM_ID}/result` : (CLASS_ID ? `/student/class/${CLASS_ID}` : '/student');
   }
 
   if (!CONSENT_GIVEN) {
@@ -448,7 +448,7 @@
         const counter = document.getElementById('tab-switch-counter');
         if (counter) counter.textContent = tabSwitchCount;
 
-        if (data.terminated) handleTerminated('Your exam has been terminated for exceeding the allowed number of tab switches / focus violations. You cannot retake this exam.');
+        if (data.terminated) handleTerminated('Your exam has ended because you reached the allowed number of tab switches. Your score counts the answers you already saved. You cannot retake this exam.');
       } catch (e) {
         console.error('Log error:', e);
       }
@@ -467,7 +467,7 @@
     const msgEl = document.getElementById('terminated-modal-message');
     if (msgEl) {
       msgEl.textContent = reason ||
-        'Your exam session has been terminated. You cannot retake this exam.';
+        'Your exam session has ended. Your score counts the answers you already saved. You cannot retake this exam.';
     }
     if (modal) modal.style.display = 'flex';
 

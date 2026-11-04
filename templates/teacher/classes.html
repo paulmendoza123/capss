@@ -107,7 +107,7 @@ function openCreateClassModal(offeringId) {
 
 <div class="cards-grid">
   {% for cls in classes %}
-  <div class="class-card" data-search="{{ (cls.subject_name ~ ' ' ~ cls.subject_code ~ ' ' ~ cls.block_name ~ ' ' ~ cls.class_code ~ ' ' ~ (cls.program or '')) | lower }}" data-program="{{ (cls.program or '') | lower }}" data-year="{{ (cls.year_level or '') | lower }}">
+  <div class="class-card{% if cls.card_color %} cc-c-{{ cls.card_color }}{% endif %} cc-s-{{ cls.card_style or 'gradient' }}" data-class-id="{{ cls.id }}" data-search="{{ (cls.subject_name ~ ' ' ~ cls.subject_code ~ ' ' ~ cls.block_name ~ ' ' ~ cls.class_code ~ ' ' ~ (cls.program or '')) | lower }}" data-program="{{ (cls.program or '') | lower }}" data-year="{{ (cls.year_level or '') | lower }}">
     <a href="{{ url_for('teacher_class_detail', class_id=cls.id) }}" class="class-card-link" aria-label="Open {{ cls.subject_name }}"></a>
     <div class="card-menu">
       <button type="button" class="card-menu-btn" aria-label="Class options">⋮</button>
@@ -117,6 +117,23 @@ function openCreateClassModal(offeringId) {
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="card-menu-item danger"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg> Delete Class</button>
         </form>
+        <div class="card-color-row">
+          <div class="card-color-label">Card color</div>
+          <div class="swatch-row">
+            <button type="button" class="swatch swatch-auto{% if not cls.card_color %} active{% endif %}" data-color="" onclick="setCardColor({{ cls.id }}, '')" title="Match my theme color">Auto</button>
+            {% for key, label, hex in theme_colors %}
+            <button type="button" class="swatch{% if cls.card_color == key %} active{% endif %}" data-color="{{ key }}" style="background: {{ hex }}" aria-label="{{ label }}" title="{{ label }}" onclick="setCardColor({{ cls.id }}, '{{ key }}')"></button>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="card-color-row">
+          <div class="card-color-label">Card design</div>
+          <div class="style-row">
+            {% for key, label in card_styles %}
+            <button type="button" class="style-chip{% if (cls.card_style or 'gradient') == key %} active{% endif %}" data-style="{{ key }}" onclick="setCardStyle({{ cls.id }}, '{{ key }}')">{{ label }}</button>
+            {% endfor %}
+          </div>
+        </div>
       </div>
     </div>
     <div class="cc-head">
@@ -202,6 +219,49 @@ function filterClasses() {
   const q = document.getElementById('classSearch').value.trim().toLowerCase();
   const prog = document.getElementById('programFilter').value;
   const year = document.getElementById('yearFilter').value;
+  // Per-class card color: saved to the class, applied to the card right away
+  window.setCardColor = function (classId, color) {
+    const card = document.querySelector('.class-card[data-class-id="' + classId + '"]');
+    if (!card) return;
+    const previous = (card.className.match(/\bcc-c-(\w+)/) || [])[1] || '';
+    const paint = function (c) {
+      card.className = card.className.replace(/\s*cc-c-\w+/g, '');
+      if (c) card.classList.add('cc-c-' + c);
+      card.querySelectorAll('.card-color-row .swatch').forEach(function (s) {
+        s.classList.toggle('active', s.getAttribute('data-color') === c);
+      });
+    };
+    paint(color);
+    fetch('/teacher/class/' + classId + '/card-color', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({color: color})
+    }).then(function (r) { if (!r.ok) throw new Error('save failed'); })
+      .catch(function () { paint(previous); });
+  };
+
+  // Per-class card design: saved to the class, applied to the card right away
+  window.setCardStyle = function (classId, style) {
+    const card = document.querySelector('.class-card[data-class-id="' + classId + '"]');
+    if (!card) return;
+    const previous = (card.className.match(/\bcc-s-(\w+)/) || [])[1] || 'gradient';
+    const paint = function (st) {
+      card.className = card.className.replace(/\s*cc-s-\w+/g, '');
+      card.classList.add('cc-s-' + st);
+      card.querySelectorAll('.style-chip').forEach(function (b) {
+        b.classList.toggle('active', b.getAttribute('data-style') === st);
+      });
+    };
+    paint(style);
+    const csrf = document.querySelector('input[name="csrf_token"]');
+    fetch('/teacher/class/' + classId + '/card-style', {
+      method: 'POST',
+      headers: Object.assign({'Content-Type': 'application/json'}, csrf ? {'X-CSRFToken': csrf.value} : {}),
+      body: JSON.stringify({style: style})
+    }).then(function (r) { if (!r.ok) throw new Error('save failed'); })
+      .catch(function () { paint(previous); });
+  };
+
   const cards = document.querySelectorAll('.class-card');
   let shown = 0;
   cards.forEach(c => {

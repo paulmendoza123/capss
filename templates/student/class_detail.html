@@ -33,9 +33,9 @@
   <!-- Active exams the student hasn't taken yet -->
   {% if active_exams %}
   <div class="mb-2">
-    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon icon-ok" aria-hidden="true"><use href="#i-dot"/></svg> Active Now</div>
+    <div class="status-head status-active"><svg class="icon icon-ok" aria-hidden="true"><use href="#i-dot"/></svg> Active Now</div>
     {% for exam in active_exams %}
-    <div class="exam-card mb-1">
+    <div class="exam-card mb-1 st-active">
       <div class="exam-card-title">{{ exam.title }}</div>
       <div class="exam-card-meta">
         <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam|exam_time }}</span>
@@ -54,9 +54,9 @@
   <!-- Upcoming exams the student hasn't taken yet -->
   {% if upcoming %}
   <div class="mb-2">
-    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> Upcoming</div>
+    <div class="status-head status-upcoming"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> Upcoming</div>
     {% for exam in upcoming %}
-    <div class="exam-card mb-1">
+    <div class="exam-card mb-1 st-upcoming">
       <div class="exam-card-title">{{ exam.title }}</div>
       <div class="exam-card-meta">
         <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam|exam_time }}</span>
@@ -71,9 +71,9 @@
   <!-- Exams the student has finished (submitted or terminated) — always here regardless of exam status -->
   {% if my_done %}
   <div class="mb-2">
-    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon icon-ok" aria-hidden="true"><use href="#i-check-circle"/></svg> Completed</div>
+    <div class="status-head status-completed"><svg class="icon icon-ok" aria-hidden="true"><use href="#i-check-circle"/></svg> Completed</div>
     {% for exam in my_done %}
-    <div class="exam-card mb-1">
+    <div class="exam-card mb-1 st-completed">
       <div class="flex items-center justify-between">
         <div>
           <div class="exam-card-title">{{ exam.title }}</div>
@@ -91,7 +91,10 @@
         </div>
         <div>
           {% if exam.session_status == 'terminated' %}
-            <span class="badge badge-red">Terminated</span>
+            <div class="flex gap-1 items-center">
+              <span class="badge badge-red">Terminated</span>
+              <a href="{{ url_for('student_exam_result', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">View Score →</a>
+            </div>
           {% else %}
             <div class="flex gap-1 items-center">
               <span class="badge badge-green">Submitted</span>
@@ -110,9 +113,9 @@
   <!-- Exams closed by teacher that the student never took -->
   {% if closed %}
   <div class="mb-2">
-    <div class="text-xs text-muted font-mono mb-1" style="text-transform:uppercase;letter-spacing:.1em"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Closed</div>
+    <div class="status-head status-closed"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Closed</div>
     {% for exam in closed %}
-    <div class="exam-card mb-1">
+    <div class="exam-card mb-1 st-closed">
       <div class="exam-card-title">{{ exam.title }}</div>
       <div class="exam-card-meta">
         <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam|exam_time }}</span>

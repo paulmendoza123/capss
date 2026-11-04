@@ -65,7 +65,7 @@
           <tr>
             <td class="fw-600">{{ h.exam_title }}</td>
             <td class="text-sm">{{ h.subject_name }} &mdash; {{ h.block_name }}</td>
-            <td>{% if h.status == 'submitted' %}<span class="fw-600">{{ h.score|round(1) }}/{{ h.total_points }}</span> <span class="text-muted text-xs">({{ h.percentage }}%)</span>{% elif h.status == 'terminated' %}<span class="text-muted">Terminated</span>{% else %}<span class="text-muted">Ongoing</span>{% endif %}</td>
+            <td>{% if h.status == 'submitted' %}<span class="fw-600">{{ h.score|round(1) }}/{{ h.total_points }}</span> <span class="text-muted text-xs">({{ h.percentage }}%)</span>{% elif h.status == 'terminated' %}<span class="fw-600">{{ (h.score or 0)|round(1) }}/{{ h.total_points }}</span> <span class="text-muted text-xs">({{ h.percentage }}%)</span>{% else %}<span class="text-muted">Ongoing</span>{% endif %}</td>
             <td>{% if h.status == 'submitted' %}{% if h.percentage >= (h.passing_score or 75) %}<span class="badge badge-green">Passed</span>{% else %}<span class="badge badge-red">Failed</span>{% endif %}{% else %}<span class="text-muted">&mdash;</span>{% endif %}</td>
             <td>{% if h.status == 'submitted' %}<span class="badge badge-blue">Submitted</span>{% elif h.status == 'terminated' %}<span class="badge badge-red">Terminated</span>{% else %}<span class="badge badge-orange">Ongoing</span>{% endif %}</td>
             <td class="text-muted text-xs">{{ (h.started_at[:16]|time12) if h.started_at else '—' }}</td>

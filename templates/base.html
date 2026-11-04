@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"{% if theme_color and theme_color != 'green' %} data-accent="{{ theme_color }}"{% endif %}>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}SPARK{% endblock %} — SPARK</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}" />
   <!-- Apply saved theme before render to prevent flash -->
   <script>
     (function() {
@@ -57,6 +58,7 @@
 <symbol id="i-scale" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><path d="M5 7h14"/><path d="M5 7l-3 8a3 3 0 0 0 6 0z"/><path d="M19 7l-3 8a3 3 0 0 0 6 0z"/></symbol>
 <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
 <symbol id="i-activity" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></symbol>
+<symbol id="i-palette" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></symbol>
 <symbol id="i-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></symbol>
 </svg>
 
@@ -65,14 +67,27 @@
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sidebar-logo">
-      <div class="logo-icon"><svg class="icon" aria-hidden="true"><use href="#i-bolt"/></svg></div>
+      <div class="logo-icon"><span class="logo-mark" aria-hidden="true"></span></div>
       <div style="flex:1;">
         <div class="logo-text">SPARK</div>
-        <div class="logo-sub">Exam System</div>
       </div>
+      <button class="theme-toggle-btn" id="accent-toggle-btn" type="button" onclick="toggleAccentPicker()" aria-label="Choose theme color" aria-expanded="false" aria-controls="accent-picker" title="Choose theme color">
+        <span><svg class="icon" aria-hidden="true"><use href="#i-palette"/></svg></span>
+      </button>
       <button class="theme-toggle-btn" id="theme-toggle-btn" onclick="toggleTheme()" aria-label="Toggle light/dark mode" title="Toggle light/dark mode">
         <span id="theme-toggle-icon"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg></span>
       </button>
+    </div>
+
+    <div class="accent-picker" id="accent-picker">
+      <div class="accent-picker-label">Theme color</div>
+      <div class="swatch-row" role="radiogroup" aria-label="Theme color">
+        {% for key, label, hex in theme_colors %}
+        <button type="button" class="swatch{% if key == theme_color %} active{% endif %}" data-color="{{ key }}"
+                style="background: {{ hex }}" role="radio" aria-checked="{{ 'true' if key == theme_color else 'false' }}"
+                aria-label="{{ label }}" title="{{ label }}" onclick="chooseAccent('{{ key }}')"></button>
+        {% endfor %}
+      </div>
     </div>
 
     <div class="sidebar-user">
@@ -260,7 +275,7 @@ document.addEventListener('DOMContentLoaded', function() {
     <div class="text-muted text-sm" style="margin-bottom:1.25rem">Ask your teacher for the 6-character code</div>
     <div id="code-error" style="display:none;color:var(--danger);font-size:0.85rem;margin-bottom:0.75rem;background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:0.4rem 0.75rem"></div>
     <input id="code-input" type="text" maxlength="6" autocomplete="off" placeholder="A3BX9K"
-      style="width:100%;text-align:center;font-size:1.6rem;font-weight:800;letter-spacing:0.3em;font-family:monospace;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:0.6rem;color:inherit;outline:none;margin-bottom:1rem;box-sizing:border-box;"
+      style="width:100%;text-align:center;font-size:1.6rem;font-weight:800;letter-spacing:0.3em;font-family:inherit;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:0.6rem;color:inherit;outline:none;margin-bottom:1rem;box-sizing:border-box;"
       oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')"
       onkeydown="if(event.key==='Enter')submitCode()" />
     <div style="display:flex;gap:0.5rem">
@@ -381,6 +396,34 @@ function toggleTheme() {
   try { localStorage.setItem('spark-theme', next); } catch (e) {}
   applyTheme(next);
 }
+// ── THEME COLOR (sidebar + accents), saved to the user's account ──
+function toggleAccentPicker() {
+  var box = document.getElementById('accent-picker');
+  var btn = document.getElementById('accent-toggle-btn');
+  if (!box) return;
+  var open = box.classList.toggle('open');
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+function chooseAccent(color) {
+  var root = document.documentElement;
+  var previous = root.getAttribute('data-accent') || 'green';
+  function paint(c) {
+    if (c === 'green') root.removeAttribute('data-accent'); else root.setAttribute('data-accent', c);
+    document.querySelectorAll('#accent-picker .swatch').forEach(function(s) {
+      var on = s.getAttribute('data-color') === c;
+      s.classList.toggle('active', on);
+      s.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+  }
+  paint(color);   // instant feedback; saved in the background
+  fetch('/api/theme-color', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({color: color})
+  }).then(function(r) { if (!r.ok) throw new Error('save failed'); })
+    .catch(function() { paint(previous); });
+}
+
 // Sync icon on page load
 document.addEventListener('DOMContentLoaded', function() {
   var saved = 'light';

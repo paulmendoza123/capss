@@ -59,9 +59,9 @@
           <td class="text-sm">{{ exam.subject_name }} · {{ exam.block_name }}</td>
           <td class="font-mono text-sm">{{ exam|exam_time }}</td>
           <td>
-            {% if exam.status == 'upcoming' %}<span class="badge badge-gray">Upcoming</span>
-            {% elif exam.status == 'active' %}<span class="badge badge-green">Active</span>
-            {% else %}<span class="badge badge-blue">Completed</span>{% endif %}
+            {% if exam.status == 'upcoming' %}<span class="badge st-chip st-chip-upcoming">Upcoming</span>
+            {% elif exam.status == 'active' %}<span class="badge st-chip st-chip-active">Active</span>
+            {% else %}<span class="badge st-chip st-chip-completed">Completed</span>{% endif %}
           </td>
           <td class="font-mono text-sm">{{ exam.session_count }}</td>
           <td class="text-sm text-muted">{{ (exam.scheduled_at or '—')|time12 }}</td>

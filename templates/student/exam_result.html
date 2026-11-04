@@ -109,7 +109,13 @@
 <div class="result-header">
   <div style="font-size:3rem;margin-bottom:0.75rem"><svg class="icon icon-danger" aria-hidden="true"><use href="#i-ban"/></svg></div>
   <div style="font-size:1.2rem;font-weight:700;margin-bottom:0.5rem;color:var(--danger)">Exam Terminated</div>
-  <div class="text-muted">Your exam was terminated. Your score is <strong>0</strong>.</div>
+  <div class="text-muted" style="margin-bottom:0.75rem">Your exam was ended early. Your score counts only the answers that were saved before it ended.</div>
+  {% set t_pct = (exam_session.score * 100 / exam_session.total_points)|int if exam_session.total_points else 0 %}
+  <div class="result-score">{{ exam_session.score|score_fmt }} / {{ exam_session.total_points }}</div>
+  <div style="font-size:1.3rem;font-weight:700;margin-bottom:0.5rem">{{ t_pct }}%</div>
+  {% if exam_session.needs_grading %}
+  <div class="badge badge-yellow text-sm">⏳ Score is not final — some essay answers are still being graded by your teacher</div>
+  {% endif %}
 </div>
 
 {% else %}
@@ -120,8 +126,13 @@
   <div class="result-score {% if pct >= pass_pct %}pass{% else %}fail{% endif %}">
     {{ exam_session.score|score_fmt }} / {{ exam_session.total_points }}
   </div>
+  {% if exam_session.status == 'terminated' %}
+  <div class="badge badge-red text-sm" style="margin-bottom:0.5rem">Exam terminated — score counts only the answers saved before it ended</div>
+  {% endif %}
   {% if exam_session.needs_grading %}
   <div class="badge badge-yellow text-sm" style="margin-bottom:0.5rem">⏳ Score is not final — some essay answers are still being graded by your teacher</div>
+  {% elif exam_session.status == 'terminated' %}
+  <div style="font-size:1.5rem;font-weight:700;margin-bottom:0.5rem">{{ pct }}%</div>
   {% else %}
   <div style="font-size:1.5rem;font-weight:700;margin-bottom:0.5rem">
     {{ pct }}% — {% if pct >= pass_pct %}<span class="text-success">PASSED ✓</span>{% else %}<span class="text-danger">FAILED ✗</span>{% endif %}
