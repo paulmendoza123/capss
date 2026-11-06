@@ -5444,17 +5444,36 @@ def teacher_bank_import_file():
     if current_block:
         blocks.append(current_block)
 
+    # ── RED check: the file must follow the required structure ──────────────
+    # Text before the first numbered question (a title line, etc.) is ignored.
+    # If there are no numbered questions, or nothing in the file looks like a
+    # choice ("a. ..."), an "Answer:" line or a "Rubric:" section, the file is
+    # not in the given format at all, so reject it entirely.
+    blocks = [b for b in blocks if b and _re.match(r'^\d+[\.\)]\s+', b[0].strip())]
+    _has_structure = any(
+        _re.match(r'^[a-zA-Z][\.\)]\s+\S', ln.strip())
+        or _re.match(r'^answer\s*:', ln.strip(), _re.IGNORECASE)
+        or _RUBRIC_HEADER_RE.match(ln.strip())
+        for b in blocks for ln in b[1:]
+    )
+    if not blocks or not _has_structure:
+        flash('This file does not follow the required format, so nothing was imported. '
+              'Number each question (1., 2., ...), list choices as a., b., c., add an '
+              '"Answer:" line (or a "Rubric:" for essays), then try again. '
+              'See "Required File Format" in the import window.', 'error')
+        return redirect(_bank_url(category))
+
+    # ── BLUE check: right structure, but some questions have problems ────────
+    # Valid questions are imported; problem questions are skipped and listed.
     parsed = []
-    skipped_no_answer = 0
-    skipped_blank_mismatch = 0
-    skipped_essay_no_rubric = 0
+    problems = []   # [(question_number, reason), ...]
     for block in blocks:
-        if not block:
-            continue
-        # First line is the question (strip leading number)
         q_line = block[0]
+        _num_m = _re.match(r'^(\d+)[\.\)]\s+', q_line.strip())
+        qnum = _num_m.group(1) if _num_m else '?'
         q_first = _re.sub(r'^\d+[\.\)]\s+', '', q_line.strip()).strip()
         if not q_first:
+            problems.append((qnum, 'has no question text'))
             continue
 
         choices = {}
@@ -5462,26 +5481,22 @@ def teacher_bank_import_file():
         rubric_items = []  # [(criterion_text, max_points), ...] — essay only
         in_rubric = False
         # Everything up to the first choice line becomes part of the question
-        # text (joined with real newlines), so a ``` fenced code block right
-        # after the question prompt is kept intact — indentation and all.
+        # text (joined with real newlines), so a fenced code block right after
+        # the question prompt is kept intact — indentation and all.
         question_lines = [q_first]
         in_fence = False
         for bline in block[1:]:
             stripped_b = bline.strip()
             _is_fence, in_fence = _fence_step(stripped_b, in_fence)
             if _is_fence:
-                continue  # don't keep the ``` markers themselves
+                continue  # don't keep the fence markers themselves
             if in_fence:
                 question_lines.append(bline)  # preserve original indentation
                 continue
             if _RUBRIC_HEADER_RE.match(stripped_b):
                 in_rubric = True
-                continue  # the "Rubric:" header line itself isn't kept
+                continue
             if in_rubric:
-                # Once a "Rubric:" header is seen, every remaining line in
-                # this block is treated as a rubric item (or ignored if it
-                # doesn't match "- Criterion: points") — a rubric section is
-                # expected to be the last thing in a question block.
                 r_match = _RUBRIC_ITEM_RE.match(stripped_b)
                 if r_match:
                     crit_text = r_match.group(1).strip()
@@ -5493,30 +5508,25 @@ def teacher_bank_import_file():
                         rubric_items.append((crit_text, max_pts))
                 continue
             c_match = _re.match(r'^([a-zA-Z])[\.\)]\s+(.+)', stripped_b)
-            a_match = _re.match(r'^[Aa]nswer\s*:\s*(.+)', stripped_b)
+            a_match = _re.match(r'^[Aa]nswer\s*:\s*(.*)', stripped_b)
             if c_match:
                 choices[c_match.group(1).upper()] = c_match.group(2).strip()
             elif a_match:
                 answer_raw = a_match.group(1).strip()
             elif not choices:
-                # Still part of the question body (plain extra line, no fence)
                 question_lines.append(stripped_b)
 
         q_text = '\n'.join(question_lines).strip('\n')
         if not q_text:
+            problems.append((qnum, 'has no question text'))
             continue
 
         if in_rubric and not rubric_items:
-            # Had a "Rubric:" header but no valid "- Criterion: points" lines
-            # under it. Essay questions must always have a rubric, so skip
-            # rather than import an ungradeable essay.
-            skipped_essay_no_rubric += 1
+            problems.append((qnum, 'essay has a "Rubric:" but no valid "- Criterion: points" lines'))
             continue
 
         if rubric_items:
-            # A "Rubric:" section was found — this is always an Essay
-            # question (mandatory rubric, manually graded, no single
-            # correct answer), regardless of anything in choices/answer_raw.
+            # A "Rubric:" section means this is an Essay (manually graded).
             parsed.append({
                 'type': 'essay',
                 'text': q_text,
@@ -5524,20 +5534,17 @@ def teacher_bank_import_file():
                 'points': sum(pts for _, pts in rubric_items),
             })
         elif choices:
-            # A multiple-choice question with no "Answer:" line has no way to
-            # know the correct choice. Previously this silently defaulted to
-            # "A", which could ship a wrong answer key with no indication
-            # anything was wrong. Skip it instead and tell the teacher how
-            # many were skipped so they can fix the source file.
-            if not answer_raw:
-                skipped_no_answer += 1
+            if len(choices) < 2:
+                problems.append((qnum, 'multiple choice needs at least 2 choices'))
                 continue
-            ans_label = answer_raw.upper().strip('.')[:1]
+            if not answer_raw:
+                problems.append((qnum, 'missing the "Answer:" line'))
+                continue
+            _am = _re.match(r'^([A-Za-z])(?:[\.\)]|\s|$)', answer_raw.strip())
+            ans_label = _am.group(1).upper() if _am else ''
             if ans_label not in choices:
-                # Answer line doesn't match any of this question's choice
-                # labels (e.g. "Answer: e" but only a-d exist) — also not
-                # safe to guess, so skip rather than silently mis-key it.
-                skipped_no_answer += 1
+                last = sorted(choices)[-1]
+                problems.append((qnum, f'answer "{answer_raw.strip()[:20]}" is not one of the choices (A-{last})'))
                 continue
             parsed.append({
                 'type': 'multiple_choice',
@@ -5546,13 +5553,16 @@ def teacher_bank_import_file():
                 'answer': ans_label,
             })
         elif '___' in q_text:
-            # Fill in the Blank: skip if the blank count doesn't match the
-            # number of '|'-separated answer groups, rather than importing
-            # a broken question.
             blank_count = q_text.count('___')
-            answer_count = len([p for p in answer_raw.split('|')]) if answer_raw else 0
-            if blank_count == 0 or blank_count != answer_count:
-                skipped_blank_mismatch += 1
+            if not answer_raw:
+                problems.append((qnum, 'missing the "Answer:" line'))
+                continue
+            groups = answer_raw.split('|')
+            if len(groups) != blank_count:
+                problems.append((qnum, f'has {blank_count} blank{"s" if blank_count != 1 else ""} but {len(groups)} answer{"s" if len(groups) != 1 else ""}'))
+                continue
+            if any(not g.strip() for g in groups):
+                problems.append((qnum, 'has an empty answer for one of the blanks'))
                 continue
             parsed.append({
                 'type': 'fill_blank',
@@ -5560,13 +5570,10 @@ def teacher_bank_import_file():
                 'answer': answer_raw,
                 'points': blank_count,
             })
+        elif not answer_raw:
+            problems.append((qnum, 'missing the "Answer:" line'))
+            continue
         elif answer_raw.strip().lower() in ('true', 'false'):
-            # True/False: inferred when the answer is literally "True" or
-            # "False" and the question has no choices/blanks/rubric. (If a
-            # short-answer question's expected text genuinely is the word
-            # "true"/"false", it will import as True/False instead — this is
-            # intentional since the two behave identically for the student
-            # either way, and True/False is almost always what's meant.)
             parsed.append({
                 'type': 'true_false',
                 'text': q_text,
@@ -5579,18 +5586,17 @@ def teacher_bank_import_file():
                 'answer': sa_join_answers([answer_raw]),  # 'A/B' = alternative answers
             })
 
+    def _problem_summary(items, limit=6):
+        shown = '; '.join(f'Q{n}: {r}' for n, r in items[:limit])
+        if len(items) > limit:
+            shown += f'; and {len(items) - limit} more'
+        return shown
+
     if not parsed:
-        total_skipped = skipped_no_answer + skipped_blank_mismatch + skipped_essay_no_rubric
-        if total_skipped:
-            flash(
-                f'No questions could be imported: {total_skipped} '
-                f'question(s) were skipped because they were missing a valid "Answer:" line, '
-                f'had a blank/answer count mismatch, or an essay "Rubric:" section with no valid '
-                f'criteria. Please check the file and try again.',
-                'error'
-            )
-        else:
-            flash('No questions found. Make sure your file uses the required format.', 'error')
+        # Right structure, but every question had a problem → blue, nothing imported.
+        flash(f'File accepted, but no questions were imported. Skipped {len(problems)} '
+              f'question{"s" if len(problems) != 1 else ""} with problems — '
+              f'{_problem_summary(problems)}. Please fix the file and import again.', 'info')
         return redirect(_bank_url(category))
 
     # ── Create group (or reuse existing) ────────────────────────────────────
@@ -5660,17 +5666,9 @@ def teacher_bank_import_file():
     msg = f'Imported {added} {EXAM_CATEGORY_LABELS[category]} question{"s" if added != 1 else ""} into group "{group_name}".'
     if duplicates:
         msg += f' Skipped {duplicates} already in this group (same question text).'
-    skipped_total = skipped_no_answer + skipped_blank_mismatch + skipped_essay_no_rubric
-    if skipped_total:
-        parts = []
-        if skipped_no_answer or skipped_blank_mismatch:
-            parts.append('missing a valid "Answer:" line or had a blank/answer mismatch')
-        if skipped_essay_no_rubric:
-            parts.append('had a "Rubric:" section with no valid criteria')
-        msg += (
-            f' Skipped {skipped_total} question{"s" if skipped_total != 1 else ""} '
-            f'that {" / ".join(parts)} — please review the source file.'
-        )
+    if problems:
+        msg += (f' Skipped {len(problems)} question{"s" if len(problems) != 1 else ""} '
+                f'with problems — {_problem_summary(problems)}. Please fix them in the source file.')
         flash(msg, 'info')
     else:
         flash(msg, 'success')
