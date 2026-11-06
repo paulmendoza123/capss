@@ -340,7 +340,7 @@
 
 
 <!-- Exam Form -->
-<form id="exam-form" method="POST">
+<form id="exam-form" method="POST" autocomplete="off">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="session_id" value="{{ exam_session.id }}" />
 
@@ -388,13 +388,13 @@
       {% set saved_parts = (saved_map.get(q.id, '') or '').split('|') %}
       {% if '\n' in q.question_text %}
       <pre class="question-code fib-text-line no-select" data-qid="{{ q.id }}">{% for part in q.text_parts %}{{ part }}{% if not loop.last %}<input
-               type="text" class="form-control fib-blank-input" style="display:inline-block;width:140px;margin:0 0.3rem;text-transform:none"
+               type="text" class="form-control fib-blank-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" style="display:inline-block;width:140px;margin:0 0.3rem;text-transform:none"
                data-qid="{{ q.id }}" data-blank-index="{{ loop.index0 }}"
                value="{{ saved_parts[loop.index0] if saved_parts|length > loop.index0 else '' }}" />{% endif %}{% endfor %}</pre>
       {% else %}
       <div class="question-text fib-text-line" data-qid="{{ q.id }}">
         {% for part in q.text_parts %}{{ part }}{% if not loop.last %}<input
-               type="text" class="form-control fib-blank-input" style="display:inline-block;width:140px;margin:0 0.3rem"
+               type="text" class="form-control fib-blank-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" style="display:inline-block;width:140px;margin:0 0.3rem"
                data-qid="{{ q.id }}" data-blank-index="{{ loop.index0 }}"
                value="{{ saved_parts[loop.index0] if saved_parts|length > loop.index0 else '' }}" />{% endif %}{% endfor %}
       </div>
@@ -403,12 +403,12 @@
                 style="display:none">{{ saved_map.get(q.id, '') }}</textarea>
       {% elif q.question_type == 'essay' %}
       <div class="text-xs text-muted mb-1"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> This question is manually graded by your teacher.</div>
-      <textarea name="answer_{{ q.id }}" class="form-control auto-save"
+      <textarea name="answer_{{ q.id }}" class="form-control auto-save" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other"
                 data-qid="{{ q.id }}"
                 placeholder="Write your answer here..."
                 rows="10">{{ saved_map.get(q.id, '') }}</textarea>
       {% else %}
-      <textarea name="answer_{{ q.id }}" class="form-control auto-save"
+      <textarea name="answer_{{ q.id }}" class="form-control auto-save" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other"
                 data-qid="{{ q.id }}"
                 placeholder="Type your answer here..."
                 rows="3">{{ saved_map.get(q.id, '') }}</textarea>
