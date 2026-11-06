@@ -2901,33 +2901,6 @@ def teacher_home():
     return render_template('teacher/classes.html', classes=classes, programs=programs, assigned=assigned,
                            offerings=offerings)
 
-@app.route('/teacher/class/<int:class_id>/edit', methods=['POST'])
-@role_required('teacher')
-def teacher_edit_class(class_id):
-    conn = get_db()
-    cls = conn.execute(
-        'SELECT * FROM classes WHERE id = ? AND teacher_id = ?',
-        (class_id, session['user_id'])
-    ).fetchone()
-    if not cls:
-        flash('Class not found.', 'error')
-        return redirect(url_for('teacher_home'))
-    subject_code = request.form.get('subject_code', '').strip().upper()
-    subject_name = request.form.get('subject_name', '').strip()
-    block_name   = request.form.get('block_name', '').strip().upper()
-    program      = request.form.get('program', '').strip()
-    year_level   = request.form.get('year_level', '').strip()
-    if not all([subject_code, subject_name, block_name, program, year_level]):
-        flash('Please fill in all fields.', 'error')
-        return redirect(url_for('teacher_home'))
-    conn.execute('''
-        UPDATE classes SET subject_code=?, subject_name=?, block_name=?, program=?, year_level=?
-        WHERE id=?
-    ''', (subject_code, subject_name, block_name, program, year_level, class_id))
-    conn.commit()
-    flash(f'"{subject_name}" has been updated.', 'success')
-    return redirect(url_for('teacher_home'))
-
 @app.route('/teacher/class/create', methods=['GET', 'POST'])
 @role_required('teacher')
 def teacher_create_class():
