@@ -1,3 +1,6 @@
+{# Pages (taking / previewing an exam) override this block with any text to hide the sidebar minimize button and ignore the saved "minimized" state. #}
+{% set _no_collapse %}{% block no_sidebar_collapse %}{% endblock %}{% endset %}
+{% set _no_collapse = _no_collapse|trim %}
 <!DOCTYPE html>
 <html lang="en"{% if theme_color and theme_color != 'green' %} data-accent="{{ theme_color }}"{% endif %}>
 <head>
@@ -13,7 +16,7 @@
       if (saved === 'dark') {
         document.documentElement.setAttribute('data-theme', 'dark');
       }
-      if (localStorage.getItem('spark-sidebar') === 'collapsed') {
+      if ({{ 'false' if _no_collapse else 'true' }} && localStorage.getItem('spark-sidebar') === 'collapsed') {
         document.documentElement.classList.add('sidebar-collapsed');
       }
     })();
@@ -197,11 +200,13 @@
     </div>
   </aside>
 
+  {% if not _no_collapse %}
   <!-- Minimize / expand sidebar (desktop) -->
   <button type="button" class="sidebar-collapse-btn" id="sidebar-collapse-btn" onclick="toggleSidebarCollapse()"
           aria-label="Minimize sidebar" title="Minimize sidebar">
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
   </button>
+  {% endif %}
 
   <!-- Sidebar overlay for mobile -->
   <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
@@ -255,6 +260,7 @@ function toggleSidebar() {
   document.getElementById('sidebar-overlay')?.classList.toggle('active');
 }
 function toggleSidebarCollapse() {
+  if (!document.getElementById('sidebar-collapse-btn')) return;
   var collapsed = document.documentElement.classList.toggle('sidebar-collapsed');
   try { localStorage.setItem('spark-sidebar', collapsed ? 'collapsed' : 'expanded'); } catch (e) {}
   syncSidebarCollapse();

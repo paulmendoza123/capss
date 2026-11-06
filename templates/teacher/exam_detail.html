@@ -625,6 +625,8 @@
           <input type="hidden" name="scheduled_at" value="{{ (exam.scheduled_at or '')|replace(' ', 'T') }}" />
         </div>
       </div>
+      {% set conflict_exam_id = exam.id %}
+      {% include 'teacher/exam_conflict_check.html' %}
 
       <div class="divider"></div>
 

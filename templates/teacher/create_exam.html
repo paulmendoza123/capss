@@ -59,6 +59,8 @@
         <input type="hidden" name="scheduled_at" />
       </div>
     </div>
+    {% set conflict_class_id = cls.id %}
+    {% include 'teacher/exam_conflict_check.html' %}
 
     <div class="divider"></div>
 

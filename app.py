@@ -3688,6 +3688,101 @@ def teacher_delete_tos(tos_id):
     return redirect(_bank_url('periodic'))
 
 
+
+# ── Exam schedule conflicts ──────────────────────────────────────────────────
+# Only exams whose time ranges actually overlap count as a conflict (no extra gap).
+EXAM_CONFLICT_BUFFER_MIN = 0
+
+
+def _parse_sched(value):
+    try:
+        return datetime.strptime(str(value).strip().replace('T', ' ')[:16], '%Y-%m-%d %H:%M')
+    except (ValueError, TypeError):
+        return None
+
+
+def find_exam_conflicts(conn, class_id, scheduled_at, duration_minutes,
+                        exclude_exam_id=None, buffer_min=EXAM_CONFLICT_BUFFER_MIN):
+    """Other exams that overlap the proposed slot
+    for students enrolled in `class_id`. Looks across ALL classes and teachers.
+    An untimed exam (duration 0) is treated as starting and ending at its start time.
+    Returns a list of dicts, one per clashing exam, each with the shared students."""
+    start = _parse_sched(scheduled_at)
+    if not start:
+        return []
+    end = start + timedelta(minutes=int(duration_minutes or 0))
+    gap = timedelta(minutes=buffer_min)
+    rows = conn.execute('''
+        SELECT e.id AS exam_id, e.title, e.scheduled_at, e.duration_minutes,
+               c.subject_code, c.subject_name, c.block_name, t.full_name AS teacher_name,
+               u.full_name AS student_name
+        FROM class_enrollments me
+        JOIN class_enrollments ce ON ce.student_id = me.student_id
+        JOIN exams e   ON e.class_id = ce.class_id
+        JOIN classes c ON c.id = e.class_id
+        JOIN users t   ON t.id = c.teacher_id
+        JOIN users u   ON u.id = me.student_id
+        WHERE me.class_id = ?
+          AND e.scheduled_at IS NOT NULL AND e.scheduled_at != ''
+          AND e.id != ?
+        ORDER BY u.full_name
+    ''', (class_id, exclude_exam_id or -1)).fetchall()
+    found = {}
+    for r in rows:
+        o_start = _parse_sched(r['scheduled_at'])
+        if not o_start:
+            continue
+        o_end = o_start + timedelta(minutes=int(r['duration_minutes'] or 0))
+        overlaps = (o_start < end + gap and o_end + gap > start) or o_start == start
+        if not overlaps:
+            continue
+        item = found.setdefault(r['exam_id'], {
+            'exam_id': r['exam_id'], 'title': r['title'],
+            'subject': f"{r['subject_code']} - {r['subject_name']}",
+            'block': r['block_name'], 'teacher': r['teacher_name'],
+            'start': o_start.strftime('%b %d, %Y %I:%M %p'),
+            'end': o_end.strftime('%I:%M %p'),
+            'students': [],
+        })
+        item['students'].append(r['student_name'])
+    out = list(found.values())
+    for item in out:
+        item['count'] = len(item['students'])
+        item['students'] = item['students'][:1]   # preview only: first name + "and more"
+    return out
+
+
+@app.route('/teacher/api/exam-conflicts')
+@role_required('teacher')
+def teacher_api_exam_conflicts():
+    """Live schedule check used by the Create Exam and Settings forms."""
+    conn = get_db()
+    exam_id = request.args.get('exam_id', type=int)
+    class_id = request.args.get('class_id', type=int)
+    if exam_id:
+        row = conn.execute('SELECT class_id FROM exams WHERE id=?', (exam_id,)).fetchone()
+        class_id = row['class_id'] if row else None
+    cls = conn.execute('SELECT id FROM classes WHERE id=? AND teacher_id=?',
+                       (class_id, session['user_id'])).fetchone() if class_id else None
+    if not cls:
+        return jsonify({'ok': False, 'conflicts': []}), 404
+    conflicts = find_exam_conflicts(conn, class_id, request.args.get('scheduled_at', ''),
+                                    request.args.get('duration', 0, type=int), exam_id)
+    return jsonify({'ok': True, 'buffer': EXAM_CONFLICT_BUFFER_MIN, 'conflicts': conflicts})
+
+
+def _conflict_error(conn, class_id, scheduled_at, duration, exam_id=None):
+    """Return an error message if the slot clashes with another exam for shared
+    students, otherwise None. Saving a conflicting schedule is not allowed."""
+    if not scheduled_at:
+        return None
+    n = len(find_exam_conflicts(conn, class_id, scheduled_at, duration, exam_id))
+    if not n:
+        return None
+    return (f'Schedule conflict: this time overlaps {n} other exam{"s" if n != 1 else ""} '
+            f'for some of your students. Please choose a different date or time.')
+
+
 @app.route('/teacher/class/<int:class_id>/create-exam', methods=['GET', 'POST'])
 @role_required('teacher')
 def teacher_create_exam(class_id):
@@ -3729,6 +3824,10 @@ def teacher_create_exam(class_id):
             return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
         if exam_category == 'periodic' and not periodic_type:
             flash('Please choose whether this Periodic Exam is a Midterm or a Final Exam.', 'error')
+            return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
+        conflict_err = _conflict_error(conn, class_id, scheduled_at, duration)
+        if conflict_err:
+            flash(conflict_err, 'error')
             return render_template('teacher/create_exam.html', cls=cls, tos_list=tos_list)
         # A Periodic Exam is built on ONE Table of Specification, chosen here.
         # Only questions that belong to this TOS can be added to / imported into the exam.
@@ -4598,6 +4697,10 @@ def teacher_exam_settings(exam_id):
         scheduled_at = request.form.get('scheduled_at', '').strip()
         if scheduled_at:
             scheduled_at = scheduled_at.replace('T', ' ')  # normalize datetime-local format
+        conflict_err = _conflict_error(conn, exam['class_id'], scheduled_at, duration, exam_id)
+        if conflict_err:
+            flash(conflict_err, 'error')
+            return redirect(url_for('teacher_exam_detail', exam_id=exam_id))
         show_results = 1 if request.form.get('show_results') else 0
         randomize = 1 if request.form.get('randomize_questions') else 0
         tab_switch_enabled = 1 if request.form.get('tab_switch_enabled') else 0

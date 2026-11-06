@@ -1,0 +1,95 @@
+{# Live schedule-conflict warning for Create Exam and the exam Settings tab.
+   Context: conflict_class_id (create) OR conflict_exam_id (settings). #}
+<div id="conflictPanel" role="status" aria-live="polite" hidden
+     style="margin-top:0.75rem;padding:0.75rem 0.9rem;border-radius:var(--radius, 8px);border:1px solid var(--status-warning, #d99a00);border-left-width:4px;background:rgba(217,154,0,0.08);font-size:0.9rem">
+  <div id="conflictTitle" style="font-weight:600;margin-bottom:0.4rem"></div>
+  <div id="conflictList"></div>
+  <div class="form-hint" style="margin-top:0.5rem">
+    This schedule can't be saved. Choose a different date or time so affected students don't have two exams at once.
+  </div>
+</div>
+<script>
+(function () {
+  var hidden = document.querySelector('input[name="scheduled_at"]');
+  if (!hidden) return;
+  var form = hidden.closest('form');
+  var panel = document.getElementById('conflictPanel');
+  var titleEl = document.getElementById('conflictTitle');
+  var listEl = document.getElementById('conflictList');
+  var examId = {{ conflict_exam_id|default(0)|tojson }};
+  var classId = {{ conflict_class_id|default(0)|tojson }};
+  var hasConflict = false, timer = null, seq = 0;
+
+  function durationMinutes() {
+    var t = form.querySelector('[name="timer_enabled"]');
+    var on = form.querySelector('[name="duration_enabled"]');
+    var inp = form.querySelector('[name="duration_minutes"]');
+    if (t && !t.checked) return 0;
+    if (on && !on.checked) return 0;
+    return inp ? (parseInt(inp.value, 10) || 0) : 0;
+  }
+
+  function setBlocked(on) {
+    form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (b) {
+      b.disabled = on;
+      b.title = on ? 'Resolve the schedule conflict first' : '';
+    });
+  }
+
+  function render(data) {
+    listEl.textContent = '';
+    var list = (data && data.conflicts) || [];
+    hasConflict = list.length > 0;
+    setBlocked(hasConflict);
+    if (!hasConflict) { panel.hidden = true; return; }
+    var total = list.reduce(function (n, c) { return n + c.count; }, 0);
+    titleEl.textContent = 'Schedule conflict: ' + list.length + ' overlapping exam' +
+      (list.length === 1 ? '' : 's') + ' (' + total + ' student' + (total === 1 ? '' : 's') + ' affected)';
+    list.forEach(function (c) {
+      var row = document.createElement('div');
+      row.style.cssText = 'padding:0.4rem 0;border-top:1px solid var(--border, rgba(128,128,128,.25))';
+      var h = document.createElement('div');
+      h.style.fontWeight = '500';
+      h.textContent = c.title + ' · ' + c.subject + (c.block ? ' (' + c.block + ')' : '');
+      var w = document.createElement('div');
+      w.className = 'text-sm text-muted';
+      w.textContent = c.start + ' – ' + c.end + ' · ' + c.teacher;
+      var s = document.createElement('div');
+      s.className = 'text-sm';
+      s.textContent = c.students[0] + (c.count > 1 ? ' and more' : '') +
+        ' (' + c.count + ' shared student' + (c.count === 1 ? '' : 's') + ')';
+      row.appendChild(h); row.appendChild(w); row.appendChild(s);
+      listEl.appendChild(row);
+    });
+    panel.hidden = false;
+  }
+
+  function check() {
+    var when = hidden.value;
+    if (!when) { render(null); return Promise.resolve(); }
+    var my = ++seq;
+    var q = new URLSearchParams({ scheduled_at: when, duration: durationMinutes() });
+    if (examId) q.set('exam_id', examId); else q.set('class_id', classId);
+    return fetch('{{ url_for("teacher_api_exam_conflicts") }}?' + q.toString(),
+                 { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (my === seq) render(d); })
+      .catch(function () { /* checker is advisory; never block the form */ });
+  }
+
+  function schedule() { clearTimeout(timer); timer = setTimeout(check, 300); }
+
+  form.querySelectorAll('[data-dt="date"],[data-dt="time"],[name="duration_minutes"],[name="duration_enabled"],[name="timer_enabled"]')
+    .forEach(function (el) { el.addEventListener('input', schedule); el.addEventListener('change', schedule); });
+  // The hidden field is kept in sync by main.js after the date/time inputs fire.
+  check();
+
+  // A conflicting schedule cannot be saved: block submit (the server enforces it too).
+  form.addEventListener('submit', function (e) {
+    if (hasConflict) {
+      e.preventDefault();
+      panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  });
+})();
+</script>
