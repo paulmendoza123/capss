@@ -763,7 +763,9 @@ def init_db():
             exam_id INTEGER NOT NULL,
             event_type TEXT NOT NULL,
             logged_at TIMESTAMP DEFAULT (datetime('now','localtime')),
-            FOREIGN KEY (session_id) REFERENCES exam_sessions(id)
+            FOREIGN KEY (session_id) REFERENCES exam_sessions(id),
+            FOREIGN KEY (student_id) REFERENCES users(id),
+            FOREIGN KEY (exam_id) REFERENCES exams(id)
         );
 
         CREATE TABLE IF NOT EXISTS password_reset_logs (
@@ -1362,7 +1364,7 @@ def init_db():
     for col_sql in (
         'ALTER TABLE answers ADD COLUMN manual_score REAL',
         'ALTER TABLE answers ADD COLUMN feedback TEXT',
-        'ALTER TABLE answers ADD COLUMN graded_by INTEGER',
+        'ALTER TABLE answers ADD COLUMN graded_by INTEGER REFERENCES users(id)',
         'ALTER TABLE answers ADD COLUMN graded_at TIMESTAMP',
     ):
         try:
@@ -1433,17 +1435,20 @@ def init_db():
             sched_slots TEXT,
             position INTEGER NOT NULL DEFAULT 0,
             block_name TEXT,
-            UNIQUE(semester_id, subject_id, position)
+            UNIQUE(semester_id, subject_id, position),
+            FOREIGN KEY (semester_id) REFERENCES semesters(id),
+            FOREIGN KEY (subject_id) REFERENCES subjects(id),
+            FOREIGN KEY (teacher_id) REFERENCES users(id)
         );
     ''')
     conn.commit()
     try:
-        conn.execute('ALTER TABLE classes ADD COLUMN semester_id INTEGER')
+        conn.execute('ALTER TABLE classes ADD COLUMN semester_id INTEGER REFERENCES semesters(id)')
         conn.commit()
     except Exception:
         pass  # Column already exists
     try:
-        conn.execute('ALTER TABLE classes ADD COLUMN subject_id INTEGER')
+        conn.execute('ALTER TABLE classes ADD COLUMN subject_id INTEGER REFERENCES subjects(id)')
         conn.commit()
     except Exception:
         pass  # Column already exists
@@ -1546,6 +1551,119 @@ def init_db():
     for _tbl in ('exams', 'questions', 'question_bank_groups'):
         conn.execute(f"UPDATE {_tbl} SET exam_category='quiz' WHERE exam_category IS NULL OR exam_category=''")
     conn.commit()
+
+    # Declare the relationships the app already relies on as real foreign keys
+    # (older databases are upgraded in place; see _migrate_add_foreign_keys).
+    _migrate_add_foreign_keys(conn)
+
+# Foreign keys that the app always used (matching IDs in its queries) but that
+# older databases never declared: table -> [(column, parent_table), ...]
+_FOREIGN_KEY_PLAN = {
+    'subject_offerings': [('semester_id', 'semesters'), ('subject_id', 'subjects'), ('teacher_id', 'users')],
+    'suspicious_logs':   [('student_id', 'users'), ('exam_id', 'exams')],
+    'classes':           [('semester_id', 'semesters'), ('subject_id', 'subjects')],
+    'answers':           [('graded_by', 'users')],
+}
+
+
+def _rebuild_table_with_foreign_keys(conn, table, new_fks):
+    """Recreate `table` with extra FOREIGN KEY clauses (SQLite cannot add a
+    foreign key to an existing table with ALTER). Data, ids, unique constraints,
+    existing foreign keys and indexes are all preserved."""
+    info = conn.execute(f'PRAGMA table_info("{table}")').fetchall()
+    names = [r[1] for r in info]
+    table_sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]
+    if 'CHECK' in table_sql.upper():
+        raise RuntimeError(f'{table} has CHECK constraints; refusing to rebuild automatically')
+    autoinc = 'AUTOINCREMENT' in table_sql.upper()
+
+    defs = []
+    for _cid, name, ctype, notnull, dflt, pk in info:
+        d = f'"{name}" {ctype or ""}'.rstrip()
+        if pk:
+            d += ' PRIMARY KEY' + (' AUTOINCREMENT' if autoinc else '')
+        elif notnull:
+            d += ' NOT NULL'
+        if dflt is not None:
+            d += f' DEFAULT ({dflt})'
+        defs.append(d)
+
+    for idx in conn.execute(f'PRAGMA index_list("{table}")').fetchall():
+        if idx[3] == 'u':  # UNIQUE constraint declared in the table
+            cols = [r[2] for r in conn.execute(f'PRAGMA index_info("{idx[1]}")').fetchall()]
+            defs.append('UNIQUE(' + ', '.join(f'"{c}"' for c in cols) + ')')
+
+    fks = {}
+    for r in conn.execute(f'PRAGMA foreign_key_list("{table}")').fetchall():
+        fks.setdefault(r[0], []).append(r)
+    for rows in fks.values():
+        rows.sort(key=lambda r: r[1])
+        clause = ('FOREIGN KEY (' + ', '.join(f'"{r[3]}"' for r in rows) + ') REFERENCES "' + rows[0][2] + '"')
+        if rows[0][4]:
+            clause += ' (' + ', '.join(f'"{r[4]}"' for r in rows) + ')'
+        if rows[0][6] and rows[0][6] != 'NO ACTION':
+            clause += ' ON DELETE ' + rows[0][6]
+        defs.append(clause)
+    for col, parent in new_fks:
+        defs.append(f'FOREIGN KEY ("{col}") REFERENCES "{parent}"(id)')
+
+    index_sql = [r[0] for r in conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", (table,)).fetchall()]
+    seq = conn.execute('SELECT seq FROM sqlite_sequence WHERE name=?', (table,)).fetchone() if autoinc else None
+    col_list = ', '.join(f'"{n}"' for n in names)
+    tmp = f'{table}__fk_new'
+
+    conn.execute('BEGIN')
+    try:
+        conn.execute(f'DROP TABLE IF EXISTS "{tmp}"')
+        conn.execute(f'CREATE TABLE "{tmp}" (' + ', '.join(defs) + ')')
+        conn.execute(f'INSERT INTO "{tmp}" ({col_list}) SELECT {col_list} FROM "{table}"')
+        conn.execute(f'DROP TABLE "{table}"')
+        conn.execute(f'ALTER TABLE "{tmp}" RENAME TO "{table}"')
+        for sql in index_sql:
+            conn.execute(sql)
+        if seq is not None:
+            if conn.execute('UPDATE sqlite_sequence SET seq=MAX(seq, ?) WHERE name=?', (seq[0], table)).rowcount == 0:
+                conn.execute('INSERT INTO sqlite_sequence(name, seq) VALUES (?, ?)', (table, seq[0]))
+        conn.execute('COMMIT')
+    except Exception:
+        conn.execute('ROLLBACK')
+        raise
+
+
+def _migrate_add_foreign_keys(conn):
+    """Idempotent. Adds the foreign keys listed in _FOREIGN_KEY_PLAN to databases
+    created before they existed. Runtime behaviour is unchanged: the app does not
+    switch on PRAGMA foreign_keys for its request connections, so these keys
+    document (and let tools such as DBeaver draw) the relationships without
+    blocking any existing delete/update logic."""
+    conn.commit()
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    prev_fk = conn.execute('PRAGMA foreign_keys').fetchone()[0]
+    conn.execute('PRAGMA foreign_keys=OFF')
+    try:
+        for table, wanted in _FOREIGN_KEY_PLAN.items():
+            if table not in tables:
+                continue
+            have = {(r[3], r[2]) for r in conn.execute(f'PRAGMA foreign_key_list("{table}")').fetchall()}
+            missing = [(c, p) for c, p in wanted if (c, p) not in have and p in tables]
+            if not missing:
+                continue
+            try:
+                notnull = {r[1]: r[3] for r in conn.execute(f'PRAGMA table_info("{table}")').fetchall()}
+                for col, parent in missing:
+                    # Rows pointing at something that no longer exists would violate the new key.
+                    if notnull.get(col):
+                        conn.execute(f'DELETE FROM "{table}" WHERE "{col}" NOT IN (SELECT id FROM "{parent}")')
+                    else:
+                        conn.execute(f'UPDATE "{table}" SET "{col}"=NULL WHERE "{col}" IS NOT NULL '
+                                     f'AND "{col}" NOT IN (SELECT id FROM "{parent}")')
+                conn.commit()
+                _rebuild_table_with_foreign_keys(conn, table, missing)
+            except Exception as exc:
+                print(f'WARNING: could not add foreign keys to {table}: {exc}')
+    finally:
+        conn.execute(f'PRAGMA foreign_keys={"ON" if prev_fk else "OFF"}')
 
 
 def get_maintenance_db():
