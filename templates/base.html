@@ -62,6 +62,22 @@
 <symbol id="i-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></symbol>
 </svg>
 
+<!-- Floating status messages (flash). Fixed-position, so they never move the page. -->
+<div class="toast-stack" id="toast-stack" role="region" aria-label="Notifications">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      {% set kind = {'success': 'success', 'error': 'error', 'danger': 'error', 'warning': 'warning', 'info': 'info'}.get(category, 'info') %}
+      {% set icon = {'success': 'check-circle', 'error': 'x-circle', 'warning': 'alert', 'info': 'info'}[kind] %}
+      <div class="toast toast-{{ kind }}" role="{{ 'alert' if kind in ['error', 'warning'] else 'status' }}">
+        <svg class="icon toast-icon" aria-hidden="true"><use href="#i-{{ icon }}"/></svg>
+        <div class="toast-msg">{{ message }}</div>
+        <button type="button" class="toast-close" aria-label="Dismiss message">&times;</button>
+        <span class="toast-timer" aria-hidden="true"></span>
+      </div>
+    {% endfor %}
+  {% endwith %}
+</div>
+
 {% if session.get('user_id') %}
 <div class="layout">
   <!-- SIDEBAR -->
@@ -205,17 +221,6 @@
     </button>
     {% endif %}
 
-    <div class="alerts">
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% for category, message in messages %}
-          <div class="alert alert-{{ category }}">
-            {% if category == 'success' %}<svg class="icon icon-ok" aria-hidden="true"><use href="#i-check-circle"/></svg>{% elif category == 'error' %}<svg class="icon icon-danger" aria-hidden="true"><use href="#i-x-circle"/></svg>{% else %}<svg class="icon" aria-hidden="true"><use href="#i-info"/></svg>{% endif %}
-            {{ message }}
-          </div>
-        {% endfor %}
-      {% endwith %}
-    </div>
-
     <div class="page-body{% block page_body_class %}{% endblock %}">
 {% else %}
   <!-- No sidebar for auth pages -->
@@ -224,17 +229,6 @@
     style="position:fixed;top:1rem;right:1rem;z-index:999;">
     <span id="theme-toggle-icon"><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg></span>
   </button>
-  <div class="alerts" style="padding:1rem 2rem;">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for category, message in messages %}
-        <div class="alert alert-{{ category }}">
-          {% if category == 'success' %}<svg class="icon icon-ok" aria-hidden="true"><use href="#i-check-circle"/></svg>{% elif category == 'error' %}<svg class="icon icon-danger" aria-hidden="true"><use href="#i-x-circle"/></svg>{% else %}<svg class="icon" aria-hidden="true"><use href="#i-info"/></svg>{% endif %}
-          {{ message }}
-        </div>
-      {% endfor %}
-    {% endwith %}
-  </div>
-
   <div class="page-body auth-body">
 {% endif %}
 

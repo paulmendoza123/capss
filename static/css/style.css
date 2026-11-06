@@ -288,8 +288,84 @@ body {
 .topbar-title { font-size: 1.15rem; font-weight: 600; }
 .topbar-actions { display: flex; align-items: center; gap: 0.75rem; }
 
-/* ── ALERTS ── */
-.alerts { padding: 0 2.5rem; margin-top: 1rem; }
+/* ── STATUS MESSAGES ──
+   Fixed colors: green = success, red = error/invalid, amber = warning, blue = info.
+   These deliberately do NOT use --accent/--accent2, so they look the same in every
+   theme color, in light and dark mode, and for every role. */
+:root {
+  --status-success: #15803d;
+  --status-error:   #b91c1c;
+  --status-warning: #b45309;
+  --status-info:    #1d4ed8;
+}
+
+/* Floating toasts (flash messages): fixed to the viewport, so they never push the page. */
+.toast-stack {
+  position: fixed;
+  top: calc(1rem + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(440px, calc(100vw - 2rem));
+  z-index: 9500;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;          /* the empty stack never blocks clicks on the page */
+}
+.toast {
+  pointer-events: auto;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.8rem 0.9rem 0.9rem 1rem;
+  border-radius: 10px;
+  background: var(--toast-bg);
+  color: #fff;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.28);
+  animation: toastIn 0.25s ease;
+}
+.toast-success { --toast-bg: var(--status-success); }
+.toast-error   { --toast-bg: var(--status-error); }
+.toast-warning { --toast-bg: var(--status-warning); }
+.toast-info    { --toast-bg: var(--status-info); }
+.toast .toast-icon { flex: none; width: 1.25rem; height: 1.25rem; margin-top: 0.05rem; color: #fff; }
+.toast-msg { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.toast-close {
+  flex: none;
+  background: none;
+  border: 0;
+  padding: 0 0.2rem;
+  color: #fff;
+  opacity: 0.8;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.toast-close:hover, .toast-close:focus-visible { opacity: 1; }
+/* thin bar that shrinks to show the time left before auto-dismiss */
+.toast-timer {
+  position: absolute;
+  left: 0; bottom: 0;
+  width: 100%; height: 3px;
+  background: rgba(255,255,255,0.55);
+  transform-origin: left;
+  animation: toastTimer var(--toast-ms, 5000ms) linear forwards;
+}
+.toast.paused .toast-timer { animation-play-state: paused; }   /* hovering pauses the countdown */
+.toast.is-leaving { animation: toastOut 0.25s ease forwards; }
+@keyframes toastIn    { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: none; } }
+@keyframes toastOut   { to   { opacity: 0; transform: translateY(-12px); } }
+@keyframes toastTimer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .toast, .toast.is-leaving { animation: none; }
+}
+
+/* Inline (static) notices that sit inside a page, e.g. the admin-account warning.
+   Same fixed colors as the toasts. */
 .alert {
   padding: 0.75rem 1rem;
   border-radius: var(--radius-sm);
@@ -298,12 +374,13 @@ body {
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
-  animation: slideIn 0.2s ease;
+  color: #fff;
 }
-@keyframes slideIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:none; } }
-.alert-success { background: rgba(var(--accent2-rgb),0.1); border: 1px solid rgba(var(--accent2-rgb),0.3); color: var(--accent2); }
-.alert-error { background: rgba(247,95,95,0.1); border: 1px solid rgba(247,95,95,0.3); color: var(--danger); }
-.alert-info { background: rgba(var(--accent-rgb),0.1); border: 1px solid rgba(var(--accent-rgb),0.3); color: var(--accent); }
+.alert .icon { color: #fff; }
+.alert-success { background: var(--status-success); }
+.alert-error   { background: var(--status-error); }
+.alert-warning { background: var(--status-warning); }
+.alert-info    { background: var(--status-info); }
 
 /* ── CARDS ── */
 .card {
@@ -1296,11 +1373,6 @@ div[style*="display: flex"][style*="gap"] .stat-card {
     padding: 1rem;
   }
 
-  /* Alerts */
-  .alerts {
-    padding: 0 1rem;
-  }
-
   /* ── All tables: horizontally scrollable ── */
   .table-wrap {
     overflow-x: auto !important;
@@ -1687,10 +1759,6 @@ thead th:last-child { border-top-right-radius: 8px; }
 /* Choices (exam taking) */
 .choice-item:hover { background: rgba(var(--accent-rgb), 0.06); }
 .choice-item.selected { background: rgba(var(--accent-rgb), 0.12); box-shadow: 0 0 0 1px var(--accent) inset; }
-
-/* Alerts */
-.alert-info { background: rgba(var(--accent-rgb), 0.10); border-color: rgba(var(--accent-rgb), 0.30); color: var(--accent); }
-.alert-success { border-left: 4px solid var(--accent2); }
 
 /* Progress */
 .progress-fill.blue { background: linear-gradient(90deg, var(--accent), var(--accent2)); }

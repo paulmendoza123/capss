@@ -50,13 +50,31 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.menu-open').forEach(c => c.classList.remove('menu-open'));
   });
 
-  // Auto-dismiss alerts after 4s
-  document.querySelectorAll('.alert').forEach(alert => {
-    setTimeout(() => {
-      alert.style.transition = 'opacity 0.4s';
-      alert.style.opacity = '0';
-      setTimeout(() => alert.remove(), 400);
-    }, 4000);
+  // Floating status toasts: auto-dismiss (5s; 7s for errors/warnings so they can be read),
+  // pause while hovered, and can be closed early with the x button.
+  document.querySelectorAll('.toast').forEach(toast => {
+    const long = toast.classList.contains('toast-error') || toast.classList.contains('toast-warning');
+    const total = long ? 7000 : 5000;
+    let left = total, startedAt = 0, timer = null;
+    toast.style.setProperty('--toast-ms', total + 'ms');
+
+    function close() {
+      clearTimeout(timer);
+      if (toast.classList.contains('is-leaving')) return;
+      toast.classList.add('is-leaving');
+      setTimeout(() => toast.remove(), 250);
+    }
+    function start() { startedAt = Date.now(); timer = setTimeout(close, left); }
+
+    toast.addEventListener('mouseenter', () => {
+      clearTimeout(timer);
+      left = Math.max(left - (Date.now() - startedAt), 1500);
+      toast.classList.add('paused');
+    });
+    toast.addEventListener('mouseleave', () => { toast.classList.remove('paused'); start(); });
+    const x = toast.querySelector('.toast-close');
+    if (x) x.addEventListener('click', close);
+    start();
   });
 
   // Tab switching — scoped to sibling tab-contents only
