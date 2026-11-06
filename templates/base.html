@@ -13,6 +13,9 @@
       if (saved === 'dark') {
         document.documentElement.setAttribute('data-theme', 'dark');
       }
+      if (localStorage.getItem('spark-sidebar') === 'collapsed') {
+        document.documentElement.classList.add('sidebar-collapsed');
+      }
     })();
   </script>
   <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -194,6 +197,12 @@
     </div>
   </aside>
 
+  <!-- Minimize / expand sidebar (desktop) -->
+  <button type="button" class="sidebar-collapse-btn" id="sidebar-collapse-btn" onclick="toggleSidebarCollapse()"
+          aria-label="Minimize sidebar" title="Minimize sidebar">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+  </button>
+
   <!-- Sidebar overlay for mobile -->
   <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
 
@@ -245,6 +254,26 @@ function toggleSidebar() {
   document.querySelector('.sidebar')?.classList.toggle('sidebar-open');
   document.getElementById('sidebar-overlay')?.classList.toggle('active');
 }
+function toggleSidebarCollapse() {
+  var collapsed = document.documentElement.classList.toggle('sidebar-collapsed');
+  try { localStorage.setItem('spark-sidebar', collapsed ? 'collapsed' : 'expanded'); } catch (e) {}
+  syncSidebarCollapse();
+}
+function syncSidebarCollapse() {
+  var collapsed = document.documentElement.classList.contains('sidebar-collapsed');
+  var btn = document.getElementById('sidebar-collapse-btn');
+  if (btn) {
+    var label = collapsed ? 'Expand sidebar' : 'Minimize sidebar';
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+  }
+  // When only icons are visible, show each item's name as a tooltip
+  document.querySelectorAll('.sidebar .nav-item, .sidebar .logout-btn').forEach(function (a) {
+    if (collapsed) a.title = a.textContent.replace(/\s+/g, ' ').trim();
+    else a.removeAttribute('title');
+  });
+}
+document.addEventListener('DOMContentLoaded', syncSidebarCollapse);
 function closeSidebar() {
   document.querySelector('.sidebar')?.classList.remove('sidebar-open');
   document.getElementById('sidebar-overlay')?.classList.remove('active');

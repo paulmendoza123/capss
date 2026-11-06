@@ -3121,3 +3121,55 @@ html[data-theme="dark"] .question-code .fib-blank-input.form-control:focus {
   background: #ffffff;
   box-shadow: 0 0 0 3px rgba(168, 181, 150, 0.55);
 }
+
+/* ── Minimizable sidebar (desktop): collapses to an icon rail so pages get more room ── */
+.sidebar-collapse-btn { display: none; }
+
+@media (min-width: 769px) {
+  .sidebar { overflow-x: hidden; transition: width 0.2s ease; }
+  .main-content { transition: margin-left 0.2s ease; }
+
+  .sidebar-collapse-btn {
+    display: flex; align-items: center; justify-content: center;
+    position: fixed; top: 74px; left: calc(var(--sidebar-w) - 14px);
+    width: 28px; height: 28px; padding: 0;
+    border-radius: 50%;
+    background: var(--bg2); color: var(--text);
+    border: 1px solid var(--border2);
+    box-shadow: var(--shadow);
+    cursor: pointer; z-index: 101;
+    transition: left 0.2s ease, background 0.15s ease;
+  }
+  .sidebar-collapse-btn:hover { background: var(--bg3); }
+  .sidebar-collapse-btn svg { transition: transform 0.2s ease; }
+
+  html.sidebar-collapsed { --sidebar-w: 76px; }
+  html.sidebar-collapsed .sidebar-collapse-btn svg { transform: rotate(180deg); }
+
+  /* Header: just the logo mark */
+  html.sidebar-collapsed .sidebar-logo { padding: 1.5rem 0; justify-content: center; }
+  html.sidebar-collapsed .sidebar-logo > div:not(.logo-icon),
+  html.sidebar-collapsed .sidebar-logo .theme-toggle-btn,
+  html.sidebar-collapsed .accent-picker,
+  html.sidebar-collapsed .sidebar-user,
+  html.sidebar-collapsed .sidebar-legal { display: none !important; }
+
+  /* Section labels become thin dividers */
+  html.sidebar-collapsed .nav-section-label {
+    font-size: 0; padding: 0; margin: 0.6rem 1.1rem;
+    border-top: 1px solid rgba(255,255,255,0.18);
+  }
+
+  /* Nav items: icon only (the text is a bare text node, so zero the font size) */
+  html.sidebar-collapsed .nav-item,
+  html.sidebar-collapsed .sidebar-footer a.logout-btn {
+    font-size: 0; gap: 0; justify-content: center;
+    padding: 0.7rem 0; margin-right: 0;
+  }
+  html.sidebar-collapsed .nav-item .nav-icon,
+  html.sidebar-collapsed .sidebar-footer a.logout-btn .nav-icon { font-size: 1.05rem; width: auto; }
+  html.sidebar-collapsed .nav-item > :not(.nav-icon) { display: none; }
+
+  /* Let the page use the freed-up width */
+  html.sidebar-collapsed .page-body { max-width: none; }
+}
