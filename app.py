@@ -6809,50 +6809,76 @@ def admin_classes():
     classes = conn.execute("""
         SELECT c.*, u.full_name as teacher_name,
                sem.school_year AS sem_year, sem.term AS sem_term, sem.status AS sem_status,
-               COUNT(DISTINCT ce.student_id) as enrollment_count
+               (SELECT COUNT(*) FROM class_enrollments ce WHERE ce.class_id = c.id) as enrollment_count,
+               (SELECT COUNT(*) FROM exams e WHERE e.class_id = c.id) as exam_count
         FROM classes c JOIN users u ON c.teacher_id = u.id
         LEFT JOIN semesters sem ON c.semester_id = sem.id
-        LEFT JOIN class_enrollments ce ON c.id = ce.class_id
-        GROUP BY c.id ORDER BY c.is_active DESC, c.subject_name
+        ORDER BY c.is_active DESC, c.subject_name
     """).fetchall()
-    semesters = conn.execute('SELECT * FROM semesters ORDER BY school_year DESC, term DESC').fetchall()
-    unassigned = sum(1 for c in classes if c['semester_id'] is None)
-    return render_template('admin/classes.html', classes=classes, semesters=semesters, unassigned=unassigned)
+    return render_template('admin/classes.html', classes=classes)
 
-# ── Edit Class ──
-@app.route('/admin/classes/edit/<int:class_id>', methods=['GET', 'POST'])
+# ── View Class (read-only) ──
+@app.route('/admin/classes/<int:class_id>')
 @role_required('admin')
-def admin_edit_class(class_id):
+def admin_class_detail(class_id):
     conn = get_db()
-    cls = conn.execute('SELECT * FROM classes WHERE id=?', (class_id,)).fetchone()
+    cls = conn.execute("""
+        SELECT c.*, u.full_name AS teacher_name, u.email AS teacher_email,
+               sem.school_year AS sem_year, sem.term AS sem_term, sem.status AS sem_status,
+               (SELECT GROUP_CONCAT(o.schedule, ';') FROM subject_offerings o
+                  WHERE o.subject_id = c.subject_id AND o.semester_id = c.semester_id
+                    AND o.teacher_id = c.teacher_id AND COALESCE(o.schedule, '') <> ''
+                    AND (COALESCE(o.block_name, '') = '' OR o.block_name = c.block_name)) AS schedule
+        FROM classes c JOIN users u ON c.teacher_id = u.id
+        LEFT JOIN semesters sem ON c.semester_id = sem.id
+        WHERE c.id=?
+    """, (class_id,)).fetchone()
     if not cls:
         flash('Class not found.', 'error')
         return redirect(url_for('admin_classes'))
-    teachers = conn.execute("SELECT id, full_name, email FROM users WHERE role='teacher' ORDER BY full_name").fetchall()
     enrolled = conn.execute("""
         SELECT u.full_name, u.email, u.program, u.year_level
         FROM class_enrollments ce JOIN users u ON ce.student_id = u.id
         WHERE ce.class_id=? ORDER BY u.full_name
     """, (class_id,)).fetchall()
-    if request.method == 'POST':
-        subject_name = request.form.get('subject_name', '').strip()
-        block_name = request.form.get('block_name', '').strip()
-        teacher_id = request.form.get('teacher_id', type=int)
-        is_active = request.form.get('is_active', type=int)
-        semester_id = request.form.get('semester_id', type=int)
-        if semester_id and not conn.execute('SELECT 1 FROM semesters WHERE id=?', (semester_id,)).fetchone():
-            semester_id = None
-        if subject_name and block_name and teacher_id is not None:
-            conn.execute("""
-                UPDATE classes SET subject_name=?, block_name=?, teacher_id=?, is_active=?, semester_id=? WHERE id=?
-            """, (subject_name, block_name, teacher_id, is_active, semester_id, class_id))
-            conn.commit()
-            flash('Class updated successfully!', 'success')
-            return redirect(url_for('admin_classes'))
-        else:
-            flash('Please fill in all fields.', 'error')
-    semesters = conn.execute('SELECT * FROM semesters ORDER BY school_year DESC, term DESC').fetchall()
-    return render_template('admin/edit_class.html', cls=cls, teachers=teachers, enrolled=enrolled, semesters=semesters)
+    exams = conn.execute("""
+        SELECT e.id, e.title, e.status, e.scheduled_at, e.duration_minutes,
+               (SELECT COUNT(*) FROM questions q JOIN sections s ON q.section_id = s.id WHERE s.exam_id = e.id) AS question_count
+        FROM exams e WHERE e.class_id=? ORDER BY e.created_at DESC
+    """, (class_id,)).fetchall()
+    teachers = conn.execute(
+        "SELECT id, full_name, email FROM users WHERE role='teacher' AND id<>? ORDER BY full_name",
+        (cls['teacher_id'],)).fetchall()
+    return render_template('admin/class_detail.html', cls=cls, enrolled=enrolled, exams=exams, teachers=teachers)
+
+
+# ── Reassign class to another teacher ──
+@app.route('/admin/classes/<int:class_id>/reassign', methods=['POST'])
+@role_required('admin')
+def admin_reassign_class(class_id):
+    """Hand a class over to another teacher. Students and exams belong to the
+    class itself, so they move with it. The curriculum assignment (who teaches
+    the subject/block and its schedule) is moved too so the schedule keeps showing."""
+    conn = get_db()
+    cls = conn.execute('SELECT * FROM classes WHERE id=?', (class_id,)).fetchone()
+    if not cls:
+        flash('Class not found.', 'error')
+        return redirect(url_for('admin_classes'))
+    new_id = request.form.get('teacher_id', type=int)
+    teacher = conn.execute("SELECT id, full_name FROM users WHERE id=? AND role='teacher'", (new_id,)).fetchone() if new_id else None
+    if not teacher:
+        flash('Please choose a teacher.', 'error')
+    elif teacher['id'] == cls['teacher_id']:
+        flash('That teacher is already assigned to this class.', 'info')
+    else:
+        conn.execute('UPDATE classes SET teacher_id=? WHERE id=?', (teacher['id'], class_id))
+        if cls['subject_id'] and cls['semester_id']:
+            conn.execute("""UPDATE subject_offerings SET teacher_id=?
+                             WHERE subject_id=? AND semester_id=? AND teacher_id=? AND block_name=?""",
+                         (teacher['id'], cls['subject_id'], cls['semester_id'], cls['teacher_id'], cls['block_name']))
+        conn.commit()
+        flash(f"Class reassigned to {teacher['full_name']}. Its students and exams moved with it.", 'success')
+    return redirect(url_for('admin_class_detail', class_id=class_id))
 
 # ── Curriculum: semesters, subjects (prospectus), offerings ─────────────────
 YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year']
@@ -7375,20 +7401,6 @@ def admin_clear_offering(subject_id):
         flash(f'Removed {n} assignment(s).' if n else 'Nothing to remove.', 'success' if n else 'info')
     return redirect(url_for('admin_offerings', semester_id=sem['id'] if sem else None,
                             program=request.form.get('program', ''), year_level=request.form.get('year_level', '')))
-
-
-@app.route('/admin/classes/assign-semester', methods=['POST'])
-@role_required('admin')
-def admin_assign_semester():
-    conn = get_db()
-    sid = request.form.get('semester_id', type=int)
-    if not sid or not conn.execute('SELECT 1 FROM semesters WHERE id=?', (sid,)).fetchone():
-        flash('Choose a semester first.', 'error')
-    else:
-        cur = conn.execute('UPDATE classes SET semester_id=? WHERE semester_id IS NULL', (sid,))
-        conn.commit()
-        flash(f'{cur.rowcount} class(es) assigned to the semester.', 'success')
-    return redirect(url_for('admin_classes'))
 
 
 # ── Admin table exports (CSV) ──

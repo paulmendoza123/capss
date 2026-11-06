@@ -155,7 +155,7 @@
       <a href="{{ url_for('admin_programs') }}" class="nav-item {% if request.endpoint == 'admin_programs' %}active{% endif %}">
         <span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-school"/></svg></span> Programs
       </a>
-      <a href="{{ url_for('admin_classes') }}" class="nav-item {% if request.endpoint in ['admin_classes','admin_edit_class'] %}active{% endif %}">
+      <a href="{{ url_for('admin_classes') }}" class="nav-item {% if request.endpoint in ['admin_classes','admin_class_detail'] %}active{% endif %}">
         <span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></span> Classes
       </a>
       <a href="{{ url_for('admin_semesters') }}" class="nav-item {% if request.endpoint in ['admin_semesters','admin_subjects','admin_edit_subject','admin_offerings'] %}active{% endif %}">

@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% block title %}{{ cls.subject_name }} · Class{% endblock %}
+{% block content %}
+<style>
+  .static-field { cursor: default; user-select: none; -webkit-user-select: none; pointer-events: none; }
+</style>
+<div class="page-header">
+  <div class="page-title">Class Details</div>
+  <a href="{{ url_for('admin_classes') }}" class="btn btn-ghost">← Back</a>
+</div>
+
+<div class="cards-grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-items:start">
+
+  <!-- Left: class info (read-only) -->
+  <div class="card">
+    <div class="card-title mb-2">Class Details</div>
+    <div class="form-group">
+      <div class="form-label">Class Code</div>
+      <div class="font-mono fw-600" style="color:var(--accent)">{{ cls.class_code }}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Subject Name</label>
+      <div class="form-control static-field">{{ cls.subject_name }}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Block Name</label>
+      <div class="form-control static-field">{{ cls.block_name }}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Assigned Teacher</label>
+      <div class="form-control static-field">{{ cls.teacher_name }} ({{ cls.teacher_email }})</div>
+      {% if teachers %}
+      <button type="button" class="btn btn-ghost btn-sm mt-1" onclick="document.getElementById('reassign-modal').classList.add('open')">Reassign teacher</button>
+      {% endif %}
+    </div>
+    <div class="form-group">
+      <label class="form-label">Semester</label>
+      <div class="form-control static-field">{% if cls.sem_term %}S.Y. {{ cls.sem_year }} · {{ cls.sem_term }}{% if cls.sem_status == 'ended' %} (Ended){% endif %}{% else %}No semester{% endif %}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Schedule (Day &amp; Time)</label>
+      <div class="form-control static-field">{{ cls.schedule or 'No schedule assigned yet' }}</div>
+    </div>
+  </div>
+
+  <!-- Middle: exams / quizzes made by the teacher -->
+  <div class="card">
+    <div class="card-title mb-2">Exams &amp; Quizzes ({{ exams|length }})</div>
+    {% if exams %}
+      {% for e in exams %}
+      <div class="flex items-center justify-between" style="padding:0.5rem 0;border-bottom:1px solid var(--border);gap:0.75rem">
+        <div>
+          <div class="fw-600 text-sm">{{ e.title }}</div>
+          <div class="text-xs text-muted">{{ e.question_count }} question{{ '' if e.question_count == 1 else 's' }} · {{ e.duration_minutes }} min{% if e.scheduled_at %} · {{ e.scheduled_at }}{% endif %}</div>
+        </div>
+        <span class="badge {{ 'badge-green' if e.status == 'active' else 'badge-gray' }}">{{ e.status|capitalize }}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="text-muted text-sm">No exams or quizzes yet.</div>
+    {% endif %}
+  </div>
+
+  <!-- Right: enrolled students -->
+  <div class="card">
+    <div class="card-title mb-2">Enrolled Students ({{ enrolled|length }})</div>
+    {% if enrolled %}
+      {% for s in enrolled %}
+      <div class="flex items-center justify-between" style="padding:0.5rem 0;border-bottom:1px solid var(--border);gap:0.75rem">
+        <div>
+          <div class="fw-600 text-sm">{{ s.full_name }}</div>
+          <div class="text-xs text-muted font-mono">{{ s.email }}</div>
+        </div>
+        <div class="text-xs text-muted">{{ s.program or '—' }} · {{ s.year_level or '—' }}</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="text-muted text-sm">No students enrolled yet.</div>
+    {% endif %}
+  </div>
+
+</div>
+
+{% if teachers %}
+<div class="modal-overlay" id="reassign-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal">
+    <div class="modal-title">Reassign class to another teacher</div>
+    <form method="POST" action="{{ url_for('admin_reassign_class', class_id=cls.id) }}"
+          data-confirm="Reassign this class to the selected teacher? The new teacher will get the class, all of its exams/quizzes and its students.">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="text-sm text-muted mb-2">
+        {{ cls.subject_name }} · Block {{ cls.block_name }}<br>Currently: {{ cls.teacher_name }}
+      </div>
+      <div class="form-group">
+        <label class="form-label">New Teacher</label>
+        <select name="teacher_id" class="form-select" required>
+          <option value="" disabled selected>Select a teacher…</option>
+          {% for t in teachers %}
+          <option value="{{ t.id }}">{{ t.full_name }} ({{ t.email }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('reassign-modal').classList.remove('open')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Reassign</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

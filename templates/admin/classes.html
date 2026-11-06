@@ -11,20 +11,6 @@
   </div>
 </div>
 
-{% if unassigned and semesters %}
-<div class="card mb-2">
-  <form method="POST" action="{{ url_for('admin_assign_semester') }}" class="flex gap-2" style="flex-wrap:wrap;align-items:center"
-        data-confirm="Assign all classes that have no semester to the selected semester?">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <span class="text-sm"><strong>{{ unassigned }}</strong> class(es) have no semester.</span>
-    <select name="semester_id" class="form-select" style="width:auto;min-width:220px" required>
-      {% for s in semesters %}<option value="{{ s.id }}">S.Y. {{ s.school_year }} · {{ s.term }}</option>{% endfor %}
-    </select>
-    <button type="submit" class="btn btn-ghost btn-sm">Assign to this semester</button>
-  </form>
-</div>
-{% endif %}
-
 {% if classes %}
 <!-- Search & Filter -->
 <div class="card mb-2">
@@ -62,8 +48,9 @@
           <th>Semester</th>
           <th>Teacher</th>
           <th>Students</th>
+          <th>Exams</th>
           <th>Status</th>
-          <th>Actions</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -76,6 +63,7 @@
           <td class="text-sm">{% if c.sem_term %}{{ c.sem_term }}<div class="text-xs text-muted">S.Y. {{ c.sem_year }}</div>{% else %}<span class="text-muted">No semester</span>{% endif %}</td>
           <td class="text-sm">{{ c.teacher_name }}</td>
           <td class="font-mono text-sm">{{ c.enrollment_count }}</td>
+          <td class="font-mono text-sm">{{ c.exam_count }}</td>
           <td>
             {% if c.sem_status == 'active' %}
               <span class="badge badge-green">Active</span>
@@ -89,7 +77,7 @@
           </td>
           <td>
             <div class="flex gap-1">
-              <a href="{{ url_for('admin_edit_class', class_id=c.id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-pencil"/></svg> Edit</a>
+              <a href="{{ url_for('admin_class_detail', class_id=c.id) }}" class="btn btn-ghost btn-sm">View</a>
             </div>
           </td>
         </tr>
