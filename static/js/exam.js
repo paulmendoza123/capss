@@ -167,14 +167,60 @@
   document.addEventListener('contextmenu', e => e.preventDefault());
   document.addEventListener('copy', e => e.preventDefault());
   document.addEventListener('cut', e => e.preventDefault());
+
+  // ── NO PASTING — answers must be typed. Covers Ctrl/Cmd+V, Shift+Insert,
+  // right-click > Paste (the context menu is blocked too), the browser Edit menu,
+  // middle-click paste on Linux, and dragging text into an answer box.
+  let _pasteNoticeTimer = null;
+  function showPasteNotice() {
+    if (terminated) return;
+    let el = document.getElementById('paste-blocked-notice');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'paste-blocked-notice';
+      el.style.cssText = [
+        'position:fixed', 'bottom:3.75rem', 'right:1.25rem', 'z-index:9998',
+        'padding:0.4rem 0.85rem', 'border-radius:6px', 'font-size:0.8rem',
+        'font-weight:600', 'pointer-events:none', 'transition:opacity 0.3s ease',
+        'background:rgba(247,95,95,0.15)', 'border:1px solid rgba(247,95,95,0.35)',
+        'color:#f75f5f'
+      ].join(';');
+      el.textContent = 'Pasting is disabled during the exam.';
+      document.body.appendChild(el);
+    }
+    el.style.opacity = '1';
+    clearTimeout(_pasteNoticeTimer);
+    _pasteNoticeTimer = setTimeout(() => { el.style.opacity = '0'; }, 2000);
+  }
+  function blockPaste(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    showPasteNotice();
+  }
+  // Capture phase so nothing else on the page can handle the event first
+  document.addEventListener('paste', blockPaste, true);
+  document.addEventListener('drop', blockPaste, true);
+  document.addEventListener('dragover', e => e.preventDefault(), true);
+  // Safety net for any insertion that slips past the events above (e.g. some
+  // mobile keyboards / the browser Edit menu)
+  document.addEventListener('beforeinput', e => {
+    if (e.inputType === 'insertFromPaste' || e.inputType === 'insertFromPasteAsQuotation' ||
+        e.inputType === 'insertFromDrop' || e.inputType === 'insertFromYank') {
+      blockPaste(e);
+    }
+  }, true);
   document.addEventListener('selectstart', e => {
     // Allow selection inside textareas (short answer) but block question text
     if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
     e.preventDefault();
   });
   document.addEventListener('keydown', e => {
+    const key = (e.key || '').toLowerCase();
+    const pasteKey = ((e.ctrlKey || e.metaKey) && key === 'v') ||   // Ctrl/Cmd+V (and Ctrl+Shift+V)
+                     (e.shiftKey && e.key === 'Insert');            // Shift+Insert
+    if (pasteKey) { blockPaste(e); return; }
     const blocked = (
-      (e.ctrlKey || e.metaKey) && ['c','x','u','s','p','a'].includes(e.key.toLowerCase())
+      (e.ctrlKey || e.metaKey) && ['c','x','u','s','p','a'].includes(key)
     ) || e.key === 'F12' || (e.ctrlKey && e.shiftKey && ['i','j','c'].includes(e.key.toLowerCase()));
     if (blocked) { e.preventDefault(); e.stopPropagation(); }
   });
