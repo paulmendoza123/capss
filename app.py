@@ -9,6 +9,7 @@ import string
 import json
 import re
 import io
+import shutil
 from functools import wraps
 from datetime import datetime, timedelta
 import threading
@@ -5759,6 +5760,40 @@ def teacher_profile():
 
 # ─── Admin Routes ─────────────────────────────────────────────────────────────
 
+def _human_size(num_bytes):
+    """1536 -> '1.5 KB', 3221225472 -> '3.00 GB'."""
+    n = float(num_bytes)
+    for unit in ('B', 'KB', 'MB', 'GB'):
+        if n < 1024 or unit == 'GB':
+            return f'{int(n)} B' if unit == 'B' else (f'{n:.1f} {unit}' if unit == 'KB' else f'{n:.2f} {unit}')
+        n /= 1024
+
+
+def _storage_info():
+    """Disk usage of the drive the app (and its database) lives on — on the
+    Raspberry Pi that is the SD card. Returns None if it can't be read."""
+    try:
+        usage = shutil.disk_usage(os.path.dirname(DB_PATH))
+        # Same formula as `df` (Use%): used / (used + available), so it matches the Pi's terminal
+        denom = usage.used + usage.free
+        percent = round(usage.used / denom * 100, 1) if denom else 0
+        try:
+            db_bytes = os.path.getsize(DB_PATH)
+        except OSError:
+            db_bytes = 0
+        return {
+            'total_h': _human_size(usage.total),
+            'used_h': _human_size(usage.used),
+            'free_h': _human_size(usage.free),
+            'db_h': _human_size(db_bytes),
+            'percent': percent,
+            # 'ok' < 80%, 'warn' 80-89%, 'danger' 90%+
+            'level': 'danger' if percent >= 90 else ('warn' if percent >= 80 else 'ok'),
+        }
+    except Exception:
+        return None
+
+
 @app.route('/admin')
 @role_required('admin')
 def admin_home():
@@ -5804,7 +5839,8 @@ def admin_home():
         recent_logins=recent_logins,
         active_exams=active_exams,
         admin_name=admin_name,
-        recent_users=recent_users
+        recent_users=recent_users,
+        storage=_storage_info()
     )
 
 @app.route('/admin/users')

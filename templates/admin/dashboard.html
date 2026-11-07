@@ -54,6 +54,33 @@
   </div>
 </div>
 
+<!-- Storage (Raspberry Pi SD card) -->
+<div class="card mb-3">
+  <div class="card-title mb-2">Storage</div>
+  {% if storage %}
+  {% set bar_color = 'var(--danger, #e5484d)' if storage.level == 'danger' else ('var(--warning, #f59e0b)' if storage.level == 'warn' else 'var(--accent2)') %}
+  <div class="flex items-center justify-between mb-1">
+    <span class="text-sm">{{ storage.used_h }} used of {{ storage.total_h }}</span>
+    <span class="fw-600" style="color:{{ bar_color }}">{{ storage.percent }}%</span>
+  </div>
+  <div role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ storage.percent }}"
+       style="height:10px;background:var(--bg3);border-radius:999px;overflow:hidden">
+    <div style="height:100%;width:{{ storage.percent }}%;background:{{ bar_color }};border-radius:999px"></div>
+  </div>
+  <div class="flex gap-3 mt-2" style="flex-wrap:wrap">
+    <div class="text-sm"><span class="text-muted">Free:</span> <span class="fw-600">{{ storage.free_h }}</span></div>
+    <div class="text-sm"><span class="text-muted">Database:</span> <span class="fw-600">{{ storage.db_h }}</span></div>
+  </div>
+  {% if storage.level == 'danger' %}
+  <div class="text-sm mt-2" style="color:var(--danger, #e5484d)">Storage is almost full. Free up space (old backups, exports) before it runs out.</div>
+  {% elif storage.level == 'warn' %}
+  <div class="text-sm mt-2" style="color:var(--warning, #b45309)">Storage is getting full. Consider cleaning up old backups or exports.</div>
+  {% endif %}
+  {% else %}
+  <div class="text-sm text-muted">Storage information is not available on this device.</div>
+  {% endif %}
+</div>
+
 <style>
   /* Exam Status, Exam Types and Recent Users sit side by side in one row. */
   @media (min-width: 900px) {
