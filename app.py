@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 import threading
 import time
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font, Alignment, PatternFill
+from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf import CSRFProtect
@@ -100,7 +100,6 @@ def _err_500(_e):
     return _render_error(500)
 
 
-_PW_ALPHABET = string.ascii_letters + string.digits
 INSTANCE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
 
 
@@ -415,6 +414,15 @@ def load_json_or_none(raw):
         return json.loads(raw) if raw else None
     except Exception:
         return None
+
+
+def load_rubric(conn, question_id):
+    """Rubric criteria (text + max points) for one essay question, in order."""
+    rows = conn.execute(
+        'SELECT * FROM rubric_criteria WHERE question_id=? ORDER BY order_index, id',
+        (question_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def review_choices(conn, exam, exam_sess, q):
@@ -2526,52 +2534,6 @@ def student_verify_exam_code():
     return jsonify({'ok': True})
 
 
-@app.route('/student/exam/join', methods=['GET', 'POST'])
-@role_required('student')
-@limiter.limit('20 per minute')
-def student_join_exam_by_code():
-    if request.method == 'POST':
-        code = request.form.get('exam_code', '').strip().upper()
-        if not code:
-            flash('Please enter an exam code.', 'error')
-            return redirect(url_for('student_join_exam_by_code'))
-        conn = get_db()
-        exam = conn.execute(
-            'SELECT * FROM exams WHERE UPPER(exam_code)=?', (code,)
-        ).fetchone()
-        if not exam:
-            flash('Invalid exam code. Please check and try again.', 'error')
-            return redirect(url_for('student_join_exam_by_code'))
-        # Check student is enrolled in the exam's class
-        enrolled = conn.execute(
-            'SELECT 1 FROM class_enrollments WHERE class_id=? AND student_id=?',
-            (exam['class_id'], session['user_id'])
-        ).fetchone()
-        if not enrolled:
-            flash('You are not enrolled in the class for this exam.', 'error')
-            return redirect(url_for('student_join_exam_by_code'))
-        if exam['status'] != 'active':
-            status_msg = {
-                'upcoming': 'This exam has not opened yet.',
-                'completed': 'This exam has already closed.'
-            }.get(exam['status'], 'This exam is not currently active.')
-            flash(status_msg, 'error')
-            return redirect(url_for('student_join_exam_by_code'))
-        # Check if already submitted/terminated
-        existing = conn.execute(
-            'SELECT * FROM exam_sessions WHERE exam_id=? AND student_id=?',
-            (exam['id'], session['user_id'])
-        ).fetchone()
-        if existing and existing['status'] in ('submitted', 'terminated'):
-            return redirect(url_for('student_exam_result', exam_id=exam['id']))
-        # Carry the code through as a query param: student_take_exam re-validates
-        # it on GET for any brand-new session, so forgetting it here would bounce
-        # the student straight back out with "Incorrect exam code" even though
-        # they just entered the right one.
-        return redirect(url_for('student_take_exam', exam_id=exam['id'], code=exam['exam_code']))
-    return render_template('student/join_exam_by_code.html')
-
-
 @app.route('/student/exams')
 @role_required('student')
 def student_exams():
@@ -2787,6 +2749,8 @@ def student_take_exam(exam_id):
                     q['choices'] = []
                 if q['question_type'] == 'fill_blank':
                     q['text_parts'] = fib_split_text(q['question_text'])
+                if q['question_type'] == 'essay':
+                    q['rubric_criteria'] = load_rubric(conn, q['id'])
                 all_questions.append(q)
             sections_data.append({'title': sec['title'], 'description': sec['description'], 'questions': q_list})
     else:
@@ -2807,6 +2771,8 @@ def student_take_exam(exam_id):
                 q['choices'] = []
             if q['question_type'] == 'fill_blank':
                 q['text_parts'] = fib_split_text(q['question_text'])
+            if q['question_type'] == 'essay':
+                q['rubric_criteria'] = load_rubric(conn, q['id'])
             all_questions.append(q)
         sections_data.append({'title': None, 'description': None, 'questions': q_list})
 
@@ -2946,6 +2912,15 @@ def student_exam_result(exam_id):
                 qd['is_graded'] = bool(ans and ans['manual_score'] is not None)
                 qd['manual_score'] = ans['manual_score'] if ans else None
                 qd['feedback'] = ans['feedback'] if ans else ''
+                qd['rubric_criteria'] = load_rubric(conn, q['id'])
+                # Per-criterion marks, shown only once the teacher has graded this answer
+                qd['rubric_scores'] = {}
+                if ans and ans['manual_score'] is not None:
+                    qd['rubric_scores'] = {
+                        r['criterion_id']: r['score'] for r in conn.execute(
+                            'SELECT criterion_id, score FROM rubric_scores WHERE answer_id=?', (ans['id'],)
+                        ).fetchall()
+                    }
                 is_correct = None  # not applicable for essay — shown as graded/pending instead
             else:
                 # Same grader as submit-time scoring, so the review always
@@ -3951,6 +3926,8 @@ def teacher_exam_preview(exam_id):
                 qd['choices'] = []
             if qd['question_type'] == 'fill_blank':
                 qd['text_parts'] = fib_split_text(qd['question_text'])
+            if qd['question_type'] == 'essay':
+                qd['rubric_criteria'] = load_rubric(conn, qd['id'])
             out.append(qd)
         return out
 
@@ -4330,254 +4307,6 @@ def teacher_grade_essay(exam_id, student_id, question_id):
 
     flash('Grade saved.', 'success')
     return redirect(url_for('teacher_view_student_result', exam_id=exam_id, student_id=student_id) + f'#q-{question_id}')
-
-
-def _safe_sheet_title(base, used_titles):
-    """Excel sheet titles must be <=31 chars and unique within the workbook."""
-    base = re.sub(r'[\\/*\[\]:?]', ' ', base).strip() or 'Question'
-    title = base[:31]
-    n = 2
-    while title in used_titles:
-        suffix = f' ({n})'
-        title = base[:31 - len(suffix)] + suffix
-        n += 1
-    used_titles.add(title)
-    return title
-
-
-@app.route('/teacher/exam/<int:exam_id>/essays/export')
-@role_required('teacher')
-def teacher_export_essays(exam_id):
-    """Exports every essay question's student answers to an .xlsx workbook —
-    one sheet per essay question — with blank/editable rubric-score columns
-    and a Feedback column, so a teacher can grade fully offline (no need to
-    stay connected to the Raspberry Pi) and re-upload it afterward."""
-    conn = get_db()
-    exam = conn.execute('''
-        SELECT e.*, c.teacher_id, c.subject_name, c.block_name FROM exams e JOIN classes c ON e.class_id = c.id WHERE e.id=?
-    ''', (exam_id,)).fetchone()
-    if not exam or int(exam['teacher_id']) != int(session['user_id']):
-        flash('Exam not found.', 'error')
-        return redirect(url_for('teacher_home'))
-
-    essay_questions = conn.execute('''
-        SELECT q.*, s.title as section_title FROM questions q
-        LEFT JOIN sections s ON q.section_id = s.id
-        WHERE q.exam_id=? AND q.question_type='essay'
-        ORDER BY s.order_index, q.order_index
-    ''', (exam_id,)).fetchall()
-
-    if not essay_questions:
-        flash('This exam has no essay questions to export.', 'error')
-        return redirect(url_for('teacher_exam_results', exam_id=exam_id))
-
-    wb = Workbook()
-    wb.remove(wb.active)
-    used_titles = set()
-
-    info_ws = wb.create_sheet('Instructions')
-    used_titles.add('Instructions')
-    info_lines = [
-        ['SPARK — Essay Grading Export'],
-        [f'Exam: {exam["title"]}'],
-        [f'Class: {exam["subject_name"]} · {exam["block_name"]}'],
-        [''],
-        ['How to use this file:'],
-        ['1. Each essay question has its own sheet (tab at the bottom).'],
-        ['2. Fill in a score for each rubric criterion column (do not exceed the "max" shown in the header).'],
-        ['3. You may also fill in the Feedback column — this will show to the student.'],
-        ['4. Do NOT edit or delete the "AnswerID" column — it is used to match each row back to the right student.'],
-        ['5. Do NOT rename the sheet tabs or add/remove columns.'],
-        ['6. Save the file, then upload it back on the "Import Graded Essays" button on the exam results page.'],
-        ['7. Rows left blank for a criterion will be scored as 0 for that criterion.'],
-    ]
-    for line in info_lines:
-        info_ws.append(line)
-    info_ws.column_dimensions['A'].width = 90
-    info_ws['A1'].font = Font(bold=True, size=14)
-
-    header_font = Font(bold=True, color='FFFFFF')
-    header_fill = PatternFill('solid', fgColor='4472C4')
-
-    for q in essay_questions:
-        criteria = conn.execute(
-            'SELECT * FROM rubric_criteria WHERE question_id=? ORDER BY order_index', (q['id'],)
-        ).fetchall()
-
-        label = q['question_text'][:25].strip() or f'Q{q["id"]}'
-        title = _safe_sheet_title(f'Q{q["order_index"] + 1 if q["order_index"] is not None else q["id"]} {label}', used_titles)
-        ws = wb.create_sheet(title)
-
-        headers = ['AnswerID (do not edit)', 'Student Name', 'Student Answer']
-        for crit in criteria:
-            headers.append(f'Score [C{crit["id"]}]: {crit["criterion_text"]} (max {crit["max_points"]:g})')
-        headers += ['Feedback', 'Status']
-        ws.append(headers)
-        for col_idx, _ in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col_idx)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(wrap_text=True, vertical='center')
-        ws.freeze_panes = 'D2'
-        ws.column_dimensions['A'].hidden = True
-        ws.column_dimensions['A'].width = 12
-        ws.column_dimensions['B'].width = 22
-        ws.column_dimensions['C'].width = 60
-        for i, crit in enumerate(criteria):
-            ws.column_dimensions[get_column_letter(4 + i)].width = 22
-        ws.column_dimensions[get_column_letter(4 + len(criteria))].width = 40
-        ws.column_dimensions[get_column_letter(5 + len(criteria))].width = 12
-
-        rows = conn.execute('''
-            SELECT a.id as answer_id, a.answer_text, a.manual_score, a.feedback
-            FROM answers a
-            JOIN exam_sessions es ON a.session_id = es.id
-            JOIN users u ON es.student_id = u.id
-            WHERE a.question_id=? AND es.status='submitted'
-            ORDER BY u.full_name
-        ''', (q['id'],)).fetchall()
-        # Join student name separately (SQLite column name collision safety)
-        names = conn.execute('''
-            SELECT a.id as answer_id, u.full_name
-            FROM answers a JOIN exam_sessions es ON a.session_id = es.id JOIN users u ON es.student_id = u.id
-            WHERE a.question_id=? AND es.status='submitted'
-        ''', (q['id'],)).fetchall()
-        name_by_answer = {r['answer_id']: r['full_name'] for r in names}
-
-        for r in rows:
-            existing_scores = {
-                sc['criterion_id']: sc['score'] for sc in
-                conn.execute('SELECT criterion_id, score FROM rubric_scores WHERE answer_id=?', (r['answer_id'],)).fetchall()
-            }
-            row_vals = [r['answer_id'], name_by_answer.get(r['answer_id'], ''), r['answer_text'] or '']
-            for crit in criteria:
-                row_vals.append(existing_scores.get(crit['id'], ''))
-            row_vals.append(r['feedback'] or '')
-            row_vals.append('Graded' if r['manual_score'] is not None else 'Pending')
-            ws.append(row_vals)
-            ws.cell(row=ws.max_row, column=3).alignment = Alignment(wrap_text=True, vertical='top')
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    safe_title = re.sub(r'[^A-Za-z0-9_-]+', '_', exam['title'])[:40] or 'exam'
-    filename = f'essays_{safe_title}_{exam_id}.xlsx'
-    return send_file(buf, as_attachment=True, download_name=filename,
-                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-
-
-@app.route('/teacher/exam/<int:exam_id>/essays/import', methods=['POST'])
-@role_required('teacher')
-def teacher_import_essays(exam_id):
-    """Accepts a filled-in essay export back, applies every rubric score and
-    feedback it contains, then recomputes the affected students' scores."""
-    conn = get_db()
-    exam = conn.execute('''
-        SELECT e.*, c.teacher_id FROM exams e JOIN classes c ON e.class_id = c.id WHERE e.id=?
-    ''', (exam_id,)).fetchone()
-    if not exam or int(exam['teacher_id']) != int(session['user_id']):
-        flash('Exam not found.', 'error')
-        return redirect(url_for('teacher_home'))
-
-    file = request.files.get('essay_file')
-    if not file or not file.filename:
-        flash('Please choose the filled-in Excel file to upload.', 'error')
-        return redirect(url_for('teacher_exam_results', exam_id=exam_id))
-    if _upload_too_large(file):
-        flash(f'File is too large. The maximum allowed size is {MAX_UPLOAD_MB} MB.', 'error')
-        return redirect(url_for('teacher_exam_results', exam_id=exam_id))
-    if not file.filename.lower().endswith('.xlsx'):
-        flash('Please upload the .xlsx file exported from this exam — other formats are not supported.', 'error')
-        return redirect(url_for('teacher_exam_results', exam_id=exam_id))
-
-    try:
-        wb = load_workbook(file, data_only=True)
-    except Exception:
-        flash('Could not read that file. Make sure it is the unmodified .xlsx file exported from this exam.', 'error')
-        return redirect(url_for('teacher_exam_results', exam_id=exam_id))
-
-    exam_essay_question_ids = {
-        row['id'] for row in conn.execute(
-            "SELECT id FROM questions WHERE exam_id=? AND question_type='essay'", (exam_id,)
-        ).fetchall()
-    }
-
-    graded_count = 0
-    affected_sessions = set()
-    skipped = []
-
-    for ws in wb.worksheets:
-        if ws.title.strip().lower() == 'instructions':
-            continue
-        header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
-        if not header_row:
-            continue
-
-        col_answer_id = None
-        col_feedback = None
-        col_criterion = {}
-        for idx, h in enumerate(header_row):
-            if not h:
-                continue
-            h = str(h)
-            if h.startswith('AnswerID'):
-                col_answer_id = idx
-            elif h.strip().lower() == 'feedback':
-                col_feedback = idx
-            else:
-                m = re.search(r'\[C(\d+)\]', h)
-                if m:
-                    col_criterion[idx] = int(m.group(1))
-
-        if col_answer_id is None:
-            skipped.append(f'Sheet "{ws.title}": missing the AnswerID column, skipped.')
-            continue
-
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if col_answer_id >= len(row) or row[col_answer_id] in (None, ''):
-                continue
-            try:
-                answer_id = int(row[col_answer_id])
-            except (TypeError, ValueError):
-                skipped.append(f'Sheet "{ws.title}": a row had an invalid AnswerID, skipped.')
-                continue
-
-            ans = conn.execute('SELECT * FROM answers WHERE id=?', (answer_id,)).fetchone()
-            if not ans or ans['question_id'] not in exam_essay_question_ids:
-                skipped.append(f'Sheet "{ws.title}": AnswerID {answer_id} does not belong to this exam, skipped.')
-                continue
-
-            criteria = conn.execute(
-                'SELECT * FROM rubric_criteria WHERE question_id=?', (ans['question_id'],)
-            ).fetchall()
-            criterion_scores = {}
-            for idx, crit_id in col_criterion.items():
-                if idx < len(row) and row[idx] not in (None, ''):
-                    criterion_scores[crit_id] = row[idx]
-            feedback = ''
-            if col_feedback is not None and col_feedback < len(row) and row[col_feedback]:
-                feedback = str(row[col_feedback]).strip()
-
-            apply_essay_grade(conn, answer_id, criteria, criterion_scores, feedback, session['user_id'])
-            graded_count += 1
-            affected_sessions.add(ans['session_id'])
-
-    conn.commit()
-
-    for sid in affected_sessions:
-        recompute_session_score(conn, exam_id, sid)
-    conn.commit()
-
-    if graded_count:
-        flash(f'Imported grades for {graded_count} essay answer(s) across {len(affected_sessions)} student submission(s).', 'success')
-    else:
-        flash('No gradable rows were found in that file.', 'error')
-    for s in skipped[:8]:
-        flash(s, 'error')
-    if len(skipped) > 8:
-        flash(f'...and {len(skipped) - 8} more row(s) skipped.', 'error')
-
-    return redirect(url_for('teacher_exam_results', exam_id=exam_id))
 
 
 @app.route('/teacher/exam/<int:exam_id>/toggle-status', methods=['POST'])
@@ -5267,18 +4996,6 @@ def teacher_my_exams():
         ORDER BY e.created_at DESC
     ''', (session['user_id'],)).fetchall()
     return render_template('teacher/my_exams.html', exams=exams)
-
-@app.route('/teacher/question-bank/groups', methods=['GET'])
-@role_required('teacher')
-def teacher_bank_groups():
-    conn = get_db()
-    groups = conn.execute('''
-        SELECT g.*, c.subject_name, c.block_name, c.year_level
-        FROM question_bank_groups g
-        LEFT JOIN classes c ON g.class_id = c.id
-        WHERE g.teacher_id=? ORDER BY g.name
-    ''', (session['user_id'],)).fetchall()
-    return jsonify([dict(g) for g in groups])
 
 @app.route('/teacher/question-bank/groups/create', methods=['POST'])
 @role_required('teacher')

@@ -45,17 +45,32 @@
     textarea.form-control { font-size: 0.95rem; }
     .section-announcement { font-size: 0.95rem; padding: 0.9rem; margin-bottom: 0.75rem; }
   }
+  @media (max-width: 480px) { .pv-back-long { display: none; } }
   .no-select { -webkit-user-select: none; user-select: none; }
 </style>
 {% endblock %}
 {% block topbar_title %}{{ exam.title }}{% endblock %}
 {% block topbar_actions %}
+{% set per_q = (exam.question_time_seconds or 0) > 0 %}
+{% set has_duration = (exam.duration_minutes or 0) > 0 %}
 <div style="display:flex;align-items:center;gap:0.9rem">
-  {% if (exam.question_time_seconds or 0) > 0 %}<div class="exam-timer" title="Time per question" style="font-size:1.2rem">{{ "%02d"|format(exam.question_time_seconds // 60) }}:{{ "%02d"|format(exam.question_time_seconds % 60) }}</div>{% endif %}
-  {% if (exam.duration_minutes or 0) > 0 %}<div class="exam-timer" title="Exam duration">{{ "%02d"|format(exam.duration_minutes) }}:00</div>{% endif %}
+  {% if per_q %}
+  <div title="Time per question" style="text-align:center;line-height:1.1">
+    {% if has_duration %}<div style="font-size:0.6rem;letter-spacing:0.05em;text-transform:uppercase;color:var(--text3)">Question</div>{% endif %}
+    <div class="exam-timer" {% if has_duration %}style="font-size:1.2rem"{% endif %}>{{ "%02d"|format(exam.question_time_seconds // 60) }}:{{ "%02d"|format(exam.question_time_seconds % 60) }}</div>
+  </div>
+  {% endif %}
+  {% if has_duration %}
+  <div title="Exam duration" style="text-align:center;line-height:1.1">
+    {% if per_q %}<div style="font-size:0.6rem;letter-spacing:0.05em;text-transform:uppercase;color:var(--text3)">Exam</div>{% endif %}
+    <div class="exam-timer">{{ "%02d"|format(exam.duration_minutes) }}:00</div>
+  </div>
+  {% endif %}
+  <a href="{{ url_for('teacher_exam_detail', exam_id=exam.id) }}" class="btn btn-ghost btn-sm" style="white-space:nowrap">← <span class="pv-back-long">Back to </span>Editor</a>
 </div>
 {% endblock %}
 {% block content %}
+{% set per_q = (exam.question_time_seconds or 0) > 0 %}
 
 <script>
 // The topbar is position:fixed here (same as the student page), so push the
@@ -80,7 +95,6 @@
 
 <div class="preview-banner">
   <div><strong>Preview mode</strong> — this is what students will see. Nothing you type or select here is saved or graded.</div>
-  <a href="{{ url_for('teacher_exam_detail', exam_id=exam.id) }}" class="btn btn-ghost btn-sm">← Back to Editor</a>
 </div>
 
 {% set total_q = namespace(n=0) %}
@@ -155,6 +169,14 @@
       {% endif %}
       {% elif q.question_type == 'essay' %}
       <div class="text-xs text-muted mb-1"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> This question is manually graded by your teacher.</div>
+      {% if q.rubric_criteria %}
+      <div class="essay-rubric">
+        <div class="essay-rubric-title">Grading rubric</div>
+        <ul class="essay-rubric-list">
+          {% for c in q.rubric_criteria %}<li><span>{{ c.criterion_text }}</span><span class="essay-rubric-pts">{{ c.max_points }} pt{{ '' if c.max_points == 1 else 's' }}</span></li>{% endfor %}
+        </ul>
+      </div>
+      {% endif %}
       <textarea class="form-control" placeholder="Write your answer here..." rows="10"></textarea>
       {% else %}
       <textarea class="form-control" placeholder="Type your answer here..." rows="3"></textarea>
@@ -162,7 +184,7 @@
     </div>
     {% endfor %}
 
-    <div class="flex justify-between items-center mt-3">
+    <div class="flex justify-between items-center mt-3 section-nav">
       {% if not loop.first %}
       <button type="button" class="btn btn-ghost" onclick="goSection({{ loop.index0 - 1 }})">← Previous</button>
       {% else %}
@@ -179,6 +201,23 @@
   </div>
   {% endfor %}
 </div>
+
+{% if per_q %}
+<style>
+  /* Time per question replaces section navigation (one question at a time) */
+  .section-nav { display: none !important; }
+</style>
+<div class="text-sm text-muted mt-3" style="text-align:center">
+  <svg class="icon" aria-hidden="true"><use href="#i-info"/></svg>
+  Each question is timed, and students can't go back once they move on. In preview you can go back and forth freely.
+</div>
+<div id="question-nav" class="flex justify-between items-center mt-2" style="gap:0.75rem">
+  <button type="button" id="prev-question-btn" class="btn btn-ghost">← Previous</button>
+  <button type="button" id="next-question-btn" class="btn btn-primary">Next Question →</button>
+  <button type="button" id="submit-exam-btn-q" class="btn btn-success btn-lg" disabled
+          title="Submitting is disabled in preview" style="display:none;opacity:0.6;cursor:not-allowed">Submit Exam ✓</button>
+</div>
+{% endif %}
 
 <script>
 const totalSections = {{ sections_data | length }};
@@ -197,6 +236,47 @@ function goSection(idx) {
   window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
 }
 
+// ── TIME PER QUESTION: one question on screen at a time (same as students) ──
+const PER_QUESTION = {{ 'true' if per_q else 'false' }};
+const questionBlocks = Array.from(document.querySelectorAll('.question-block'));
+let currentQuestion = 0;
+
+function showQuestion(qIdx) {
+  if (!PER_QUESTION || qIdx < 0 || qIdx >= questionBlocks.length) return;
+  currentQuestion = qIdx;
+  const block = questionBlocks[qIdx];
+  const page = block.closest('.exam-section-page');
+  const secIdx = parseInt(page.dataset.sectionIndex);
+  document.querySelectorAll('.exam-section-page').forEach(el => {
+    el.style.display = el === page ? '' : 'none';
+  });
+  page.querySelectorAll('.question-block').forEach(b => {
+    b.style.display = b === block ? '' : 'none';
+  });
+  // The section's instructions are shown with its first question only
+  const announcement = page.querySelector('.section-announcement');
+  if (announcement) announcement.style.display = page.querySelector('.question-block') === block ? '' : 'none';
+  const titleEl = document.getElementById('header-section-title');
+  if (titleEl) titleEl.textContent = sectionTitles[secIdx] || examTitleFallback;
+  const parts = [];
+  if (totalSections > 1) parts.push(`Section ${secIdx + 1} of ${totalSections}`);
+  parts.push(`Question ${qIdx + 1} of ${questionBlocks.length}`);
+  document.getElementById('section-indicator').textContent = parts.join(' · ');
+  const isLast = qIdx === questionBlocks.length - 1;
+  const prevBtn = document.getElementById('prev-question-btn');
+  const nextBtn = document.getElementById('next-question-btn');
+  const submitBtn = document.getElementById('submit-exam-btn-q');
+  if (prevBtn) { prevBtn.disabled = qIdx === 0; prevBtn.style.visibility = qIdx === 0 ? 'hidden' : 'visible'; }
+  if (nextBtn) nextBtn.style.display = isLast ? 'none' : '';
+  if (submitBtn) submitBtn.style.display = isLast ? '' : 'none';
+  window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+}
+
+if (PER_QUESTION) {
+  document.getElementById('prev-question-btn').addEventListener('click', () => showQuestion(currentQuestion - 1));
+  document.getElementById('next-question-btn').addEventListener('click', () => showQuestion(currentQuestion + 1));
+}
+
 // Highlight the clicked choice, like the real exam page does
 document.addEventListener('change', function (e) {
   const radio = e.target;
@@ -206,7 +286,7 @@ document.addEventListener('change', function (e) {
   });
 });
 
-goSection(0);
+if (PER_QUESTION) showQuestion(0); else goSection(0);
 </script>
 {% endif %}
 {% endblock %}

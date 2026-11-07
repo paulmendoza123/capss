@@ -404,6 +404,14 @@
                 style="display:none">{{ saved_map.get(q.id, '') }}</textarea>
       {% elif q.question_type == 'essay' %}
       <div class="text-xs text-muted mb-1"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg> This question is manually graded by your teacher.</div>
+      {% if q.rubric_criteria %}
+      <div class="essay-rubric">
+        <div class="essay-rubric-title">Grading rubric</div>
+        <ul class="essay-rubric-list">
+          {% for c in q.rubric_criteria %}<li><span>{{ c.criterion_text }}</span><span class="essay-rubric-pts">{{ c.max_points }} pt{{ '' if c.max_points == 1 else 's' }}</span></li>{% endfor %}
+        </ul>
+      </div>
+      {% endif %}
       <textarea name="answer_{{ q.id }}" class="form-control auto-save" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other"
                 data-qid="{{ q.id }}"
                 placeholder="Write your answer here..."

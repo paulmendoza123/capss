@@ -198,6 +198,14 @@
       <div class="text-sm mt-1">
         <span class="text-muted">Your answer:</span>
         <div style="white-space:pre-wrap;margin-top:0.25rem">{{ q.student_answer or '(no answer submitted)' }}</div>
+        {% if q.rubric_criteria %}
+        <div class="essay-rubric">
+          <div class="essay-rubric-title">Grading rubric</div>
+          <ul class="essay-rubric-list">
+            {% for c in q.rubric_criteria %}<li><span>{{ c.criterion_text }}</span><span class="essay-rubric-pts">{% if q.is_graded %}{{ (q.rubric_scores.get(c.id, 0))|score_fmt }}/{% endif %}{{ c.max_points }} pt{{ '' if c.max_points == 1 else 's' }}</span></li>{% endfor %}
+          </ul>
+        </div>
+        {% endif %}
         {% if q.is_graded %}
         <div class="mt-1"><span class="badge badge-green text-xs">✓ Graded — {{ q.manual_score|score_fmt }}/{{ q.points }} pt(s)</span></div>
         {% if q.feedback %}
