@@ -1123,6 +1123,13 @@ def init_db():
         'ALTER TABLE exams ADD COLUMN question_time_seconds INTEGER DEFAULT 0',
         'ALTER TABLE exam_sessions ADD COLUMN q_index INTEGER DEFAULT 0',
         'ALTER TABLE exam_sessions ADD COLUMN q_started_at TEXT',
+        # Pause / resume: filled in when a teacher closes an exam that students
+        # are in the middle of (see pause_exam_clock / resume_exam_clock).
+        'ALTER TABLE exams ADD COLUMN paused_at TEXT',
+        'ALTER TABLE exams ADD COLUMN paused_elapsed_seconds INTEGER',
+        # Seconds a student had already used on their current question when the exam
+        # was paused. While set, that student's question clock is frozen.
+        'ALTER TABLE exam_sessions ADD COLUMN q_paused_elapsed REAL',
     ):
         try:
             conn.execute(_stmt)
@@ -1710,6 +1717,7 @@ def auto_activate_scheduled_exams(conn):
         due_where = """
             status = 'upcoming'
               AND (manually_closed = 0 OR manually_closed IS NULL)
+              AND paused_at IS NULL
               AND scheduled_at IS NOT NULL
               AND scheduled_at != ''
               AND is_ready = 1
@@ -1904,6 +1912,109 @@ def _parse_clock_ts(raw):
         return None
 
 
+# ── Pause / resume ────────────────────────────────────────────────────────────
+# Closing an exam while students are still inside it PAUSES it instead of ending
+# it. Their sessions stay 'ongoing' (answers kept, nothing submitted) and both
+# clocks stop; reopening the exam carries on from the same point.
+#   - total duration  : one shared clock (activated_at). On pause we remember how
+#                       much of it was used; on resume activated_at is moved so
+#                       that exactly that much is already used.
+#   - time per question: each student has their own clock. On pause the seconds
+#                       already used on the current question are stored per student
+#                       (q_paused_elapsed) and that student's clock stays frozen,
+#                       even after the exam is reopened, until the student comes
+#                       back (thaw_question_clock). Students keep their own
+#                       question number and remaining seconds.
+PAUSE_SAVE_GRACE_SECONDS = 10   # last answers typed just before the pause may still be saved
+
+
+def _clock_str(dt=None):
+    return (dt or datetime.now()).strftime('%Y-%m-%d %H:%M:%S')
+
+
+def count_ongoing_sessions(conn, exam_id):
+    return conn.execute("SELECT COUNT(*) FROM exam_sessions WHERE exam_id=? AND status='ongoing'",
+                        (exam_id,)).fetchone()[0]
+
+
+def exam_is_paused(exam):
+    """True for an exam the teacher closed while students were mid-exam and has not reopened."""
+    return bool(exam) and _q_get(exam, 'status', None) != 'active' and bool(_q_get(exam, 'paused_at', None))
+
+
+def pause_within_grace(exam):
+    paused = _parse_clock_ts(_q_get(exam, 'paused_at', None))
+    return bool(paused) and (datetime.now() - paused).total_seconds() <= PAUSE_SAVE_GRACE_SECONDS
+
+
+def pause_exam_clock(conn, exam):
+    """Call while closing an exam (pass the exam row as it was BEFORE closing).
+    Returns how many students were paused (0 = a normal close). Does not commit."""
+    ongoing = count_ongoing_sessions(conn, exam['id'])
+    if not ongoing:
+        conn.execute('UPDATE exams SET paused_at=NULL, paused_elapsed_seconds=NULL WHERE id=?', (exam['id'],))
+        return 0
+    now = datetime.now()
+    elapsed = 0
+    activated = _parse_clock_ts(_q_get(exam, 'activated_at', None))
+    if activated:
+        elapsed = max(0, int((now - activated).total_seconds()))
+    conn.execute('UPDATE exams SET paused_at=?, paused_elapsed_seconds=? WHERE id=?',
+                 (_clock_str(now), elapsed, exam['id']))
+    # Time per question: freeze every student's own clock where it is right now.
+    per_q = int(_q_get(exam, 'question_time_seconds', 0) or 0)
+    if per_q > 0:
+        total = conn.execute('SELECT COUNT(*) FROM questions WHERE exam_id=?', (exam['id'],)).fetchone()[0]
+        for s in conn.execute("SELECT * FROM exam_sessions WHERE exam_id=? AND status='ongoing'",
+                              (exam['id'],)).fetchall():
+            if _q_get(s, 'q_paused_elapsed', None) is not None or not _q_get(s, 'q_started_at', None):
+                continue   # already frozen, or their question clock has not started
+            # bring the student up to the pause moment (they may have run out of time on
+            # some questions since the last check), then store what is used on the current one
+            question_clock_state(conn, exam, s, total, now=now, persist=True)
+            s = conn.execute('SELECT * FROM exam_sessions WHERE id=?', (s['id'],)).fetchone()
+            started = _parse_clock_ts(s['q_started_at'])
+            if started is None or int(_q_get(s, 'q_index', 0) or 0) >= total:
+                continue
+            used = min(max(0.0, (now - started).total_seconds()), float(per_q))
+            conn.execute('UPDATE exam_sessions SET q_paused_elapsed=? WHERE id=?', (used, s['id']))
+    return ongoing
+
+
+def resume_exam_clock(conn, exam):
+    """Call while opening an exam (pass the exam row as it was BEFORE opening).
+    Returns (activated_at string to store, number of students who resume).
+    A normal open gets a fresh timer; a paused one continues where it stopped.
+    Does not commit."""
+    now = datetime.now()
+    activated = now
+    resumed = 0
+    paused_at = _parse_clock_ts(_q_get(exam, 'paused_at', None))
+    if paused_at:
+        resumed = count_ongoing_sessions(conn, exam['id'])
+        if resumed:
+            # The shared duration clock carries on from where it stopped, right now,
+            # whether or not students have re-entered. (Each student's own question
+            # clock stays frozen until that student returns.)
+            used = int(_q_get(exam, 'paused_elapsed_seconds', 0) or 0)
+            activated = now - timedelta(seconds=used)
+    conn.execute('UPDATE exams SET paused_at=NULL, paused_elapsed_seconds=NULL WHERE id=?', (exam['id'],))
+    return _clock_str(activated), resumed
+
+
+def thaw_question_clock(conn, sess):
+    """The student is back after a pause: their question clock carries on from the
+    seconds they still had. Returns the refreshed session row."""
+    frozen = _q_get(sess, 'q_paused_elapsed', None)
+    if frozen is None:
+        return sess
+    started = datetime.now() - timedelta(seconds=float(frozen))
+    conn.execute('UPDATE exam_sessions SET q_started_at=?, q_paused_elapsed=NULL WHERE id=?',
+                 (started.isoformat(sep=' '), sess['id']))
+    conn.commit()
+    return conn.execute('SELECT * FROM exam_sessions WHERE id=?', (sess['id'],)).fetchone()
+
+
 def question_clock_state(conn, exam, sess, total, now=None, persist=True):
     """Where a student is in a time-per-question exam, from the server clock.
 
@@ -1917,6 +2028,12 @@ def question_clock_state(conn, exam, sess, total, now=None, persist=True):
         return None
     now = now or datetime.now()
     idx = int(_q_get(sess, 'q_index', 0) or 0)
+    frozen = _q_get(sess, 'q_paused_elapsed', None)
+    if frozen is not None:
+        # Paused: this student's clock does not move until they return.
+        left = max(0, int(-(-(per_q - float(frozen)) // 1)))
+        return {'started': True, 'index': idx, 'total': total,
+                'remaining': left, 'finished': idx >= total}
     started = _parse_clock_ts(_q_get(sess, 'q_started_at', None))
     if started is None:
         return {'started': False, 'index': idx, 'total': total,
@@ -2578,6 +2695,16 @@ def student_exams():
 def student_take_exam(exam_id):
     conn = get_db()
     exam = conn.execute('SELECT * FROM exams WHERE id=?', (exam_id,)).fetchone()
+    # Paused by the teacher: a student who is mid-exam goes back to the class page.
+    # Nothing is submitted or terminated; answers and remaining time are kept.
+    if exam and exam_is_paused(exam):
+        paused_sess = conn.execute(
+            'SELECT status FROM exam_sessions WHERE exam_id=? AND student_id=?',
+            (exam_id, session['user_id'])).fetchone()
+        if paused_sess and paused_sess['status'] == 'ongoing':
+            flash('Your teacher paused this exam. Your answers and remaining time are saved. '
+                  'You can continue once it is opened again.', 'info')
+            return redirect(url_for('student_class_detail', class_id=exam['class_id']))
     # A closed exam blocks NEW entries (GET), but a student who is already
     # mid-exam must still be able to submit (manually or via the timer's
     # auto-submit). Otherwise their session stays 'ongoing' with no score.
@@ -2677,6 +2804,10 @@ def student_take_exam(exam_id):
             'SELECT * FROM exam_sessions WHERE exam_id=? AND student_id=?',
             (exam_id, session['user_id'])
         ).fetchone()
+
+    # Back after a pause: this student's question clock carries on from where it stopped.
+    if existing and existing['status'] == 'ongoing' and _q_get(existing, 'q_paused_elapsed', None) is not None:
+        existing = thaw_question_clock(conn, existing)
 
     sections = conn.execute(
         'SELECT * FROM sections WHERE exam_id=? ORDER BY order_index', (exam_id,)
@@ -3689,6 +3820,8 @@ def find_exam_conflicts(conn, class_id, scheduled_at, duration_minutes,
                         exclude_exam_id=None, buffer_min=EXAM_CONFLICT_BUFFER_MIN):
     """Other exams that overlap the proposed slot
     for students enrolled in `class_id`. Looks across ALL classes and teachers.
+    Completed exams are ignored (their slot is free again); open, closed and
+    paused exams still count because they can be reopened.
     An untimed exam (duration 0) is treated as starting and ending at its start time.
     Returns a list of dicts, one per clashing exam, each with the shared students."""
     start = _parse_sched(scheduled_at)
@@ -3708,6 +3841,7 @@ def find_exam_conflicts(conn, class_id, scheduled_at, duration_minutes,
         JOIN users u   ON u.id = me.student_id
         WHERE me.class_id = ?
           AND e.scheduled_at IS NOT NULL AND e.scheduled_at != ''
+          AND e.status != 'completed'
           AND e.id != ?
         ORDER BY u.full_name
     ''', (class_id, exclude_exam_id or -1)).fetchall()
@@ -4332,14 +4466,26 @@ def teacher_toggle_exam_status(exam_id):
     # Teachers can always manually open or close, even if a schedule is set.
     # manually_closed flag prevents the auto-scheduler from re-opening a teacher-closed exam.
     new_status = 'active' if exam['status'] == 'upcoming' else 'upcoming'
+    paused_count = resumed_count = 0
     if new_status == 'active':
-        # Reset activated_at fresh every time the exam is opened — timer always starts from now
-        conn.execute("UPDATE exams SET status=?, is_ready=1, manually_closed=0, activated_at=strftime('%Y-%m-%d %H:%M:%S','now','localtime') WHERE id=?", (new_status, exam_id))
+        # A normal open starts a fresh timer. If the exam was paused with students
+        # inside, the timer carries on from where it stopped instead.
+        activated, resumed_count = resume_exam_clock(conn, exam)
+        conn.execute("UPDATE exams SET status=?, is_ready=1, manually_closed=0, activated_at=? WHERE id=?", (new_status, activated, exam_id))
     else:
-        # Clear activated_at on close so the next open always gets a fresh timer
+        # Closing while students are mid-exam PAUSES it: their sessions stay 'ongoing'
+        # and both timers are frozen. With nobody inside it is a plain close and the
+        # next open gets a fresh timer.
+        paused_count = pause_exam_clock(conn, exam)
         conn.execute("UPDATE exams SET status=?, manually_closed=1, activated_at=NULL WHERE id=?", (new_status, exam_id))
     conn.commit()
-    flash(f"Exam is now {'Open' if new_status == 'active' else 'Closed'}.", 'success')
+    if paused_count:
+        flash(f"Exam closed and paused for {paused_count} student{'s' if paused_count != 1 else ''}. "
+              "They were sent back to the class and can continue where they left off when you open it again.", 'success')
+    elif resumed_count:
+        flash(f"Exam is Open again. {resumed_count} student{'s' if resumed_count != 1 else ''} can continue with the time they had left.", 'success')
+    else:
+        flash(f"Exam is now {'Open' if new_status == 'active' else 'Closed'}.", 'success')
     if request.form.get('next') == 'monitoring':
         return redirect(url_for('teacher_exam_monitoring', exam_id=exam_id))
     return redirect(url_for('teacher_class_detail', class_id=class_id))
@@ -4465,13 +4611,16 @@ def teacher_exam_settings(exam_id):
             manually_closed_val = exam['manually_closed'] if exam['manually_closed'] is not None else 0
 
         if status == 'active' and existing_status != 'active':
+            activated, _resumed = resume_exam_clock(conn, exam)
             conn.execute('''
                 UPDATE exams SET title=?, duration_minutes=?, scheduled_at=?, show_results=?,
                 randomize_questions=?, tab_switch_limit=?, tab_switch_enabled=?, fullscreen_required=?, status=?, passing_score=?,
-                manually_closed=0, is_ready=1, activated_at=strftime('%Y-%m-%d %H:%M:%S','now','localtime') WHERE id=?
-            ''', (title, duration, new_scheduled_at, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, status, passing_score, exam_id))
+                manually_closed=0, is_ready=1, activated_at=? WHERE id=?
+            ''', (title, duration, new_scheduled_at, show_results, randomize, tab_limit, tab_switch_enabled, fullscreen_required, status, passing_score, activated, exam_id))
         elif status == 'upcoming' and existing_status == 'active':
             # Clear activated_at on close so next open always gets a fresh timer
+            # (unless students are inside: then it is a pause and the clock is kept)
+            pause_exam_clock(conn, exam)
             conn.execute('''
                 UPDATE exams SET title=?, duration_minutes=?, scheduled_at=?, show_results=?,
                 randomize_questions=?, tab_switch_limit=?, tab_switch_enabled=?, fullscreen_required=?, status=?, passing_score=?,
@@ -7713,7 +7862,7 @@ def terms():
 @login_required
 def api_exam_status(exam_id):
     conn = get_db()
-    exam = conn.execute('SELECT status, activated_at, duration_minutes FROM exams WHERE id=?', (exam_id,)).fetchone()
+    exam = conn.execute('SELECT status, activated_at, duration_minutes, paused_at FROM exams WHERE id=?', (exam_id,)).fetchone()
     sess = conn.execute(
         'SELECT status, tab_switch_count FROM exam_sessions WHERE exam_id=? AND student_id=?',
         (exam_id, session['user_id'])
@@ -7735,7 +7884,25 @@ def api_exam_status(exam_id):
         'session_status': sess['status'] if sess else None,
         'tab_switch_count': sess['tab_switch_count'] if sess else 0,
         'time_remaining_seconds': time_remaining,
+        # True once the teacher has closed (paused) the exam under a student who is mid-exam
+        'paused': bool(exam and sess and sess['status'] == 'ongoing' and exam_is_paused(exam)),
     })
+
+@app.route('/api/exam/<int:exam_id>/ongoing-count')
+@login_required
+def api_exam_ongoing_count(exam_id):
+    """How many students are mid-exam right now. The teacher's Close button asks
+    this first so the confirmation is based on live data, not on the page's age."""
+    if session.get('role') != 'teacher':
+        return jsonify({'error': 'Not authorized'}), 403
+    conn = get_db()
+    owner = conn.execute('''
+        SELECT 1 FROM exams e JOIN classes c ON e.class_id = c.id
+        WHERE e.id=? AND c.teacher_id=?
+    ''', (exam_id, session['user_id'])).fetchone()
+    if not owner:
+        return jsonify({'error': 'Not authorized'}), 403
+    return jsonify({'ongoing': count_ongoing_sessions(conn, exam_id)})
 
 @app.route('/api/question-clock', methods=['POST'])
 @login_required
@@ -7759,7 +7926,12 @@ def api_question_clock():
     exam = conn.execute('SELECT * FROM exams WHERE id=?', (sess['exam_id'],)).fetchone()
     if not exam or int(_q_get(exam, 'question_time_seconds', 0) or 0) <= 0:
         return jsonify({'status': 'error', 'reason': 'no question timer'}), 400
+    if exam_is_paused(exam):
+        # Frozen: advancing the clock now would eat into the student's time.
+        return jsonify({'status': 'paused'})
     total = conn.execute('SELECT COUNT(*) FROM questions WHERE exam_id=?', (exam['id'],)).fetchone()[0]
+    if exam['status'] == 'active' and _q_get(sess, 'q_paused_elapsed', None) is not None:
+        sess = thaw_question_clock(conn, sess)   # the student is here again
 
     state = question_clock_state(conn, exam, sess, total)
     now = datetime.now()
@@ -8066,6 +8238,10 @@ def api_save_answer():
     sess = conn.execute('SELECT * FROM exam_sessions WHERE id=? AND student_id=?',
                         (session_id, session['user_id'])).fetchone()
     if sess and sess['status'] == 'ongoing':
+        # Paused exam: no more edits, except the last few seconds' typing.
+        pexam = conn.execute('SELECT status, paused_at FROM exams WHERE id=?', (sess['exam_id'],)).fetchone()
+        if pexam and exam_is_paused(pexam) and not pause_within_grace(pexam):
+            return jsonify({'status': 'error', 'reason': 'exam paused'})
         # The question must belong to the exam this session is for.
         if not conn.execute('SELECT 1 FROM questions WHERE id=? AND exam_id=?',
                             (question_id, sess['exam_id'])).fetchone():

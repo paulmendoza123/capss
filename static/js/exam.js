@@ -111,6 +111,7 @@
         body: JSON.stringify({ session_id: SESSION_ID, action: action, from_index: qIndex })
       });
       const st = await res.json();
+      if (st && st.status === 'paused') { handlePaused(); return st; }
       applyQuestionState(st);
       return st;
     } catch (e) { return null; }
@@ -447,6 +448,7 @@
       const res = await fetch(`/api/exam-status/${EXAM_ID}`);
       const data = await res.json();
       if (data.session_status === 'terminated') handleTerminated();
+      if (data.paused) { handlePaused(); return; }
       // Sync timer with server's authoritative remaining time (shared exam clock)
       if (typeof data.time_remaining_seconds === 'number' && data.time_remaining_seconds >= 0) {
         // Only sync if drift is more than 3 seconds to avoid jitter
@@ -520,6 +522,40 @@
     setTimeout(() => {
       window.location.href = CLASS_ID ? `/student/class/${CLASS_ID}` : '/student';
     }, 4000);
+  }
+
+  // ── PAUSED BY THE TEACHER ──
+  // The teacher closed the exam while this student was taking it. This is NOT a
+  // termination: on the server the session stays 'ongoing' with its answers and
+  // remaining time, and the student is sent back to the class until the exam is
+  // opened again.
+  function handlePaused() {
+    if (terminated) return;
+    // Save whatever was typed in the last moments (the server still accepts
+    // answers for a few seconds after a pause).
+    try { window._examQuestionUI?.saveCurrent?.(); } catch (e) {}
+    try {
+      const local = getLocalAnswers();
+      Object.keys(_saveDebounceTimers).forEach(qid => {
+        clearTimeout(_saveDebounceTimers[qid]);
+        delete _saveDebounceTimers[qid];
+        if (local[qid] !== undefined) saveAnswer(qid, local[qid]);
+      });
+    } catch (e) {}
+    // From here the page is frozen: this flag stops the timers, auto-submit,
+    // tab-switch / blur logging and saving (client side only).
+    terminated = true;
+    fullscreenIntentional = true; // leaving fullscreen now is not a violation
+    hideTimeWarningModal();
+    hideBlur();
+    const fsGate = document.getElementById('fullscreen-gate');
+    if (fsGate) fsGate.style.display = 'none';
+    try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {}
+    const modal = document.getElementById('paused-modal');
+    if (modal) modal.style.display = 'flex';
+    setTimeout(() => {
+      window.location.href = CLASS_ID ? `/student/class/${CLASS_ID}` : '/student';
+    }, 3000);
   }
 
   // ── AUTO SAVE ──

@@ -45,7 +45,8 @@
         {% elif exam.status == 'active' %}<span class="badge badge-green">Open</span>
         {% else %}<span class="badge badge-blue">Completed</span>{% endif %}
         {% if exam.status != 'completed' %}
-        <form method="POST" action="{{ url_for('teacher_toggle_exam_status', exam_id=exam.id) }}" style="display:inline;">
+        <form method="POST" action="{{ url_for('teacher_toggle_exam_status', exam_id=exam.id) }}" style="display:inline;"
+              {% if exam.status == 'active' %}class="js-close-exam" data-ongoing-url="{{ url_for('api_exam_ongoing_count', exam_id=exam.id) }}"{% endif %}>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           {% if exam.status == 'active' %}
             <button type="submit" class="btn btn-sm" style="background:#e74c3c;color:#fff;"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg> Close</button>
@@ -229,6 +230,37 @@
 
 {% block scripts %}
 <script>
+// Closing an open exam that students are taking PAUSES it. Ask first (using the
+// live number of students inside) so a stray click can't interrupt anyone.
+(function () {
+  const bypass = new WeakSet();
+  document.querySelectorAll('form.js-close-exam').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      if (bypass.has(form)) return;
+      e.preventDefault();
+      let n = null;
+      try {
+        const res = await fetch(form.dataset.ongoingUrl, { credentials: 'same-origin' });
+        const data = await res.json();
+        if (typeof data.ongoing === 'number') n = data.ongoing;
+      } catch (err) {}
+      let ok = true;
+      if (n === null || n > 0) {
+        const who = n === null ? 'Some students may be taking this exam right now.'
+                  : n === 1 ? '1 student is taking this exam right now.'
+                  : n + ' students are taking this exam right now.';
+        ok = await window.sparkConfirm(
+          who + ' Closing it will pause the exam: they are sent back to the class, their answers and remaining time are kept (nothing is submitted), and they can continue when you open it again.',
+          { title: 'Close and pause this exam?', confirmText: 'Close & pause', danger: true });
+      }
+      if (ok) {
+        bypass.add(form);
+        try { form.requestSubmit(); } catch (err) { form.submit(); }
+      }
+    });
+  });
+})();
+
 (function () {
   const body = document.getElementById('stuBody');
   if (!body) return;

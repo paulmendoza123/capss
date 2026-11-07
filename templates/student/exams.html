@@ -86,7 +86,12 @@
       <span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg> {{ exam|exam_time }}</span>
       {% if exam.scheduled_at %}<span class="exam-meta-item"><svg class="icon" aria-hidden="true"><use href="#i-calendar"/></svg> {{ exam.scheduled_at|time12 }}</span>{% endif %}
     </div>
+    {% if exam.session_status == 'ongoing' %}
+    <span class="badge badge-orange">Paused by your teacher</span>
+    <div class="text-muted text-xs mt-1">Your answers and remaining time are saved. You can continue once the exam is opened again.</div>
+    {% else %}
     <span class="badge badge-gray">Not yet open</span>
+    {% endif %}
   </div>
   {% endfor %}
 </div>

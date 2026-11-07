@@ -309,6 +309,26 @@
   </div>
 </div>
 
+<!-- Paused Modal — the teacher closed the exam under the student. Paused, not terminated. -->
+<div id="paused-modal" style="
+  display:none;
+  position:fixed;inset:0;z-index:10002;
+  background:rgba(0,0,0,0.85);
+  align-items:center;justify-content:center;
+  padding:1.5rem;
+">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;
+    padding:2rem;max-width:380px;width:100%;text-align:center;box-shadow:var(--shadow-lg);">
+    <div style="font-size:3rem;margin-bottom:0.5rem"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg></div>
+    <div style="color:var(--text);font-size:1.2rem;font-weight:700;margin-bottom:0.75rem">Exam Paused</div>
+    <div style="color:var(--text2);font-size:0.9rem;margin-bottom:1.5rem">
+      Your teacher closed this exam for now. Your answers and your remaining time are saved.
+      You can continue when it is opened again.
+    </div>
+    <div style="color:var(--text3);font-size:0.78rem">Going back to your class…</div>
+  </div>
+</div>
+
 <!-- Hidden inputs for JS -->
 <input type="hidden" id="exam-session-id" value="{{ exam_session.id }}" />
 <input type="hidden" id="exam-id" value="{{ exam.id }}" />
