@@ -152,7 +152,7 @@
   {% endif %}
 </div>
 
-<!-- PASSWORD RESETS (done by teachers for their students) -->
+<!-- PASSWORD RESETS (done by teachers for their students, or by an admin) -->
 <div class="tab-content" data-tab="pw-resets">
 <div class="mb-2" style="text-align:right"><a href="{{ url_for('admin_export', kind='password-resets') }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Export CSV</a></div>
   {% if pw_resets %}
@@ -160,14 +160,14 @@
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>Student</th><th>Email</th><th>Reset By (Teacher)</th><th>Class</th><th>Time</th></tr>
+          <tr><th>User</th><th>Email</th><th>Reset By</th><th>Class</th><th>Time</th></tr>
         </thead>
         <tbody>
           {% for r in pw_resets %}
           <tr>
             <td class="fw-600">{{ r.student_name or '—' }}</td>
             <td class="font-mono text-sm">{{ r.student_email or '—' }}</td>
-            <td>{{ r.teacher_name or '—' }}</td>
+            <td>{{ r.teacher_name or '—' }} <span class="text-sm text-muted">({{ (r.reset_by_role or 'teacher')|capitalize }})</span></td>
             <td class="text-sm">{% if r.subject_name %}{{ r.subject_name }} ({{ r.block_name }}){% else %}—{% endif %}</td>
             <td class="text-sm text-muted">{{ r.reset_at|time12 }}</td>
           </tr>

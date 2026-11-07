@@ -75,36 +75,22 @@
   {% endif %}
   <div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border)">
     <div class="card-title mb-1">Reset Password</div>
-    <form method="POST" action="{{ url_for('admin_reset_password', user_id=user.id) }}" data-confirm="Reset password for {{ user.full_name }}? The new password will be shown once.">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="form-group">
-        <label class="form-label">New Password</label>
-        <div class="password-input-wrap">
-          <input type="password" name="new_password" id="reset-user-password" autocomplete="new-password" class="form-control" placeholder="Enter new password" required />
-          <button type="button" class="password-toggle-btn" data-target="reset-user-password" aria-label="Show password">
-            <svg class="icon-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
-            <svg class="icon-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.3 20.3 0 0 1 5.06-6.06M9.9 4.24A10.4 10.4 0 0 1 12 4c7 0 11 8 11 8a20.3 20.3 0 0 1-3.22 4.44M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/></svg>
-          </button>
-        </div>
-        <div class="pw-requirements" data-target="reset-user-password">
-          <div class="pw-req-title">Password must contain:</div>
-          <div class="pw-req-item" data-rule="length">
-            <div class="pw-req-item-row"><span class="pw-req-icon"></span> At least 8 characters</div>
-          </div>
-          <div class="pw-req-item" data-rule="special">
-            <div class="pw-req-item-row"><span class="pw-req-icon"></span> At least 1 special character (e.g. !@#$%^&amp;*)</div>
-          </div>
-          <div class="pw-req-item" data-rule="variety">
-            <div class="pw-req-item-row"><span class="pw-req-icon"></span> At least 3 of the following:</div>
-            <div class="pw-req-subitems">
-              <div class="pw-req-subitem" data-rule="lower"><span class="pw-req-icon"></span> Lower case letters (a-z)</div>
-              <div class="pw-req-subitem" data-rule="upper"><span class="pw-req-icon"></span> Upper case letters (A-Z)</div>
-              <div class="pw-req-subitem" data-rule="number"><span class="pw-req-icon"></span> Numbers (0-9)</div>
-            </div>
-          </div>
-        </div>
+    {% if reset_notice %}
+    <div class="card mb-2" style="padding:1.25rem;border:1px solid var(--accent)">
+      <div class="fw-600" style="margin-bottom:0.4rem"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> Temporary password for {{ reset_notice.name }}</div>
+      <div class="font-mono" style="font-size:1.4rem;letter-spacing:0.08em;margin:0.5rem 0;user-select:all">{{ reset_notice.password }}</div>
+      <div class="text-muted" style="font-size:0.85rem">
+        Give this to the user ({{ reset_notice.email }}). It is shown <strong>only once</strong> — leaving or refreshing this page hides it.
+        They will be required to set a new password right after logging in.
       </div>
-      <button type="submit" class="btn btn-danger btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> Save New Password</button>
+    </div>
+    {% endif %}
+    <div class="text-sm text-muted mb-2">
+      A temporary password is generated for you. The user must change it the next time they log in.
+    </div>
+    <form method="POST" action="{{ url_for('admin_reset_password', user_id=user.id) }}" data-confirm="Reset the password of {{ user.full_name }}? A temporary password will be generated, and they must change it the next time they log in.">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-danger btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-key"/></svg> Reset Password</button>
     </form>
   </div>
   {% else %}

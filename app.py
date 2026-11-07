@@ -834,6 +834,14 @@ def init_db():
     cursor.execute("INSERT OR IGNORE INTO programs (code, name) VALUES ('BSIT', 'Bachelor of Science in Information Technology')")
     cursor.execute("INSERT OR IGNORE INTO programs (code, name) VALUES ('BSCS', 'Bachelor of Science in Computer Science')")
 
+    # Migration: password_reset_logs.reset_by_role ('teacher' or 'admin'). Existing
+    # rows were all done by teachers, so the default backfills them correctly.
+    try:
+        conn.execute("ALTER TABLE password_reset_logs ADD COLUMN reset_by_role TEXT DEFAULT 'teacher'")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
     # Migration: users.must_change_password (forces a password change at next login)
     try:
         conn.execute('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0')
@@ -6046,7 +6054,7 @@ def admin_logs():
         ORDER BY sl.logged_at DESC LIMIT 100
     ''').fetchall()
     pw_resets = conn.execute('''
-        SELECT pr.reset_at, s.full_name AS student_name, s.email AS student_email,
+        SELECT pr.reset_at, pr.reset_by_role, s.full_name AS student_name, s.email AS student_email,
                t.full_name AS teacher_name, c.subject_name, c.block_name
         FROM password_reset_logs pr
         LEFT JOIN users s ON pr.student_id = s.id
@@ -6280,8 +6288,13 @@ def admin_edit_user(user_id):
             is_locked = datetime.strptime(locked_until_raw, fmt) > datetime.now()
         except ValueError:
             is_locked = False
+    # One-time notice carrying a freshly generated temporary password
+    reset_notice = session.pop('admin_reset_notice', None)
+    if reset_notice and reset_notice.get('user_id') != user_id:
+        reset_notice = None
     return render_template('admin/edit_user.html', user=user, programs=programs, is_self=is_self,
-                           original_email=original_email, errors=errors, is_locked=is_locked)
+                           original_email=original_email, errors=errors, is_locked=is_locked,
+                           reset_notice=reset_notice)
 
 # ── Reset Password ──
 @app.route('/admin/users/reset-password/<int:user_id>', methods=['POST'])
@@ -6292,14 +6305,26 @@ def admin_reset_password(user_id):
     if not user:
         flash('User not found.', 'error')
         return redirect(url_for('admin_users'))
-    new_password = request.form.get('new_password', '').strip()
-    pw_error = validate_password_strength(new_password)
-    if pw_error:
-        flash(pw_error, 'error')
+    if user['id'] == session.get('user_id'):
+        flash('Change your own password from My Profile.', 'error')
         return redirect(url_for('admin_edit_user', user_id=user_id))
-    conn.execute('UPDATE users SET password=? WHERE id=?', (hash_password(new_password), user_id))
+    # Same flow teachers use for their students: the system generates a one-time
+    # temporary password, forces a change at next login, and clears any lockout.
+    temp_password = _generate_temp_password()
+    conn.execute(
+        '''UPDATE users SET password=?, must_change_password=1,
+           failed_login_attempts=0, locked_until=NULL WHERE id=?''',
+        (hash_password(temp_password), user_id)
+    )
+    # Audit row (teacher_id holds whoever did the reset; reset_by_role says who)
+    conn.execute(
+        "INSERT INTO password_reset_logs (student_id, teacher_id, class_id, reset_by_role) VALUES (?,?,NULL,'admin')",
+        (user_id, session['user_id'])
+    )
     conn.commit()
-    flash(f'Password reset for {user["full_name"]}. New password: {new_password}', 'success')
+    # Kept out of flash() (it auto-dismisses) so the admin has time to read it out.
+    session['admin_reset_notice'] = {'user_id': user_id, 'name': user['full_name'],
+                                     'email': user['email'], 'password': temp_password}
     return redirect(url_for('admin_edit_user', user_id=user_id))
 
 # ── Unlock Account (clears a lockout from too many failed login attempts) ──
@@ -7373,7 +7398,7 @@ def admin_export(kind):
             [(r['full_name'], r['exam_title'], r['event_type'], r['logged_at'] or '') for r in rows])
     if kind == 'password-resets':
         rows = conn.execute('''
-            SELECT pr.reset_at, s.full_name AS student_name, s.email AS student_email,
+            SELECT pr.reset_at, pr.reset_by_role, s.full_name AS student_name, s.email AS student_email,
                    t.full_name AS teacher_name, c.subject_name, c.block_name
             FROM password_reset_logs pr
             LEFT JOIN users s ON pr.student_id = s.id
@@ -7382,8 +7407,9 @@ def admin_export(kind):
             ORDER BY pr.reset_at DESC, pr.id DESC
         ''').fetchall()
         return _admin_csv_response(f'SPARK_Password_Resets_{stamp}.csv',
-            ['Student', 'Student Email', 'Reset By (Teacher)', 'Class', 'Time'],
+            ['User', 'Email', 'Reset By', 'Reset By Role', 'Class', 'Time'],
             [(r['student_name'] or '', r['student_email'] or '', r['teacher_name'] or '',
+              (r['reset_by_role'] or 'teacher').capitalize(),
               f"{r['subject_name']} ({r['block_name']})" if r['subject_name'] else '',
               r['reset_at'] or '') for r in rows])
     if kind == 'subjects':
