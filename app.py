@@ -3802,14 +3802,14 @@ def _teacher_tos_list(conn, teacher_id, with_usage=False):
     ''', (teacher_id,)).fetchall()]
 
 
-def _resolve_tos(conn, teacher_id, form, files, existing_tos_id=None):
+def _resolve_tos(conn, teacher_id, form, files, existing_tos_id=None, allow_upload=True):
     """Work out which TOS a periodic-exam question must be linked to.
 
     Order: a newly uploaded Excel file > a previously uploaded TOS picked from
     the dropdown > `existing_tos_id` (e.g. the exam already has one).
     Returns (tos_id, error_message). tos_id is None only when error_message is set.
     """
-    upload = files.get('tos_file') if files else None
+    upload = files.get('tos_file') if (files and allow_upload) else None
     if upload and upload.filename:
         if _upload_too_large(upload):
             return None, f'The TOS file is too large. The maximum allowed size is {MAX_UPLOAD_MB} MB.'
@@ -3840,6 +3840,9 @@ def _resolve_tos(conn, teacher_id, form, files, existing_tos_id=None):
             return row['id'], None
     if existing_tos_id:
         return existing_tos_id, None
+    if not allow_upload:
+        return None, ('Please choose a Table of Specification (TOS) from your uploaded files. '
+                      'You can upload one in the Question Bank.')
     return None, ('A Table of Specification (TOS) file (PDF or Excel) is required for Periodic Exam questions. '
                   'Please upload one.')
 
@@ -4031,7 +4034,7 @@ def teacher_create_exam(class_id):
         # Only questions that belong to this TOS can be added to / imported into the exam.
         exam_tos_id = None
         if exam_category == 'periodic':
-            exam_tos_id, tos_err = _resolve_tos(conn, session['user_id'], request.form, request.files)
+            exam_tos_id, tos_err = _resolve_tos(conn, session['user_id'], request.form, request.files, allow_upload=False)
             if tos_err:
                 conn.rollback()
                 flash(tos_err, 'error')

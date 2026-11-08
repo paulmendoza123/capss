@@ -10,7 +10,7 @@
 </div>
 
 <div class="card" style="max-width:580px">
-  <form method="POST" enctype="multipart/form-data">
+  <form method="POST">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-group">
       <label class="form-label">Exam Title</label>
@@ -36,18 +36,15 @@
     </div>
     <div class="form-group" id="tosGroup" style="display:none">
       <label class="form-label">Table of Specification (TOS) <span style="color:var(--danger)">*</span></label>
-      <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap">
-        <input type="file" name="tos_file" id="tosFile" class="form-control" accept=".xlsx,.xlsm,.pdf"
-               style="padding:0.45rem 0.65rem;font-size:0.9rem;flex:1 1 200px;min-width:0;width:auto">
-        {% if tos_list %}
-        <span class="text-sm text-muted" style="flex:0 0 auto">or</span>
-        <select name="tos_id" id="tosSelect" class="form-select" style="flex:1 1 200px;min-width:0;width:auto" onchange="syncTosField()">
-          <option value="">— Choose an already uploaded TOS —</option>
-          {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name|tos_label }}</option>{% endfor %}
-        </select>
-        {% endif %}
-      </div>
-      <div class="form-hint">PDF or Excel (.xlsx){% if tos_list %}, or pick one you already uploaded{% endif %}. Only questions that belong to this TOS can be added to or imported into this exam.</div>
+      {% if tos_list %}
+      <select name="tos_id" id="tosSelect" class="form-select" style="max-width:420px">
+        <option value="">— Choose an uploaded TOS —</option>
+        {% for t in tos_list %}<option value="{{ t.id }}">{{ t.original_name|tos_label }}</option>{% endfor %}
+      </select>
+      <div class="form-hint">Only questions that belong to this TOS can be added to or imported into this exam.</div>
+      {% else %}
+      <div class="form-hint" style="color:var(--danger)">You have no uploaded TOS yet. Upload one in the <a href="{{ url_for('teacher_question_bank') }}">Question Bank</a> first, then come back to create a Periodic Exam.</div>
+      {% endif %}
     </div>
     <div class="divider"></div>
 
@@ -147,7 +144,6 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 function syncTosField() {
   const cat = document.getElementById('examCategory');
   const group = document.getElementById('tosGroup');
-  const file = document.getElementById('tosFile');
   const sel = document.getElementById('tosSelect');
   const periodic = cat && cat.value === 'periodic';
   group.style.display = periodic ? '' : 'none';
@@ -159,8 +155,8 @@ function syncTosField() {
     ptSel.required = periodic;
     if (!periodic) ptSel.value = '';
   }
-  // the file is only required when periodic AND no existing TOS was picked
-  file.required = periodic && !(sel && sel.value);
+  // a TOS must be picked from the uploaded list for Periodic Exams
+  if (sel) sel.required = periodic;
 }
 document.addEventListener('DOMContentLoaded', syncTosField);
 function toggleTabLimit(cb) {
