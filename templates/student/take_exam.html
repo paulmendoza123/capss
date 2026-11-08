@@ -329,10 +329,30 @@
   </div>
 </div>
 
+<!-- Another-device Modal — this attempt is being used on a different device -->
+<div id="device-modal" style="
+  display:none;
+  position:fixed;inset:0;z-index:10002;
+  background:rgba(0,0,0,0.85);
+  align-items:center;justify-content:center;
+  padding:1.5rem;
+">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;
+    padding:2rem;max-width:380px;width:100%;text-align:center;box-shadow:var(--shadow-lg);">
+    <div style="color:var(--text);font-size:1.2rem;font-weight:700;margin-bottom:0.75rem">Exam opened on another device</div>
+    <div style="color:var(--text2);font-size:0.9rem;margin-bottom:1.5rem">
+      You can only take this exam on one device at a time. It is now open on another device,
+      so this screen has stopped. Your answers are safe and nothing was submitted.
+    </div>
+    <div style="color:var(--text3);font-size:0.78rem">Leaving this page…</div>
+  </div>
+</div>
+
 <!-- Hidden inputs for JS -->
 <input type="hidden" id="exam-session-id" value="{{ exam_session.id }}" />
 <input type="hidden" id="exam-id" value="{{ exam.id }}" />
 <input type="hidden" id="exam-class-id" value="{{ exam.class_id }}" />
+<input type="hidden" id="exam-return-url" value="{{ return_url or '' }}" />
 <input type="hidden" id="exam-duration" value="{{ exam.duration_minutes or 0 }}" />
 <input type="hidden" id="question-seconds" value="{{ question_seconds if (question_seconds and total_questions) else 0 }}" />
 <input type="hidden" id="question-total" value="{{ total_questions or 0 }}" />

@@ -14,6 +14,7 @@ from functools import wraps
 from datetime import datetime, timedelta
 import threading
 import time
+from urllib.parse import urlparse
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
@@ -1130,6 +1131,8 @@ def init_db():
         # Seconds a student had already used on their current question when the exam
         # was paused. While set, that student's question clock is frozen.
         'ALTER TABLE exam_sessions ADD COLUMN q_paused_elapsed REAL',
+        # One device per exam attempt: the browser (cookie) currently holding the attempt.
+        'ALTER TABLE exam_sessions ADD COLUMN device_token TEXT',
     ):
         try:
             conn.execute(_stmt)
@@ -2002,6 +2005,72 @@ def resume_exam_clock(conn, exam):
     return _clock_str(activated), resumed
 
 
+# ── One device per exam attempt ───────────────────────────────────────────────
+# A student can be logged in on several devices, but an exam attempt can only be
+# in use on ONE of them at a time. Each browser gets a random cookie; the attempt
+# remembers the cookie of the browser that is using it. Another device is refused
+# while the first one is active (heartbeat seen within DEVICE_LOCK_SECONDS). If the
+# first device goes quiet (dead phone, lost Wi-Fi) the lock frees itself and the
+# student can continue on another device.
+DEVICE_COOKIE = 'spark_device'
+DEVICE_LOCK_SECONDS = 30
+
+
+def device_token():
+    tok = request.cookies.get(DEVICE_COOKIE)
+    if not tok:
+        tok = getattr(g, 'new_device_token', None)
+        if not tok:
+            tok = secrets.token_hex(16)
+            g.new_device_token = tok
+    return tok
+
+
+@app.after_request
+def _set_device_cookie(resp):
+    tok = getattr(g, 'new_device_token', None)
+    if tok:
+        resp.set_cookie(DEVICE_COOKIE, tok, max_age=60 * 60 * 24 * 365, httponly=True,
+                        samesite='Lax', secure=bool(app.config.get('SESSION_COOKIE_SECURE')))
+    return resp
+
+
+def exam_origin_url():
+    """The page the student pressed Continue/Start on: their class page or My Exams.
+    Read from the Referer (same site only). None when it can't be told."""
+    ref = urlparse(request.referrer or '')
+    if ref.netloc and ref.netloc != request.host:
+        return None
+    path = ref.path.rstrip('/')
+    if re.fullmatch(r'/student/class/\d+', path):
+        return path
+    if path == '/student/exams':
+        return url_for('student_exams')
+    return None
+
+
+def device_blocked(sess):
+    """True when this attempt is being used on ANOTHER device right now."""
+    held = _q_get(sess, 'device_token', None)
+    if not held or held == device_token():
+        return False
+    seen = _parse_clock_ts(_q_get(sess, 'last_seen', None))
+    return bool(seen) and (datetime.now() - seen).total_seconds() <= DEVICE_LOCK_SECONDS
+
+
+def device_gate(conn, sess):
+    """Returns True if the caller must be refused (attempt open on another device).
+    Otherwise this device takes (or keeps) the attempt."""
+    if device_blocked(sess):
+        return True
+    tok = device_token()
+    if _q_get(sess, 'device_token', None) != tok:
+        conn.execute('UPDATE exam_sessions SET device_token=?, last_seen=? WHERE id=?',
+                     (tok, _clock_str(), sess['id']))
+        conn.commit()
+    return False
+
+
 def thaw_question_clock(conn, sess):
     """The student is back after a pause: their question clock carries on from the
     seconds they still had. Returns the refreshed session row."""
@@ -2746,6 +2815,9 @@ def student_take_exam(exam_id):
         if not exam_sess or exam_sess['status'] != 'ongoing':
             flash('Invalid session.', 'error')
             return redirect(url_for('student_exams'))
+        if device_gate(conn, exam_sess):
+            flash('This exam is open on another device, so it cannot be submitted from here.', 'error')
+            return redirect(exam_origin_url() or url_for('student_exams'))
 
         questions = conn.execute('SELECT * FROM questions WHERE exam_id=?', (exam_id,)).fetchall()
         total_points = sum(q['points'] for q in questions)
@@ -2804,6 +2876,13 @@ def student_take_exam(exam_id):
             'SELECT * FROM exam_sessions WHERE exam_id=? AND student_id=?',
             (exam_id, session['user_id'])
         ).fetchone()
+
+    # One device per attempt: refuse if it is open on another device right now.
+    if existing and existing['status'] == 'ongoing' and device_gate(conn, existing):
+        flash('This exam is already open on another device, so it cannot be opened here. '
+              'If that device lost its connection or turned off, wait about 30 seconds and try again.', 'error')
+        # back to where the student pressed Continue (class page or My Exams)
+        return redirect(exam_origin_url() or url_for('student_exams'))
 
     # Back after a pause: this student's question clock carries on from where it stopped.
     if existing and existing['status'] == 'ongoing' and _q_get(existing, 'q_paused_elapsed', None) is not None:
@@ -2971,7 +3050,8 @@ def student_take_exam(exam_id):
                            exam_session=existing, saved_map=saved_map,
                            time_remaining_seconds=time_remaining_seconds,
                            question_seconds=question_seconds, question_state=question_state,
-                           total_questions=len(all_questions))
+                           total_questions=len(all_questions),
+                           return_url=exam_origin_url() or '')
 
 @app.route('/student/exam/<int:exam_id>/result')
 @role_required('student')
@@ -7746,6 +7826,8 @@ def log_suspicious():
     sess = conn.execute('SELECT * FROM exam_sessions WHERE id=? AND student_id=?',
                         (session_id, session['user_id'])).fetchone()
     if sess and sess['status'] == 'ongoing':
+        if device_gate(conn, sess):
+            return jsonify({'status': 'other_device', 'terminated': False})
         conn.execute('''
             INSERT INTO suspicious_logs (session_id, student_id, exam_id, event_type)
             VALUES (?, ?, ?, ?)
@@ -7804,6 +7886,9 @@ def api_exam_consent():
         return jsonify({'status': 'error', 'message': 'Invalid session.'}), 403
     if sess['status'] != 'ongoing':
         return jsonify({'status': 'error', 'message': 'Exam session is not active.'}), 400
+    if device_gate(conn, sess):
+        return jsonify({'status': 'error', 'other_device': True,
+                        'message': 'This exam is open on another device.'}), 409
 
     conn.execute(
         "UPDATE exam_sessions SET consent_given=1, consent_at=datetime('now','localtime') WHERE id=?",
@@ -7864,7 +7949,7 @@ def api_exam_status(exam_id):
     conn = get_db()
     exam = conn.execute('SELECT status, activated_at, duration_minutes, paused_at FROM exams WHERE id=?', (exam_id,)).fetchone()
     sess = conn.execute(
-        'SELECT status, tab_switch_count FROM exam_sessions WHERE exam_id=? AND student_id=?',
+        'SELECT status, tab_switch_count, device_token, last_seen FROM exam_sessions WHERE exam_id=? AND student_id=?',
         (exam_id, session['user_id'])
     ).fetchone()
 
@@ -7886,6 +7971,8 @@ def api_exam_status(exam_id):
         'time_remaining_seconds': time_remaining,
         # True once the teacher has closed (paused) the exam under a student who is mid-exam
         'paused': bool(exam and sess and sess['status'] == 'ongoing' and exam_is_paused(exam)),
+        # True when this attempt is now being used on another device
+        'other_device': bool(sess and sess['status'] == 'ongoing' and device_blocked(sess)),
     })
 
 @app.route('/api/exam/<int:exam_id>/ongoing-count')
@@ -7929,6 +8016,8 @@ def api_question_clock():
     if exam_is_paused(exam):
         # Frozen: advancing the clock now would eat into the student's time.
         return jsonify({'status': 'paused'})
+    if device_gate(conn, sess):
+        return jsonify({'status': 'other_device'})
     total = conn.execute('SELECT COUNT(*) FROM questions WHERE exam_id=?', (exam['id'],)).fetchone()[0]
     if exam['status'] == 'active' and _q_get(sess, 'q_paused_elapsed', None) is not None:
         sess = thaw_question_clock(conn, sess)   # the student is here again
@@ -7963,6 +8052,8 @@ def api_heartbeat():
         return jsonify({'status': 'error'}), 403
     if sess['status'] != 'ongoing':
         return jsonify({'status': 'ok'})
+    if device_gate(conn, sess):
+        return jsonify({'status': 'other_device'})
 
     now = datetime.now()
     now_str = now.strftime('%Y-%m-%d %H:%M:%S')
@@ -8238,6 +8329,8 @@ def api_save_answer():
     sess = conn.execute('SELECT * FROM exam_sessions WHERE id=? AND student_id=?',
                         (session_id, session['user_id'])).fetchone()
     if sess and sess['status'] == 'ongoing':
+        if device_gate(conn, sess):
+            return jsonify({'status': 'error', 'reason': 'other_device'})
         # Paused exam: no more edits, except the last few seconds' typing.
         pexam = conn.execute('SELECT status, paused_at FROM exams WHERE id=?', (sess['exam_id'],)).fetchone()
         if pexam and exam_is_paused(pexam) and not pause_within_grace(pexam):
