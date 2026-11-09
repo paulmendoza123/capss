@@ -6670,11 +6670,81 @@ def admin_exam_analytics(exam_id):
         avg_pct = round(s['pct_sum'] / s['question_count']) if s['question_count'] else 0
         section_stats.append({'section_title': title, 'question_count': s['question_count'], 'avg_pct': avg_pct})
 
+    sections_data, total_questions_all, total_points = _admin_exam_sections(conn, exam_id)
+
     return render_template('admin/exam_analytics.html',
         exam=exam, class_info=class_info, teacher_name=teacher_name,
         stats=stats, sessions=sessions, hard_questions=hard_questions_list, suspicious=suspicious,
         section_stats=section_stats, exam_category=exam_category, exam_tos=exam_tos,
-        exam_periodic_type=exam_periodic_type)
+        exam_periodic_type=exam_periodic_type,
+        sections_data=sections_data, total_questions=total_questions_all, total_points=total_points)
+
+def _admin_exam_sections(conn, exam_id):
+    """All questions of an exam grouped by section (read-only admin views).
+    Returns (sections_data, total_questions, total_points)."""
+    def load_questions(rows):
+        out = []
+        for q in rows:
+            qd = dict(q)
+            qd['choices'] = [dict(c) for c in conn.execute(
+                'SELECT * FROM choices WHERE question_id=? ORDER BY choice_label, id',
+                (qd['id'],)).fetchall()] if qd['question_type'] == 'multiple_choice' else []
+            qd['rubric_criteria'] = load_rubric(conn, qd['id']) if qd['question_type'] == 'essay' else []
+            out.append(qd)
+        return out
+
+    sections = conn.execute(
+        'SELECT * FROM sections WHERE exam_id=? ORDER BY order_index, id', (exam_id,)).fetchall()
+    sections_data = []
+    seen_ids = set()
+    for sec in sections:
+        qs = load_questions(conn.execute(
+            'SELECT * FROM questions WHERE section_id=? ORDER BY order_index, id', (sec['id'],)).fetchall())
+        seen_ids.update(q['id'] for q in qs)
+        sections_data.append({'title': sec['title'], 'description': sec['description'], 'questions': qs})
+    # Questions with no section (or sections missing) still show up.
+    loose = [q for q in load_questions(conn.execute(
+        'SELECT * FROM questions WHERE exam_id=? ORDER BY order_index, id', (exam_id,)).fetchall())
+        if q['id'] not in seen_ids]
+    if loose:
+        sections_data.append({'title': None if not sections_data else 'Other Questions',
+                              'description': None, 'questions': loose})
+    total_questions = sum(len(sd['questions']) for sd in sections_data)
+    total_points = sum((q['points'] or 0) for sd in sections_data for q in sd['questions'])
+    return sections_data, total_questions, total_points
+
+
+# ── Exam Questions view (admin, read-only) ──
+@app.route('/admin/exams/<int:exam_id>/view')
+@role_required('admin')
+def admin_exam_view(exam_id):
+    """Read-only list of the questions inside a quiz / periodic exam.
+    For periodic exams (midterm / final) the attached TOS is shown too, with
+    its View and Download buttons."""
+    conn = get_db()
+    exam = conn.execute('''
+        SELECT e.*, c.subject_name, c.block_name, c.program, c.year_level,
+               u.full_name AS teacher_name
+        FROM exams e
+        JOIN classes c ON e.class_id = c.id
+        JOIN users u ON c.teacher_id = u.id
+        WHERE e.id=?
+    ''', (exam_id,)).fetchone()
+    if not exam:
+        flash('Exam not found.', 'error')
+        return redirect(url_for('admin_exam_overview'))
+    exam_category = _q_get(exam, 'exam_category', 'quiz') or 'quiz'
+    exam_periodic_type = _q_get(exam, 'periodic_type') if exam_category == 'periodic' else None
+    exam_tos = None
+    if exam_category == 'periodic' and _q_get(exam, 'tos_id'):
+        t = conn.execute('SELECT id, original_name, uploaded_at FROM tos_files WHERE id=?',
+                         (exam['tos_id'],)).fetchone()
+        exam_tos = dict(t) if t else None
+
+    sections_data, total_questions, total_points = _admin_exam_sections(conn, exam_id)
+    return render_template('admin/exam_view.html', exam=exam, sections_data=sections_data,
+                           exam_category=exam_category, exam_periodic_type=exam_periodic_type,
+                           exam_tos=exam_tos, total_questions=total_questions, total_points=total_points)
 
 @app.route('/admin/tos/<int:tos_id>/download')
 @role_required('admin')

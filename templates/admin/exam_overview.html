@@ -97,11 +97,6 @@
             {% if exam.periodic_type|periodic_label %}<span class="badge {{ exam.periodic_type|exam_type_badge }}">{{ exam.periodic_type|periodic_label }}</span>
             {% else %}<span class="badge badge-purple">Periodic Exam</span>{% endif %}
             {% else %}<span class="badge badge-gray">Quiz</span>{% endif %}
-            {% if exam.category == 'periodic' and exam.tos_name %}
-            <div class="text-xs text-muted" title="Table of Specification">TOS: {{ exam.tos_name|tos_label }}
-              · <a href="{{ url_for('admin_view_tos', tos_id=exam.tos_file_id) }}">View</a>
-              · <a href="{{ url_for('admin_download_tos', tos_id=exam.tos_file_id) }}">Download</a></div>
-            {% endif %}
           </td>
           <td class="text-sm">{{ exam.teacher_name }}</td>
           <td class="text-sm">{{ exam.subject_name }} · {{ exam.block_name }}</td>
@@ -118,6 +113,7 @@
           <td class="text-sm text-muted">{{ (st or '—')|time12 }}</td>
           <td class="text-sm text-muted">{{ (st|exam_end(exam.duration_minutes))|time12 }}</td>
           <td>
+            <a href="{{ url_for('admin_exam_view', exam_id=exam.id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg> View</a>
             <a href="{{ url_for('admin_exam_analytics', exam_id=exam.id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg> Analytics</a>
           </td>
         </tr>

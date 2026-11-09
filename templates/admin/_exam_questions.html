@@ -1,0 +1,53 @@
+{% if total_questions == 0 %}
+<div class="empty-state">
+  <div class="empty-state-icon"><svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg></div>
+  <div class="empty-state-title">No questions yet</div>
+  <div class="empty-state-text">The teacher has not added any questions to this {{ 'periodic exam' if exam_category == 'periodic' else 'quiz' }}.</div>
+</div>
+{% else %}
+{% set qn = namespace(n=0) %}
+{% for sd in sections_data %}
+{% if sd.questions %}
+<div class="card mb-2">
+  {% if sd.title %}
+  <div class="card-title">{{ sd.title }}</div>
+  {% if sd.description %}<div class="text-sm text-muted mb-1" style="white-space:pre-wrap">{{ sd.description }}</div>{% endif %}
+  {% endif %}
+  {% for q in sd.questions %}
+  {% set qn.n = qn.n + 1 %}
+  <div style="padding:0.75rem 0;{% if not loop.first or sd.title %}border-top:1px solid var(--border);{% endif %}">
+    <div class="question-num">Q{{ qn.n }} · {{ q.points }} pt{{ 's' if q.points != 1 else '' }} · {{ q.question_type|replace('_',' ') }}</div>
+    {% if '\n' in q.question_text %}
+    <pre class="question-code-preview">{{ q.question_text }}</pre>
+    {% else %}
+    <div class="question-text">{{ q.question_text }}</div>
+    {% endif %}
+    {% if q.question_type == 'multiple_choice' and q.choices %}
+    <div class="choices-list" style="pointer-events:none;gap:0.3rem">
+      {% for c in q.choices %}
+      <div class="choice-item {% if c.choice_label == q.correct_answer %}selected{% endif %}" style="padding:0.4rem 0.75rem">
+        <span class="choice-label-badge">{{ c.choice_label }}</span>
+        <span class="text-sm">{{ c.choice_text }}</span>
+        {% if c.choice_label == q.correct_answer %}<span class="text-success text-xs">✓</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% elif q.question_type == 'true_false' %}
+    <div class="text-sm text-muted mt-1">Answer: <span class="text-success fw-600">{{ q.correct_answer }}</span></div>
+    {% elif q.question_type == 'short_answer' %}
+    <div class="text-sm text-muted mt-1">Answer: {% for alt in q.correct_answer|sa_alts %}<span class="text-success fw-600">{{ alt }}</span>{% if not loop.last %} <span class="text-muted">or</span> {% endif %}{% else %}<span class="text-success fw-600">{{ q.correct_answer }}</span>{% endfor %}</div>
+    {% elif q.question_type == 'fill_blank' %}
+    <div class="text-sm text-muted mt-1">Blank answers:
+      {% for part in (q.correct_answer or '').split('|') %}<span class="badge badge-gray text-xs" style="margin:0 0.15rem">{{ loop.index }}: {{ part.strip() }}</span>{% endfor %}
+    </div>
+    {% elif q.question_type == 'essay' %}
+    <div class="text-sm text-muted mt-1">Manually graded{% if q.rubric_criteria %} · Rubric:
+      {% for crit in q.rubric_criteria %}<span class="badge badge-gray text-xs" style="margin:0 0.15rem">{{ crit.criterion_text }} ({{ crit.max_points }} pt{{ 's' if crit.max_points != 1 else '' }})</span>{% endfor %}
+    {% endif %}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endfor %}
+{% endif %}

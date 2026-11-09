@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}{{ exam.title }} · Questions{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">{{ exam.title }}</div>
+    <div class="page-subtitle">
+      {% if exam_category == 'periodic' %}
+        {% if exam_periodic_type|periodic_label %}<span class="badge {{ exam_periodic_type|exam_type_badge }}">{{ exam_periodic_type|periodic_label }}</span>
+        {% else %}<span class="badge badge-purple">Periodic Exam</span>{% endif %}
+      {% else %}<span class="badge badge-gray">Quiz</span>{% endif %}
+      {{ exam.teacher_name }} · {{ exam.subject_name }} · {{ exam.block_name }}
+    </div>
+  </div>
+  <div class="page-actions flex gap-2" style="flex-wrap:wrap">
+    <a href="{{ url_for('admin_exam_analytics', exam_id=exam.id) }}" class="btn btn-ghost"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg> Analytics</a>
+    <a href="{{ url_for('admin_exam_overview') }}" class="btn btn-ghost">← Back</a>
+  </div>
+</div>
+
+{% if exam_category == 'periodic' %}
+<div class="card mb-2">
+  <div class="card-title mb-1">Table of Specification (TOS)</div>
+  {% if exam_tos %}
+  <div class="text-sm fw-600">{{ exam_tos.original_name|tos_label }}</div>
+  <div class="text-xs text-muted">Uploaded {{ exam_tos.uploaded_at|time12 }}</div>
+  <div class="flex gap-1 mt-1" style="flex-wrap:wrap">
+    <a href="{{ url_for('admin_view_tos', tos_id=exam_tos.id) }}" class="btn btn-ghost btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg> View TOS</a>
+    <a href="{{ url_for('admin_download_tos', tos_id=exam_tos.id) }}" class="btn btn-primary btn-sm"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg> Download TOS</a>
+  </div>
+  {% else %}
+  <div class="text-sm text-muted">No TOS attached yet</div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="flex gap-2 mb-2" style="flex-wrap:wrap">
+  <span class="badge badge-gray">{{ total_questions }} question{{ 's' if total_questions != 1 else '' }}</span>
+  <span class="badge badge-gray">{{ total_points }} point{{ 's' if total_points != 1 else '' }}</span>
+</div>
+
+{% include 'admin/_exam_questions.html' %}
+{% endblock %}
